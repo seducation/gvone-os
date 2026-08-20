@@ -42,7 +42,7 @@ jobs:
           JAVA_OPTS: "-Djava.awt.headless=true -Xmx4096m"
           GRADLE_OPTS: "-Djava.awt.headless=true -Dorg.gradle.jvmargs='-Xmx4096m -Djava.awt.headless=true' -Dksp.useKSP2=true"
         run: |
-          gradle assembleDebug --stacktrace --no-daemon
+          gradle assembleDebug --stacktrace --no-daemon --no-configuration-cache
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
