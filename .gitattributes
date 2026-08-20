@@ -1,0 +1,12 @@
+# Auto detect text files and perform LF normalization
+* text=auto eol=lf
+
+# Explicitly declare binary files to prevent corruption during git push/checkout
+*.jar binary
+*.keystore binary
+*.webp binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.so binary
+*.aar binary
