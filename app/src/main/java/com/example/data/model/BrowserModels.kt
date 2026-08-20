@@ -114,6 +114,7 @@ data class BrowserSettings(
     val doNotTrack: Boolean = true,
     val forceHttps: Boolean = true,
     val torEnabled: Boolean = false,
+    val torProxyHost: String = "127.0.0.1",
     val torProxyPort: Int = 9050,
     val desktopSiteDefault: Boolean = false,
     val addressBarBottom: Boolean = true,

@@ -35,6 +35,8 @@ fun GVONEWebView(
     torConnectionState: TorConnectionState = TorConnectionState.DISCONNECTED,
     torLastError: String? = null,
     onRetryTor: () -> Unit = {},
+    onDisableTor: () -> Unit = {},
+    onLaunchOrbot: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onTitleChanged: (String) -> Unit,
     onUrlChanged: (String) -> Unit,
@@ -53,6 +55,8 @@ fun GVONEWebView(
             TorFailClosedErrorScreen(
                 errorMessage = torLastError ?: "Tor SOCKS5 proxy is currently unreachable.",
                 onRetry = onRetryTor,
+                onDisableTor = onDisableTor,
+                onLaunchOrbot = onLaunchOrbot,
                 onOpenSettings = onOpenSettings,
                 modifier = Modifier.fillMaxSize()
             )
@@ -189,6 +193,8 @@ fun GVONEWebView(
 private fun TorFailClosedErrorScreen(
     errorMessage: String,
     onRetry: () -> Unit,
+    onDisableTor: () -> Unit,
+    onLaunchOrbot: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -221,7 +227,7 @@ private fun TorFailClosedErrorScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Connection Error",
+                text = "TOR Proxy Unreachable",
                 color = Color.White,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
@@ -231,15 +237,15 @@ private fun TorFailClosedErrorScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "TOR routing is Enabled. Direct cleartext traffic has been blocked to prevent IP and DNS identity leaks.",
+                text = "TOR routing is active. To prevent IP and DNS leaks, traffic is held until an active Tor/Orbot SOCKS5 proxy is connected.",
                 color = Color(0xFF94A3B8),
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 textAlign = TextAlign.Center,
-                lineHeight = 20.sp,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(horizontal = 12.dp)
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Surface(
                 color = Color(0xFF161C27),
@@ -260,37 +266,83 @@ private fun TorFailClosedErrorScreen(
                     Text(
                         text = errorMessage,
                         color = Color(0xFFE2E8F0),
-                        fontSize = 12.sp
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
+            // Primary Actions: Launch Orbot & Retry
             Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 OutlinedButton(
-                    onClick = onOpenSettings,
-                    modifier = Modifier.weight(1f).testTag("tor_failclosed_settings_btn"),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    onClick = onLaunchOrbot,
+                    modifier = Modifier.weight(1f).testTag("tor_launch_orbot_btn"),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = GVONESecondary),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("Settings")
+                    Icon(
+                        imageVector = Icons.Rounded.Security,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Start Orbot", fontSize = 12.sp)
                 }
 
                 Button(
                     onClick = onRetry,
                     modifier = Modifier.weight(1f).testTag("tor_failclosed_retry_btn"),
-                    colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Refresh,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Retry TOR")
+                    Text("Retry TOR", fontSize = 12.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Secondary Actions: Continue in Normal Direct Mode or Open Settings
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                TextButton(
+                    onClick = onDisableTor,
+                    modifier = Modifier.weight(1f).testTag("tor_disable_browse_btn"),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF94A3B8))
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Public,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Disable TOR & Load", fontSize = 12.sp)
+                }
+
+                TextButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.weight(1f).testTag("tor_failclosed_settings_btn"),
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF94A3B8))
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Settings", fontSize = 12.sp)
                 }
             }
         }

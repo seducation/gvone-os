@@ -137,7 +137,10 @@ fun SettingsScreen(
                     isTorTesting = isTorTesting,
                     onToggleTor = onToggleTor,
                     onTestTor = onTestTor,
-                    onRetryTor = onRetryTor
+                    onRetryTor = onRetryTor,
+                    onUpdateProxyConfig = { host, port ->
+                        onSettingsChanged(settings.copy(torProxyHost = host, torProxyPort = port))
+                    }
                 )
             }
 
@@ -327,10 +330,33 @@ fun TorControlCard(
     isTorTesting: Boolean,
     onToggleTor: () -> Unit,
     onTestTor: () -> Unit,
-    onRetryTor: () -> Unit
+    onRetryTor: () -> Unit,
+    onUpdateProxyConfig: (host: String, port: Int) -> Unit = { _, _ -> }
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val isEnabled = settings.torEnabled
     val connectionState = torStatus.state
+    var showPortDialog by remember { mutableStateOf(false) }
+    var hostInput by remember(settings.torProxyHost) { mutableStateOf(settings.torProxyHost) }
+    var portInput by remember(settings.torProxyPort) { mutableStateOf(settings.torProxyPort.toString()) }
+
+    val launchOrbot = {
+        try {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage("org.torproject.android")
+            if (launchIntent != null) {
+                context.startActivity(launchIntent)
+            } else {
+                val marketIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("market://details?id=org.torproject.android"))
+                try {
+                    context.startActivity(marketIntent)
+                } catch (e: Exception) {
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://orbot.app/")))
+                }
+            }
+        } catch (e: Exception) {
+            // Ignored
+        }
+    }
 
     Surface(
         modifier = Modifier
@@ -381,15 +407,15 @@ fun TorControlCard(
 
                     Column {
                         Text(
-                            text = "TOR",
+                            text = "TOR Mode",
                             color = GVONETextPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (isEnabled) "ON" else "OFF",
+                            text = if (isEnabled) "Active SOCKS5 (${torStatus.socksProxyHost}:${torStatus.socksProxyPort})" else "OFF (Direct routing)",
                             color = if (isEnabled) GVONESecondary else GVONETextSecondary,
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -418,7 +444,7 @@ fun TorControlCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Status",
+                    text = "Connection Status",
                     color = GVONETextSecondary,
                     fontSize = 13.sp
                 )
@@ -444,7 +470,7 @@ fun TorControlCard(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Traffic Blocked (Fail-Closed)",
+                                text = "Tor Daemon Not Detected",
                                 color = GVONEAccentRed,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
@@ -452,35 +478,55 @@ fun TorControlCard(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = torStatus.lastError ?: "Failed to reach Tor SOCKS5 proxy on 127.0.0.1:9050. Direct traffic was blocked to protect anonymity.",
+                            text = torStatus.lastError ?: "No active SOCKS5 proxy listening on ${settings.torProxyHost}:${settings.torProxyPort}. Direct traffic is held to protect anonymity.",
                             color = Color(0xFFCBD5E1),
                             fontSize = 11.sp
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = onRetryTor,
-                            modifier = Modifier.fillMaxWidth().testTag("tor_retry_connection_btn"),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = GVONEAccentRed),
-                            contentPadding = PaddingValues(vertical = 6.dp)
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Refresh,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Retry Connection", fontSize = 12.sp)
+                            OutlinedButton(
+                                onClick = launchOrbot,
+                                modifier = Modifier.weight(1f).testTag("tor_launch_orbot_settings_btn"),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = GVONESecondary),
+                                contentPadding = PaddingValues(vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Security,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Start Orbot", fontSize = 11.sp)
+                            }
+
+                            Button(
+                                onClick = onRetryTor,
+                                modifier = Modifier.weight(1f).testTag("tor_retry_connection_btn"),
+                                colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary),
+                                contentPadding = PaddingValues(vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Retry Proxy", fontSize = 11.sp)
+                            }
                         }
                     }
                 }
             }
 
-            // Actions when TOR is Enabled
-            if (isEnabled) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+            // Actions & Proxy Configuration
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (isEnabled) {
                     // "Test TOR Connection" Action Button
                     Button(
                         onClick = onTestTor,
@@ -510,9 +556,26 @@ fun TorControlCard(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Test TOR Connection", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Test Connection", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
+                }
+
+                OutlinedButton(
+                    onClick = { showPortDialog = true },
+                    modifier = Modifier.then(if (isEnabled) Modifier.weight(1f) else Modifier.fillMaxWidth()),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = GVONETextPrimary),
+                    contentPadding = PaddingValues(vertical = 10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = GVONEPrimary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Proxy Config (${settings.torProxyPort})", fontSize = 13.sp)
                 }
             }
 
@@ -598,7 +661,7 @@ fun TorControlCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isEnabled) "SOCKS5 proxy active (127.0.0.1:9050). DNS requests resolved through remote proxy to prevent leakage."
+                        text = if (isEnabled) "SOCKS5 proxy active (${settings.torProxyHost}:${settings.torProxyPort}). DNS requests resolved through remote proxy to prevent leakage."
                         else "Direct network active. Enable TOR to route web and search traffic through SOCKS5 proxy.",
                         color = Color(0xFF94A3B8),
                         fontSize = 11.sp,
@@ -607,6 +670,98 @@ fun TorControlCard(
                 }
             }
         }
+    }
+
+    if (showPortDialog) {
+        AlertDialog(
+            onDismissRequest = { showPortDialog = false },
+            containerColor = Color(0xFF161C27),
+            title = {
+                Text(
+                    text = "Tor Proxy Configuration",
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Specify your local or remote Tor SOCKS5 proxy daemon details. Orbot default is 127.0.0.1:9050.",
+                        color = GVONETextSecondary,
+                        fontSize = 13.sp
+                    )
+
+                    OutlinedTextField(
+                        value = hostInput,
+                        onValueChange = { hostInput = it },
+                        label = { Text("Proxy Host IP / Hostname") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = GVONESecondary,
+                            unfocusedBorderColor = Color(0xFF263245)
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("tor_proxy_host_input")
+                    )
+
+                    OutlinedTextField(
+                        value = portInput,
+                        onValueChange = { portInput = it.filter { ch -> ch.isDigit() } },
+                        label = { Text("Proxy Port (Default: 9050)") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = GVONESecondary,
+                            unfocusedBorderColor = Color(0xFF263245)
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("tor_proxy_port_input")
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        listOf("9050" to "Orbot", "9150" to "Tor Browser", "8118" to "HTTP").forEach { (p, label) ->
+                            OutlinedButton(
+                                onClick = { portInput = p },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = if (portInput == p) GVONESecondary else Color(0xFF94A3B8)
+                                )
+                            ) {
+                                Text("$p ($label)", fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsedPort = portInput.toIntOrNull() ?: 9050
+                        val cleanHost = hostInput.trim().ifBlank { "127.0.0.1" }
+                        onUpdateProxyConfig(cleanHost, parsedPort)
+                        showPortDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary),
+                    modifier = Modifier.testTag("save_proxy_config_btn")
+                ) {
+                    Text("Save & Apply")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPortDialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF94A3B8))
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

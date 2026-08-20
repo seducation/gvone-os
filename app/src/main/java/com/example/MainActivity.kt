@@ -73,6 +73,25 @@ fun BrowserApp(
 
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val launchOrbot = {
+        try {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage("org.torproject.android")
+            if (launchIntent != null) {
+                context.startActivity(launchIntent)
+            } else {
+                val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=org.torproject.android"))
+                try {
+                    context.startActivity(marketIntent)
+                } catch (e: Exception) {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://orbot.app/")))
+                }
+            }
+        } catch (e: Exception) {
+            // Ignored
+        }
+    }
+
     // Handle back button presses gracefully
     BackHandler(enabled = activeSheet != ActiveSheet.None) {
         viewModel.closeSheet()
@@ -91,6 +110,8 @@ fun BrowserApp(
                 torConnectionState = torStatus.state,
                 torLastError = torStatus.lastError,
                 onRetryTor = { viewModel.retryTorConnection() },
+                onDisableTor = { viewModel.disableTorAndReload() },
+                onLaunchOrbot = launchOrbot,
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                 onTitleChanged = { title ->
                     viewModel.updateCurrentTabState(title = title)

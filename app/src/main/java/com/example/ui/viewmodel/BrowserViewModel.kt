@@ -131,13 +131,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         // If Tor was persistent and enabled across restarts, connect immediately
         if (_settings.value.torEnabled) {
             viewModelScope.launch {
-                torManager.connect(port = _settings.value.torProxyPort)
+                torManager.connect(host = _settings.value.torProxyHost, port = _settings.value.torProxyPort)
             }
         }
     }
 
     private fun loadPersistedSettings(): BrowserSettings {
         val torEnabled = prefs.getBoolean("tor_enabled", false)
+        val torHost = prefs.getString("tor_host", "127.0.0.1") ?: "127.0.0.1"
         val torPort = prefs.getInt("tor_port", 9050)
         val engineName = prefs.getString("search_engine", SearchEngineType.GVONE.name) ?: SearchEngineType.GVONE.name
         val engine = try { SearchEngineType.valueOf(engineName) } catch (e: Exception) { SearchEngineType.GVONE }
@@ -153,6 +154,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             blockPopups = popups,
             forceHttps = https,
             torEnabled = torEnabled,
+            torProxyHost = torHost,
             torProxyPort = torPort,
             addressBarBottom = addressBottom,
             aiSearchAutoTrigger = aiAuto
@@ -162,6 +164,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private fun persistSettings(s: BrowserSettings) {
         prefs.edit()
             .putBoolean("tor_enabled", s.torEnabled)
+            .putString("tor_host", s.torProxyHost)
             .putInt("tor_port", s.torProxyPort)
             .putString("search_engine", s.searchEngine.name)
             .putBoolean("tracking_protection", s.trackingProtection)
@@ -421,11 +424,19 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch {
             if (target) {
-                torManager.connect(port = updated.torProxyPort)
+                torManager.connect(host = updated.torProxyHost, port = updated.torProxyPort)
             } else {
                 torManager.disconnect()
             }
         }
+    }
+
+    fun disableTorAndReload() {
+        val updated = _settings.value.copy(torEnabled = false)
+        _settings.value = updated
+        persistSettings(updated)
+        torManager.disconnect()
+        currentTab.value?.url?.let { loadUrlInCurrentTab(it) }
     }
 
     fun testTorConnection() {
@@ -436,19 +447,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun retryTorConnection() {
         viewModelScope.launch {
-            torManager.reconnect(port = _settings.value.torProxyPort)
+            torManager.reconnect(host = _settings.value.torProxyHost, port = _settings.value.torProxyPort)
         }
     }
 
     fun updateSettings(newSettings: BrowserSettings) {
         val oldTor = _settings.value.torEnabled
+        val oldPort = _settings.value.torProxyPort
+        val oldHost = _settings.value.torProxyHost
         _settings.value = newSettings
         persistSettings(newSettings)
 
-        if (newSettings.torEnabled != oldTor) {
+        if (newSettings.torEnabled != oldTor || (newSettings.torEnabled && (newSettings.torProxyPort != oldPort || newSettings.torProxyHost != oldHost))) {
             viewModelScope.launch {
                 if (newSettings.torEnabled) {
-                    torManager.connect(port = newSettings.torProxyPort)
+                    torManager.connect(host = newSettings.torProxyHost, port = newSettings.torProxyPort)
                 } else {
                     torManager.disconnect()
                 }
