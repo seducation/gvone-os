@@ -50,6 +50,11 @@ jobs:
           gradle wrapper --gradle-version 9.3.1
           chmod +x ./gradlew
 
+      - name: Setup Android SDK
+        run: |
+          echo "y" | sdkmanager --install "platforms;android-36" "build-tools;36.0.0" || true
+          echo "y" | sdkmanager --licenses || true
+
       - name: Build Debug APK
         env:
           GRADLE_OPTS: "-Xmx4096m -Dfile.encoding=UTF-8 -Djava.awt.headless=true"
