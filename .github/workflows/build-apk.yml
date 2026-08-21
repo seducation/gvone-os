@@ -20,7 +20,6 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: 'gradle'
 
       - name: Set up Android SDK
         run: |
@@ -54,9 +53,8 @@ jobs:
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-          # 4. Generate and configure Gradle wrapper
-          gradle wrapper --gradle-version 9.3.1 || true
-          chmod +x ./gradlew
+          # 4. Ensure gradlew is executable
+          chmod +x ./gradlew || true
 
       - name: Build Debug APK
         env:
