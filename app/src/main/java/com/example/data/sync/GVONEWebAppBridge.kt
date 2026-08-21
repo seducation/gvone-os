@@ -294,12 +294,171 @@ class GVONEWebAppBridge(
                 // Create standard GVONE global object
                 window.GVONE = window.GVONE || {};
                 window.GVONE.source = "gvone_browser";
-                window.GVONE.version = "1.0.0";
+                window.GVONE.version = "1.1.0";
                 
                 // Helper to notify browser of state
                 window.GVONE.notifyState = function(state) {
                     if (window.GVONEBrowserBridge && window.GVONEBrowserBridge.notifyState) {
                         window.GVONEBrowserBridge.notifyState(state);
+                    }
+                };
+
+                // Submission state and deduplication tracking
+                window.__GVONE_SUBMIT_STATE__ = {
+                    lastSubmitTime: 0,
+                    lastSubmitText: '',
+                    isProcessing: false
+                };
+
+                // Helper to find the primary search/chat input on the page
+                function findPrimarySearchChatInput() {
+                    return document.querySelector(
+                        'input[type="search"]:not([disabled]), ' +
+                        'textarea:not([disabled]), ' +
+                        'input[type="text"]:not([disabled]), ' +
+                        'input:not([type]):not([disabled]), ' +
+                        '[contenteditable="true"]'
+                    );
+                }
+
+                // Helper to find the matching send/submit/search button
+                function findSubmitButton(inputEl) {
+                    if (inputEl && inputEl.form) {
+                        var formBtn = inputEl.form.querySelector('button[type="submit"], input[type="submit"]');
+                        if (formBtn) return formBtn;
+                    }
+                    return document.querySelector(
+                        'button[type="submit"], ' +
+                        'button[aria-label*="send" i], button[title*="send" i], ' +
+                        'button[aria-label*="search" i], button[title*="search" i], ' +
+                        'button[aria-label*="submit" i], button[title*="submit" i], ' +
+                        'button.send-button, button.submit-btn, button.search-button, ' +
+                        '[role="button"][aria-label*="send" i], [role="button"][aria-label*="search" i]'
+                    );
+                }
+
+                // Determines if the context is primarily chat-oriented vs search-oriented
+                function getEnterKeyHintType(inputEl) {
+                    var placeholder = (inputEl.placeholder || inputEl.getAttribute('aria-label') || '').toLowerCase();
+                    if (placeholder.includes('chat') || placeholder.includes('message') || placeholder.includes('ask') || placeholder.includes('prompt')) {
+                        return 'send';
+                    }
+                    return 'search';
+                }
+
+                // Configures an input element with the proper platform IME search/send actions
+                function configureSearchChatInput(el) {
+                    if (!el || el.__gvone_configured__) return;
+                    el.__gvone_configured__ = true;
+
+                    var hint = getEnterKeyHintType(el);
+                    
+                    // 1. Explicitly configure enterkeyhint so Android IME displays Search / Send icon instead of Next/Arrow
+                    el.setAttribute('enterkeyhint', hint);
+                    
+                    // 2. Set inputmode to search for search/submit keyboard semantics
+                    if (!el.getAttribute('inputmode')) {
+                        el.setAttribute('inputmode', 'search');
+                    }
+
+                    // 3. If standard input, ensure type="search" or proper form semantics
+                    if (el.tagName === 'INPUT' && el.type === 'text' && !el.getAttribute('data-preserve-type')) {
+                        try {
+                            el.type = 'search';
+                        } catch (e) {}
+                    }
+
+                    // 4. Handle mobile keyboard Search/Send action & desktop Enter without Shift
+                    el.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            var text = el.isContentEditable ? el.innerText : el.value;
+                            if (text && text.trim().length > 0) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                window.__GVONE_EXECUTE_SUBMIT__(el, 'keyboard_' + hint);
+                            }
+                        }
+                    }, true);
+                }
+
+                // Global unified submit handler with request deduplication
+                window.__GVONE_EXECUTE_SUBMIT__ = function(targetInput, triggerSource) {
+                    try {
+                        var inputEl = targetInput || findPrimarySearchChatInput();
+                        var currentText = '';
+                        if (inputEl) {
+                            currentText = (inputEl.isContentEditable ? inputEl.innerText : inputEl.value) || '';
+                        }
+                        currentText = currentText.trim();
+
+                        var now = Date.now();
+                        // Deduplication: prevent firing twice within 600ms for exact same text
+                        if (now - window.__GVONE_SUBMIT_STATE__.lastSubmitTime < 600 && 
+                            window.__GVONE_SUBMIT_STATE__.lastSubmitText === currentText &&
+                            currentText.length > 0) {
+                            console.log('[GVONE Bridge] Debounced duplicate submission from:', triggerSource);
+                            return true;
+                        }
+
+                        window.__GVONE_SUBMIT_STATE__.lastSubmitTime = now;
+                        window.__GVONE_SUBMIT_STATE__.lastSubmitText = currentText;
+                        window.__GVONE_SUBMIT_STATE__.isProcessing = true;
+
+                        console.log('[GVONE Bridge] Executing submission via:', triggerSource, 'text:', currentText);
+
+                        // 1. If web app exposes a custom submission handler, invoke it
+                        if (typeof window.onGVONEBrowserSubmit === 'function') {
+                            window.onGVONEBrowserSubmit({ text: currentText, source: triggerSource });
+                            if (window.GVONEBrowserBridge) {
+                                window.GVONEBrowserBridge.notifyState('processing');
+                            }
+                            return true;
+                        }
+
+                        // 2. Click the matching Send / Search button
+                        var sendBtn = findSubmitButton(inputEl);
+                        if (sendBtn && !sendBtn.disabled) {
+                            sendBtn.click();
+                            if (window.GVONEBrowserBridge) {
+                                window.GVONEBrowserBridge.notifyState('processing');
+                            }
+                            return true;
+                        }
+
+                        // 3. If enclosed in a form, submit the form
+                        if (inputEl && inputEl.form) {
+                            if (typeof inputEl.form.requestSubmit === 'function') {
+                                inputEl.form.requestSubmit();
+                            } else {
+                                inputEl.form.submit();
+                            }
+                            if (window.GVONEBrowserBridge) {
+                                window.GVONEBrowserBridge.notifyState('processing');
+                            }
+                            return true;
+                        }
+
+                        // 4. Dispatch synthetic Enter event to trigger web app framework listeners
+                        if (inputEl) {
+                            var enterEvent = new KeyboardEvent('keydown', {
+                                key: 'Enter',
+                                code: 'Enter',
+                                keyCode: 13,
+                                which: 13,
+                                bubbles: true,
+                                cancelable: true
+                            });
+                            inputEl.dispatchEvent(enterEvent);
+                            if (window.GVONEBrowserBridge) {
+                                window.GVONEBrowserBridge.notifyState('processing');
+                            }
+                            return true;
+                        }
+
+                        return false;
+                    } catch (err) {
+                        console.error('[GVONE Bridge] Error during submission execution:', err);
+                        return false;
                     }
                 };
 
@@ -309,7 +468,7 @@ class GVONEWebAppBridge(
                         var text = eventData.text || '';
                         var action = eventData.action || 'submit';
                         
-                        console.log('[GVONE Bridge] Received input from browser address bar:', text);
+                        console.log('[GVONE Bridge] Received input from browser address bar:', text, 'action:', action);
 
                         // 1. Dispatch custom DOM event for custom Web App listener
                         var customEvt = new CustomEvent('gvone:browser_input', {
@@ -339,9 +498,11 @@ class GVONEWebAppBridge(
                             return true;
                         }
 
-                        // 4. Universal Fallback: Inject into chat/search input and trigger submit
-                        var targetInput = document.querySelector('textarea:not([disabled]), input[type="text"]:not([disabled]), input[type="search"]:not([disabled]), [contenteditable="true"]');
+                        // 4. Universal Fallback: Inject into chat/search input and trigger submit or keep focused
+                        var targetInput = findPrimarySearchChatInput();
                         if (targetInput) {
+                            configureSearchChatInput(targetInput);
+                            
                             targetInput.focus();
                             if (targetInput.isContentEditable) {
                                 targetInput.innerText = text;
@@ -349,27 +510,15 @@ class GVONEWebAppBridge(
                                 targetInput.value = text;
                             }
 
-                            // Trigger realistic change events
+                            // Trigger framework reactive state updates
                             targetInput.dispatchEvent(new Event('input', { bubbles: true }));
                             targetInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-                            // Look for Send / Submit button or dispatch Enter key
-                            setTimeout(function() {
-                                var sendButton = document.querySelector('button[type="submit"], button[aria-label*="send" i], button[title*="send" i], button[aria-label*="search" i], button.send-button, button.submit-btn');
-                                if (sendButton && !sendButton.disabled) {
-                                    sendButton.click();
-                                } else {
-                                    var enterEvent = new KeyboardEvent('keydown', {
-                                        key: 'Enter',
-                                        code: 'Enter',
-                                        keyCode: 13,
-                                        which: 13,
-                                        bubbles: true,
-                                        cancelable: true
-                                    });
-                                    targetInput.dispatchEvent(enterEvent);
-                                }
-                            }, 50);
+                            if (action === 'submit') {
+                                setTimeout(function() {
+                                    window.__GVONE_EXECUTE_SUBMIT__(targetInput, 'address_bar_bridge');
+                                }, 50);
+                            }
 
                             if (window.GVONEBrowserBridge) {
                                 window.GVONEBrowserBridge.postMessageToBrowser(JSON.stringify({
@@ -388,9 +537,38 @@ class GVONEWebAppBridge(
                     }
                 };
 
+                // Scan & observe DOM to auto-configure any search/chat inputs dynamically
+                function scanAndConfigureInputs() {
+                    var inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
+                    for (var i = 0; i < inputs.length; i++) {
+                        configureSearchChatInput(inputs[i]);
+                    }
+                }
+
+                // Initial scan
+                scanAndConfigureInputs();
+
+                // Listen for focusin so newly rendered inputs get configured immediately on tap
+                document.addEventListener('focusin', function(e) {
+                    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
+                        configureSearchChatInput(e.target);
+                    }
+                }, true);
+
+                // MutationObserver for dynamic SPAs (React, Vue, etc.)
+                if (window.MutationObserver) {
+                    var observer = new MutationObserver(function(mutations) {
+                        scanAndConfigureInputs();
+                    });
+                    observer.observe(document.documentElement || document.body, {
+                        childList: true,
+                        subtree: true
+                    });
+                }
+
                 // Notify native browser that page is ready
                 if (window.GVONEBrowserBridge && window.GVONEBrowserBridge.notifyReady) {
-                    window.GVONEBrowserBridge.notifyReady('gvone_web_app', '1.0');
+                    window.GVONEBrowserBridge.notifyReady('gvone_web_app', '1.1');
                 }
             })();
         """.trimIndent()
