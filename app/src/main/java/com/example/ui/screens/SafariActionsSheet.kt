@@ -191,8 +191,8 @@ fun SafariActionsSheet(
         dragHandle = {
             Box(
                 modifier = Modifier
-                    .padding(top = 10.dp, bottom = 8.dp)
-                    .width(40.dp)
+                    .padding(top = 8.dp, bottom = 4.dp)
+                    .width(36.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(Color(0xFF334155))
@@ -208,10 +208,10 @@ fun SafariActionsSheet(
             // Main Scrollable Area inside the Bottom Sheet
             LazyColumn(
                 modifier = Modifier
-                    .weight(1f, fill = false)
-                    .padding(horizontal = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(top = 2.dp, bottom = 6.dp)
             ) {
                 // Toast notification pill when actions are triggered
                 if (toastMessage != null) {
@@ -534,12 +534,12 @@ fun SafariActionsSheet(
                                         )
                                         CompactQuickButton(
                                             icon = Icons.Rounded.VpnLock,
-                                            label = if (isTorActive) "Tor Shield (On)" else "Tor Shield",
+                                            label = if (isTorActive) "Tor (ON)" else "Tor (OFF)",
                                             isActive = isTorActive,
                                             activeColor = GVONETertiary,
                                             onClick = {
                                                 onToggleTor()
-                                                toastMessage = if (isTorActive) "Tor Disabled" else "Connecting Tor..."
+                                                toastMessage = if (isTorActive) "Tor Disabled" else "Tor Enabled"
                                             },
                                             modifier = Modifier.weight(1f)
                                         )
