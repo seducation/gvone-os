@@ -24,36 +24,40 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK Licenses
-        run: |
-          yes | sdkmanager --licenses || true
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
           validate-wrappers: false
+          cache-disabled: false
 
       - name: Prepare Environment & Keystore
         run: |
-          # 1. Environment file
+          # 1. Ensure .env exists
           if [ ! -f .env ]; then
             cp .env.example .env
           fi
 
-          # 2. Decode debug.keystore from base64 if present, else generate fresh with keytool
+          # 2. Decode debug.keystore from base64 safely
           if [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore || base64 --decode debug.keystore.base64 > debug.keystore || true
+            cat debug.keystore.base64 | tr -d '\r\n ' | base64 -d > debug.keystore || true
           fi
-          
+
+          # 3. Fallback: generate fresh keystore if missing or empty
           if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
-            echo "Generating debug.keystore via keytool..."
+            echo "Generating fresh debug.keystore..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+          # 4. Generate Gradle wrapper jar if missing
+          gradle wrapper --gradle-version 9.3.1
+          chmod +x ./gradlew
+
       - name: Build Debug APK
+        env:
+          GRADLE_OPTS: "-Xmx4096m -Dfile.encoding=UTF-8 -Djava.awt.headless=true"
         run: |
-          gradle :app:assembleDebug --stacktrace --no-configuration-cache -Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8 -Djava.awt.headless=true" -Dksp.useKSP2=true
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon --no-configuration-cache
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
