@@ -21,21 +21,43 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      - name: Setup Android SDK Environment & Licenses
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/tools/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+          
+          # Accept licenses
+          mkdir -p "${ANDROID_HOME}/licenses"
+          echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > "${ANDROID_HOME}/licenses/android-sdk-license" || true
+          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> "${ANDROID_HOME}/licenses/android-sdk-license" || true
+          echo "24333f8a63b1d939579cc890a1c3729013f20730" >> "${ANDROID_HOME}/licenses/android-sdk-license" || true
+          echo "84831b9409646a53e03321409501e23fb58e5a9b" > "${ANDROID_HOME}/licenses/android-sdk-preview-license" || true
+          
+          if command -v sdkmanager >/dev/null 2>&1; then
+            yes | sdkmanager --licenses || true
+            sdkmanager "platforms;android-36" "build-tools;36.0.0" "platforms;android-35" "build-tools;35.0.0" || true
+          elif [ -f "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+            "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "platforms;android-35" "build-tools;35.0.0" || true
+          fi
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
           validate-wrappers: false
-          cache-disabled: false
 
       - name: Prepare Environment & Keystore
         run: |
-          # 1. Ensure .env exists
+          # 1. Ensure .env and .env.example exist
+          if [ ! -f .env.example ]; then
+            touch .env.example
+          fi
           if [ ! -f .env ]; then
-            cp .env.example .env
+            cp .env.example .env || touch .env
           fi
 
-          # 2. Decode debug.keystore from base64 safely
+          # 2. Decode debug.keystore from base64 safely if present
           if [ -f debug.keystore.base64 ]; then
             cat debug.keystore.base64 | tr -d '\r\n ' | base64 -d > debug.keystore || true
           fi
@@ -46,14 +68,9 @@ jobs:
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-          # 4. Generate Gradle wrapper jar if missing
+          # 4. Generate and configure Gradle wrapper
           gradle wrapper --gradle-version 9.3.1
           chmod +x ./gradlew
-
-      - name: Setup Android SDK
-        run: |
-          echo "y" | sdkmanager --install "platforms;android-36" "build-tools;36.0.0" || true
-          echo "y" | sdkmanager --licenses || true
 
       - name: Build Debug APK
         env:
@@ -67,3 +84,4 @@ jobs:
           name: gvone-browser-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
