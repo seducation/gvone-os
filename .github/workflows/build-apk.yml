@@ -24,11 +24,15 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
+          gradle-version: '9.3.1'
           validate-wrappers: false
 
       - name: Prepare Environment & Keystore
         run: |
-          # 1. Ensure gradlew is executable
+          # 1. Generate Gradle wrapper jar if missing
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            gradle wrapper --gradle-version 9.3.1
+          fi
           chmod +x ./gradlew
 
           # 2. Environment file
