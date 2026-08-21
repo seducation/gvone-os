@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.BrowserTab
+import com.example.data.sync.GVONEWebAppBridge
 import com.example.data.tor.TorConnectionState
 import com.example.ui.theme.*
 
@@ -39,6 +40,10 @@ fun GVONEWebView(
     isTorActive: Boolean,
     torConnectionState: TorConnectionState = TorConnectionState.DISCONNECTED,
     torLastError: String? = null,
+    webAppBridge: GVONEWebAppBridge? = null,
+    bridgeEnabled: Boolean = true,
+    bridgeApplyToAll: Boolean = true,
+    onRegisterWebView: ((tabId: String, webView: WebView) -> Unit)? = null,
     onRetryTor: () -> Unit = {},
     onDisableTor: () -> Unit = {},
     onLaunchOrbot: () -> Unit = {},
@@ -103,6 +108,10 @@ fun GVONEWebView(
                             if (tab.desktopMode) {
                                 userAgentString = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                             }
+                        }
+
+                        if (webAppBridge != null) {
+                            addJavascriptInterface(webAppBridge, GVONEWebAppBridge.JAVASCRIPT_INTERFACE_NAME)
                         }
 
                         setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
@@ -203,6 +212,7 @@ fun GVONEWebView(
                                 url?.let {
                                     lastLoadedUrl = it
                                     onUrlChanged(it)
+                                    view?.let { wv -> webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll) }
                                 }
                             }
 
@@ -211,6 +221,7 @@ fun GVONEWebView(
                                 url?.let {
                                     lastLoadedUrl = it
                                     onUrlChanged(it)
+                                    view?.let { wv -> webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll) }
                                 }
                                 view?.title?.let {
                                     if (it.isNotBlank()) onTitleChanged(it)
@@ -240,10 +251,12 @@ fun GVONEWebView(
                         }
 
                         webViewInstance = this
+                        onRegisterWebView?.invoke(tab.id, this)
                     }
                 },
                 update = { webView ->
                     webViewInstance = webView
+                    onRegisterWebView?.invoke(tab.id, webView)
 
                     val targetUA = if (tab.desktopMode) {
                         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

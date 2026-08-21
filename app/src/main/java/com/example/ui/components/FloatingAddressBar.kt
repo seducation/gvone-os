@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -47,16 +49,20 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.ADDRESS_BAR_TARGET_URL
+import com.example.data.model.BrowserSettings
 import com.example.data.model.BrowserTab
+import com.example.data.model.HOME_WEB_APP_URL
 import com.example.data.model.isInternalHomeUrl
+import com.example.data.sync.PageContextDetector
 import com.example.ui.theme.*
 
 /**
  * Premium Safari-Inspired Bottom Floating Browser Controls
  * Exactly 3 major UI areas:
  * 1. Left Circular Button: Safari-style overlapping tabs switcher with scale-down feedback.
- * 2. Center Elongated Pill: Glassmorphic address/search bar with SF Pro typography, SSL lock, URL preview,
- *    live progress line, and autocomplete suggestions flyout.
+ * 2. Center Elongated Pill: Glassmorphic address/search bar with SF Pro typography, Control/Target toggle, URL preview,
+ *    live progress line, and quick target selector.
  * 3. Right Circular Button: Safari three-dot "More" action menu.
  */
 @Composable
@@ -65,6 +71,8 @@ fun FloatingAddressBar(
     tabCount: Int,
     isPrivate: Boolean,
     isTorActive: Boolean,
+    settings: BrowserSettings? = null,
+    onUpdateSettings: ((BrowserSettings) -> Unit)? = null,
     onTabOverviewClick: () -> Unit,
     onActionsMenuClick: () -> Unit,
     onNavigate: (String) -> Unit,
@@ -74,8 +82,24 @@ fun FloatingAddressBar(
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
-    var inputText by remember(currentTab?.url) {
-        val displayUrl = if (isInternalHomeUrl(currentTab?.url)) "" else (currentTab?.url ?: "")
+    var showTargetControlDialog by remember { mutableStateOf(false) }
+    val autoLoadEnabled = settings?.autoLoadTargetOnFocus ?: true
+    val targetUrl = settings?.autoLoadTargetUrl ?: ADDRESS_BAR_TARGET_URL
+    val bridgeEnabled = settings?.bidirectionalBridgeEnabled ?: true
+    val bridgeApplyAll = settings?.bridgeApplyToAllWebsites ?: true
+
+    val isGVONEActive = remember(currentTab?.url, targetUrl) {
+        val url = currentTab?.url.orEmpty()
+        PageContextDetector.isTrustedGVONEOrigin(url) || 
+            (targetUrl.isNotBlank() && url.contains(targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')))
+    }
+
+    val isBridgeActiveForCurrentPage = remember(bridgeEnabled, bridgeApplyAll, isGVONEActive, currentTab?.url) {
+        bridgeEnabled && (bridgeApplyAll || isGVONEActive)
+    }
+
+    var inputText by remember(currentTab?.url, isBridgeActiveForCurrentPage) {
+        val displayUrl = if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentTab?.url)) "" else (currentTab?.url ?: "")
         mutableStateOf(displayUrl)
     }
     val focusManager = LocalFocusManager.current
@@ -91,9 +115,11 @@ fun FloatingAddressBar(
         }
     }
 
-    val displayHost = remember(currentTab?.url) {
+    val displayHost = remember(currentTab?.url, isBridgeActiveForCurrentPage) {
         val url = currentTab?.url ?: ""
-        if (isInternalHomeUrl(url)) {
+        if (isBridgeActiveForCurrentPage) {
+            "" // Hide URL completely when Bridge / Type-to-Write mode is active
+        } else if (isInternalHomeUrl(url)) {
             if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name"
         } else {
             try {
@@ -106,7 +132,6 @@ fun FloatingAddressBar(
         }
     }
 
-    val isHttps = currentTab?.url?.startsWith("https://") == true
     val isLoading = currentTab?.isLoading == true || (currentTab?.progress ?: 100) < 100
     var dragOffset by remember { mutableFloatStateOf(0f) }
 
@@ -131,143 +156,10 @@ fun FloatingAddressBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
+            .imePadding()
             .padding(horizontal = 14.dp, vertical = 12.dp),
         contentAlignment = Alignment.BottomCenter
     ) {
-        // Quick Search Suggestions Overlay when actively editing URL
-        AnimatedVisibility(
-            visible = isFocused,
-            enter = fadeIn() + slideInVertically { it / 4 },
-            exit = fadeOut() + slideOutVertically { it / 4 }
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 68.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .shadow(24.dp, RoundedCornerShape(24.dp), spotColor = Color.Black.copy(alpha = 0.8f)),
-                color = Color(0xF5161C26),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33FFFFFF))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = if (isPrivate) "Private Browsing Search" else "Smart Search Suggestions",
-                            color = if (isPrivate) GVONESecondary else GVONETextPrimary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Safari Pro",
-                            color = GVONETextSecondary,
-                            fontSize = 11.sp
-                        )
-                    }
-
-                    HorizontalDivider(color = Color(0x22FFFFFF), thickness = 0.5.dp)
-
-                    // Live Search Autocomplete item
-                    if (inputText.isNotBlank()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable {
-                                    focusManager.clearFocus()
-                                    onNavigate(inputText)
-                                }
-                                .padding(horizontal = 10.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.Search, contentDescription = null, tint = GVONEPrimary, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "Search for \"$inputText\"",
-                                    color = GVONETextPrimary,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "Google / DuckDuckGo Search",
-                                    color = GVONETextSecondary,
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
-                    }
-
-                    // Direct Search Engines Bar
-                    Text(
-                        text = "SEARCH ENGINES",
-                        color = GVONETextSecondary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                        modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        SafariEnginePill(
-                            name = "Google",
-                            color = Color(0xFF4285F4),
-                            onClick = {
-                                val query = inputText.ifBlank { "apple" }
-                                focusManager.clearFocus()
-                                onNavigate("https://www.google.com/search?q=${java.net.URLEncoder.encode(query, "UTF-8")}")
-                            }
-                        )
-                        SafariEnginePill(
-                            name = "DuckDuckGo",
-                            color = Color(0xFFDE5833),
-                            onClick = {
-                                val query = inputText.ifBlank { "top news" }
-                                focusManager.clearFocus()
-                                onNavigate("https://duckduckgo.com/?q=${java.net.URLEncoder.encode(query, "UTF-8")}")
-                            }
-                        )
-                        SafariEnginePill(
-                            name = "Wikipedia",
-                            color = Color(0xFF006699),
-                            onClick = {
-                                val query = inputText.ifBlank { "Safari web browser" }
-                                focusManager.clearFocus()
-                                onNavigate("https://en.wikipedia.org/wiki/Special:Search?search=${java.net.URLEncoder.encode(query, "UTF-8")}")
-                            }
-                        )
-                    }
-
-                    // Frequently Visited / Quick Shortcuts
-                    Text(
-                        text = "FREQUENTLY VISITED",
-                        color = GVONETextSecondary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                        modifier = Modifier.padding(top = 14.dp, bottom = 6.dp)
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        SafariQuickSiteChip(name = "Apple", url = "https://www.apple.com", onClick = { focusManager.clearFocus(); onNavigate("https://www.apple.com") })
-                        SafariQuickSiteChip(name = "Quanta", url = "https://www.quantamagazine.org", onClick = { focusManager.clearFocus(); onNavigate("https://www.quantamagazine.org") })
-                        SafariQuickSiteChip(name = "GitHub", url = "https://github.com", onClick = { focusManager.clearFocus(); onNavigate("https://github.com") })
-                        SafariQuickSiteChip(name = "HackerNews", url = "https://news.ycombinator.com", onClick = { focusManager.clearFocus(); onNavigate("https://news.ycombinator.com") })
-                    }
-                }
-            }
-        }
-
         // =========================================================================
         // EXACT THREE-PART SAFARI BOTTOM TOOLBAR:
         // [ 1. Left Circular Button ] --- [ 2. Center Elongated Pill ] --- [ 3. Right Circular Button ]
@@ -371,7 +263,18 @@ fun FloatingAddressBar(
                         )
                     }
                     .clickable {
+                        if (autoLoadEnabled && targetUrl.isNotBlank()) {
+                            val currentUrl = currentTab?.url.orEmpty()
+                            val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
+                            if (!currentUrl.contains(cleanTarget)) {
+                                onNavigate(targetUrl)
+                            }
+                        }
                         isFocused = true
+                        inputText = ""
+                        try {
+                            focusRequester.requestFocus()
+                        } catch (_: Exception) {}
                     }
                     .testTag("safari_address_pill"),
                 contentAlignment = Alignment.Center
@@ -379,26 +282,35 @@ fun FloatingAddressBar(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 14.dp),
+                        .padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Small website / search / lock icon on the left
-                    Icon(
-                        imageVector = if (isTorActive) Icons.Rounded.VpnKey else if (isHttps) Icons.Rounded.Lock else Icons.Rounded.Search,
-                        contentDescription = "Search / Security",
-                        tint = if (isTorActive) GVONETertiary else if (isHttps) GVONETertiary else GVONETextSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    // Control Toggle Button (Replaces Lock Icon)
+                    // Tapping opens the Quick Target Selection & Auto-load Settings dialog
+                    IconButton(
+                        onClick = { showTargetControlDialog = true },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("address_bar_control_toggle_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Tune,
+                            contentDescription = "Control & Target Website Settings",
+                            tint = if (autoLoadEnabled) GVONEPrimary else Color(0xFF8E9BAE),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     // SF Pro style typography for URL / Search placeholder
                     Box(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f),
                         contentAlignment = Alignment.CenterStart
                     ) {
                         BasicTextField(
-                            value = if (isFocused) inputText else (if (isInternalHomeUrl(currentTab?.url)) "" else displayHost),
+                            value = if (isFocused) inputText else (if (isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage) "" else displayHost),
                             onValueChange = {
                                 if (isFocused) {
                                     inputText = it
@@ -411,21 +323,28 @@ fun FloatingAddressBar(
                                     if (state.isFocused != isFocused) {
                                         isFocused = state.isFocused
                                         if (state.isFocused) {
-                                            inputText = if (isInternalHomeUrl(currentTab?.url)) "" else (currentTab?.url ?: "")
+                                            if (autoLoadEnabled && targetUrl.isNotBlank()) {
+                                                val currentUrl = currentTab?.url.orEmpty()
+                                                val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
+                                                if (!currentUrl.contains(cleanTarget)) {
+                                                    onNavigate(targetUrl)
+                                                }
+                                            }
+                                            inputText = ""
                                         }
                                     }
                                 }
                                 .testTag("address_bar_input"),
                             textStyle = TextStyle(
-                                color = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url))) Color(0xFF8E9BAE) else Color(0xFFE6EDF6),
+                                color = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage)) Color(0xFF8E9BAE) else Color(0xFFE6EDF6),
                                 fontSize = 14.sp,
-                                fontWeight = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url))) FontWeight.Normal else FontWeight.SemiBold
+                                fontWeight = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage)) FontWeight.Normal else FontWeight.SemiBold
                             ),
                             singleLine = true,
                             cursorBrush = SolidColor(if (isPrivate) GVONESecondary else GVONEPrimary),
                             keyboardOptions = KeyboardOptions(
                                 imeAction = ImeAction.Go,
-                                keyboardType = KeyboardType.Uri
+                                keyboardType = if (isBridgeActiveForCurrentPage) KeyboardType.Text else KeyboardType.Uri
                             ),
                             keyboardActions = KeyboardActions(
                                 onGo = {
@@ -435,18 +354,31 @@ fun FloatingAddressBar(
                                 }
                             ),
                             decorationBox = { innerTextField ->
-                                if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url))) {
-                                    Text(
-                                        text = displayHost,
-                                        color = Color(0xFF8E9BAE),
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                if (!isFocused) {
+                                    if (isBridgeActiveForCurrentPage) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = if (isPrivate) "Type to write (Private)..." else "Type to write / search...",
+                                                color = Color(0xFF94A3B8),
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    } else if (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url)) {
+                                        Text(
+                                            text = displayHost,
+                                            color = Color(0xFF8E9BAE),
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 } else if (isFocused && inputText.isEmpty()) {
                                     Text(
-                                        text = if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name",
+                                        text = if (isBridgeActiveForCurrentPage) "Type to write, prompt, or enter URL..." else if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name",
                                         color = Color(0xFF8E9BAE),
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Normal,
@@ -459,43 +391,24 @@ fun FloatingAddressBar(
                         )
                     }
 
-                    // Reload / Clear Icon inside the pill
-                    if (isFocused && inputText.isNotEmpty()) {
-                        IconButton(
-                            onClick = { inputText = "" },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Cancel,
-                                contentDescription = "Clear",
-                                tint = GVONETextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    } else if (isLoading) {
-                        IconButton(
-                            onClick = onReload,
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Stop",
-                                tint = GVONETextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    } else {
-                        IconButton(
-                            onClick = onReload,
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Refresh,
-                                contentDescription = "Reload",
-                                tint = Color(0xFF8E9BAE),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                    // Close / Return to Home button inside the central pill
+                    IconButton(
+                        onClick = {
+                            isFocused = false
+                            focusManager.clearFocus()
+                            inputText = ""
+                            onNavigate(HOME_WEB_APP_URL)
+                        },
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("address_bar_home_close_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Return to Home",
+                            tint = Color(0xFF8E9BAE),
+                            modifier = Modifier.size(17.dp)
+                        )
                     }
                 }
 
@@ -568,6 +481,281 @@ fun FloatingAddressBar(
             }
         }
     }
+
+    // Target Website & Address Bar Behavior Control Dialog
+    if (showTargetControlDialog && settings != null && onUpdateSettings != null) {
+        var tempUrl by remember(settings.autoLoadTargetUrl) { mutableStateOf(settings.autoLoadTargetUrl) }
+        var tempAutoLoad by remember(settings.autoLoadTargetOnFocus) { mutableStateOf(settings.autoLoadTargetOnFocus) }
+        var tempBridgeEnabled by remember(settings.bidirectionalBridgeEnabled) { mutableStateOf(settings.bidirectionalBridgeEnabled) }
+        var tempBridgeApplyToAll by remember(settings.bridgeApplyToAllWebsites) { mutableStateOf(settings.bridgeApplyToAllWebsites) }
+
+        val presetSites = listOf(
+            Pair("GVONE CharAssist", "https://charassist-c4uzg7hb.manus.space"),
+            Pair("RSS Group Feed", "https://rssgroupfeed-jaelvwfd.manus.space"),
+            Pair("DuckDuckGo", "https://duckduckgo.com"),
+            Pair("Google", "https://www.google.com"),
+            Pair("Brave Search", "https://search.brave.com")
+        )
+
+        AlertDialog(
+            onDismissRequest = { showTargetControlDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = null,
+                        tint = GVONEPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Address Bar & Bridge Controls", color = GVONETextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        text = "Configure the bidirectional bridge architecture, input router, and address bar behaviors.",
+                        color = GVONETextSecondary,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+
+                    // 1. Bidirectional Bridge / InputRouter Master Toggle
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1B2332),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (tempBridgeEnabled) GVONEPrimary.copy(alpha = 0.5f) else Color(0x33FFFFFF))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.SyncAlt,
+                                        contentDescription = null,
+                                        tint = if (tempBridgeEnabled) GVONEPrimary else Color(0xFF8E9BAE),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Bidirectional Bridge / InputRouter",
+                                        color = GVONETextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                Text(
+                                    text = "Directly route address queries to webpage input/chat without reloading",
+                                    color = GVONETextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Switch(
+                                checked = tempBridgeEnabled,
+                                onCheckedChange = { tempBridgeEnabled = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = GVONEPrimary
+                                )
+                            )
+                        }
+                    }
+
+                    // 2. Apply to All Websites (Universal Bridge) Toggle
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1B2332),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (tempBridgeApplyToAll && tempBridgeEnabled) GVONEPrimary.copy(alpha = 0.5f) else Color(0x33FFFFFF))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Language,
+                                        contentDescription = null,
+                                        tint = if (tempBridgeApplyToAll && tempBridgeEnabled) GVONEPrimary else Color(0xFF8E9BAE),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Apply Bridge to All Websites",
+                                        color = if (tempBridgeEnabled) GVONETextPrimary else Color(0xFF6B7A90),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                Text(
+                                    text = if (tempBridgeApplyToAll) "Active for all websites & AI web apps" else "Active only for trusted GVONE web apps",
+                                    color = GVONETextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Switch(
+                                checked = tempBridgeApplyToAll,
+                                enabled = tempBridgeEnabled,
+                                onCheckedChange = { tempBridgeApplyToAll = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = GVONEPrimary
+                                )
+                            )
+                        }
+                    }
+
+                    // 3. Auto-load on Tap Toggle
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1B2332),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33FFFFFF))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(
+                                    text = "Auto-load Target on Tap",
+                                    color = GVONETextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Automatically load target website when focusing address bar",
+                                    color = GVONETextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Switch(
+                                checked = tempAutoLoad,
+                                onCheckedChange = { tempAutoLoad = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = GVONEPrimary
+                                )
+                            )
+                        }
+                    }
+
+                    // 4. Target Website URL Input
+                    Column {
+                        Text(
+                            text = "TARGET WEBSITE URL",
+                            color = GVONEPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        OutlinedTextField(
+                            value = tempUrl,
+                            onValueChange = { tempUrl = it },
+                            placeholder = { Text("https://...", color = Color(0xFF6B7A90)) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color(0xFF161D2A),
+                                unfocusedContainerColor = Color(0xFF161D2A),
+                                focusedBorderColor = GVONEPrimary,
+                                unfocusedBorderColor = Color(0xFF2C394E),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("target_url_input_field")
+                        )
+                    }
+
+                    // 5. Preset Website Chips
+                    Column {
+                        Text(
+                            text = "QUICK PRESETS",
+                            color = GVONETextSecondary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            presetSites.take(3).forEach { (name, url) ->
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (tempUrl == url) GVONEPrimary.copy(alpha = 0.25f) else Color(0xFF1C2433),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (tempUrl == url) GVONEPrimary else Color(0x22FFFFFF)
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { tempUrl = url }
+                                ) {
+                                    Text(
+                                        text = name,
+                                        color = if (tempUrl == url) GVONEPrimary else Color(0xFFCCD6E5),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val finalUrl = if (tempUrl.isNotBlank() && !tempUrl.startsWith("http://") && !tempUrl.startsWith("https://")) {
+                            "https://$tempUrl"
+                        } else {
+                            tempUrl
+                        }
+                        onUpdateSettings(
+                            settings.copy(
+                                autoLoadTargetOnFocus = tempAutoLoad,
+                                autoLoadTargetUrl = finalUrl,
+                                bidirectionalBridgeEnabled = tempBridgeEnabled,
+                                bridgeApplyToAllWebsites = tempBridgeApplyToAll
+                            )
+                        )
+                        showTargetControlDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Save & Apply", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTargetControlDialog = false }) {
+                    Text("Cancel", color = GVONETextSecondary)
+                }
+            },
+            containerColor = Color(0xFF141923)
+        )
+    }
 }
 
 /**
@@ -623,55 +811,5 @@ fun SafariThreeDotsIcon(
         drawCircle(color = color, radius = radius, center = Offset(size.width / 2f - spacing, centerY))
         // Right dot
         drawCircle(color = color, radius = radius, center = Offset(size.width / 2f + spacing, centerY))
-    }
-}
-
-@Composable
-fun SafariEnginePill(
-    name: String,
-    color: Color,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = Color(0xFF222B3B),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0x33FFFFFF)),
-        modifier = Modifier.clickable { onClick() }
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(color)
-            )
-            Text(name, color = Color(0xFFE2E8F0), fontSize = 11.sp, fontWeight = FontWeight.Medium)
-        }
-    }
-}
-
-@Composable
-fun SafariQuickSiteChip(
-    name: String,
-    url: String,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = Color(0xFF1E2635),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0x22FFFFFF)),
-        modifier = Modifier.clickable { onClick() }
-    ) {
-        Text(
-            text = name,
-            color = Color(0xFFCCD6E5),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
-        )
     }
 }

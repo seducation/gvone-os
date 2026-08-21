@@ -3,13 +3,14 @@ package com.example.data.model
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-const val HOME_WEB_APP_URL = "https://charassist-c4uzg7hb.manus.space"
+const val HOME_WEB_APP_URL = "https://rssgroupfeed-jaelvwfd.manus.space"
+const val ADDRESS_BAR_TARGET_URL = "https://charassist-c4uzg7hb.manus.space"
 
 fun isInternalHomeUrl(url: String?): Boolean {
     if (url.isNullOrBlank()) return true
     if (url == "gvone://newtab") return true
     val lower = url.lowercase()
-    return lower.contains("charassist-c4uzg7hb.manus.space") || lower.contains("manus.space")
+    return lower.contains("rssgroupfeed-jaelvwfd.manus.space")
 }
 
 enum class TabSortOption {
@@ -119,7 +120,11 @@ data class BrowserSettings(
     val desktopSiteDefault: Boolean = false,
     val addressBarBottom: Boolean = true,
     val showQuickShortcuts: Boolean = true,
-    val aiSearchAutoTrigger: Boolean = true
+    val aiSearchAutoTrigger: Boolean = true,
+    val autoLoadTargetOnFocus: Boolean = true,
+    val autoLoadTargetUrl: String = ADDRESS_BAR_TARGET_URL,
+    val bidirectionalBridgeEnabled: Boolean = true,
+    val bridgeApplyToAllWebsites: Boolean = true
 )
 
 data class SourceCard(

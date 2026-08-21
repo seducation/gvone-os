@@ -112,6 +112,12 @@ fun BrowserApp(
                     isTorActive = settings.torEnabled,
                     torConnectionState = torStatus.state,
                     torLastError = torStatus.lastError,
+                    webAppBridge = viewModel.webAppBridge,
+                    bridgeEnabled = settings.bidirectionalBridgeEnabled,
+                    bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
+                    onRegisterWebView = { tabId, wv ->
+                        viewModel.registerWebView(tabId, wv)
+                    },
                     onRetryTor = { viewModel.retryTorConnection() },
                     onDisableTor = { viewModel.disableTorAndReload() },
                     onLaunchOrbot = launchOrbot,
@@ -158,6 +164,8 @@ fun BrowserApp(
                 tabCount = tabs.count { it.isPrivate == isPrivateMode },
                 isPrivate = isPrivateMode,
                 isTorActive = isTorActive,
+                settings = settings,
+                onUpdateSettings = { viewModel.updateSettings(it) },
                 onTabOverviewClick = { viewModel.openSheet(ActiveSheet.TabOverview) },
                 onActionsMenuClick = { viewModel.openSheet(ActiveSheet.SafariActions) },
                 onNavigate = { input -> viewModel.navigateTo(input) },

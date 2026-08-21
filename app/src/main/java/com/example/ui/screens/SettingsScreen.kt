@@ -49,6 +49,7 @@ fun SettingsScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showSearchEngineDialog by remember { mutableStateOf(false) }
     var showClearDataDialog by remember { mutableStateOf(false) }
+    var showTargetSiteDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -171,10 +172,54 @@ fun SettingsScreen(
             item {
                 SettingsSwitchItem(
                     icon = Icons.Rounded.Web,
-                    title = "Address bar",
+                    title = "Address bar position",
                     subtitle = if (settings.addressBarBottom) "Bottom floating pill" else "Top address bar",
                     checked = settings.addressBarBottom,
                     onCheckedChange = { onSettingsChanged(settings.copy(addressBarBottom = it)) }
+                )
+            }
+
+            // Auto-load target website on address bar tap
+            item {
+                SettingsSwitchItem(
+                    icon = Icons.Rounded.Tune,
+                    title = "Auto-load target website on tap",
+                    subtitle = "Instantly load the selected website when tapping address bar",
+                    checked = settings.autoLoadTargetOnFocus,
+                    onCheckedChange = { onSettingsChanged(settings.copy(autoLoadTargetOnFocus = it)) }
+                )
+            }
+
+            // Bidirectional bridge & input router
+            item {
+                SettingsSwitchItem(
+                    icon = Icons.Rounded.SyncAlt,
+                    title = "Bidirectional Bridge / InputRouter",
+                    subtitle = "Route address bar input directly into active web page chat/inputs",
+                    checked = settings.bidirectionalBridgeEnabled,
+                    onCheckedChange = { onSettingsChanged(settings.copy(bidirectionalBridgeEnabled = it)) }
+                )
+            }
+
+            // Universal bridge on all websites
+            item {
+                SettingsSwitchItem(
+                    icon = Icons.Rounded.Language,
+                    title = "Apply bridge to all websites",
+                    subtitle = "Enable bidirectional bridge & smart input routing across all websites",
+                    checked = settings.bridgeApplyToAllWebsites,
+                    enabled = settings.bidirectionalBridgeEnabled,
+                    onCheckedChange = { onSettingsChanged(settings.copy(bridgeApplyToAllWebsites = it)) }
+                )
+            }
+
+            // Target website URL configuration
+            item {
+                SettingsRowItem(
+                    icon = Icons.Rounded.Link,
+                    title = "Address bar target website",
+                    subtitle = settings.autoLoadTargetUrl.ifBlank { "Not configured" },
+                    onClick = { showTargetSiteDialog = true }
                 )
             }
 
@@ -309,6 +354,103 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showClearDataDialog = false }) {
+                    Text("Cancel", color = GVONETextSecondary)
+                }
+            },
+            containerColor = Color(0xFF141923)
+        )
+    }
+
+    // Target Website Selection / Configuration Dialog
+    if (showTargetSiteDialog) {
+        var tempTargetUrl by remember { mutableStateOf(settings.autoLoadTargetUrl) }
+        val presets = listOf(
+            Pair("GVONE CharAssist", "https://charassist-c4uzg7hb.manus.space"),
+            Pair("RSS Group Feed", "https://rssgroupfeed-jaelvwfd.manus.space"),
+            Pair("DuckDuckGo", "https://duckduckgo.com"),
+            Pair("Google", "https://www.google.com"),
+            Pair("Brave Search", "https://search.brave.com")
+        )
+
+        AlertDialog(
+            onDismissRequest = { showTargetSiteDialog = false },
+            title = { Text("Address Bar Target Website", color = GVONETextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Set the default website to load when the address pill is tapped.",
+                        color = GVONETextSecondary,
+                        fontSize = 13.sp
+                    )
+
+                    OutlinedTextField(
+                        value = tempTargetUrl,
+                        onValueChange = { tempTargetUrl = it },
+                        placeholder = { Text("https://example.com", color = Color(0xFF6B7A90)) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color(0xFF161D2A),
+                            unfocusedContainerColor = Color(0xFF161D2A),
+                            focusedBorderColor = GVONEPrimary,
+                            unfocusedBorderColor = Color(0xFF2C394E),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text(
+                        "QUICK PRESETS",
+                        color = GVONEPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    presets.forEach { (name, url) ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { tempTargetUrl = url },
+                            color = if (tempTargetUrl == url) GVONEPrimary.copy(alpha = 0.2f) else Color(0xFF161F2E)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = tempTargetUrl == url,
+                                    onClick = null
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(name, color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    Text(url, color = GVONETextSecondary, fontSize = 11.sp, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val finalUrl = if (tempTargetUrl.isNotBlank() && !tempTargetUrl.startsWith("http://") && !tempTargetUrl.startsWith("https://")) {
+                            "https://$tempTargetUrl"
+                        } else {
+                            tempTargetUrl
+                        }
+                        onSettingsChanged(settings.copy(autoLoadTargetUrl = finalUrl))
+                        showTargetSiteDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary)
+                ) {
+                    Text("Save", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTargetSiteDialog = false }) {
                     Text("Cancel", color = GVONETextSecondary)
                 }
             },
@@ -899,6 +1041,7 @@ fun SettingsSwitchItem(
     title: String,
     subtitle: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Surface(
@@ -919,17 +1062,27 @@ fun SettingsSwitchItem(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = GVONEPrimary,
+                    tint = if (enabled) GVONEPrimary else Color(0xFF6B7A90),
                     modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.width(14.dp))
                 Column {
-                    Text(title, color = GVONETextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Text(subtitle, color = GVONETextSecondary, fontSize = 12.sp)
+                    Text(
+                        title, 
+                        color = if (enabled) GVONETextPrimary else Color(0xFF6B7A90), 
+                        fontSize = 14.sp, 
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        subtitle, 
+                        color = if (enabled) GVONETextSecondary else Color(0xFF4A5568), 
+                        fontSize = 12.sp
+                    )
                 }
             }
             Switch(
                 checked = checked,
+                enabled = enabled,
                 onCheckedChange = onCheckedChange,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,

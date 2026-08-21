@@ -3,15 +3,18 @@ package com.example.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import android.webkit.CookieManager
+import android.webkit.WebView
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.ai.GVONEAIService
 import com.example.data.download.BrowserDownloadManager
 import com.example.data.model.*
 import com.example.data.repository.BrowserRepository
+import com.example.data.sync.*
 import com.example.data.tor.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.lang.ref.WeakReference
 import java.util.UUID
 
 sealed interface ActiveSheet {
@@ -39,6 +42,33 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val torManager = TorManager()
     val downloadManager = BrowserDownloadManager(application, repository)
     val aiService = GVONEAIService(torManager)
+
+    // Bridge for Browser <-> GVONE Search/Chat Web App Communication
+    val webAppBridge = GVONEWebAppBridge(
+        onStateChanged = { state ->
+            // state handled
+        },
+        onInputDelivered = { text, success ->
+            // input delivery status handled
+        }
+    )
+    val webAppConnectionState: StateFlow<WebAppConnectionState> = webAppBridge.connectionState
+
+    // Map of active WebViews by tabId
+    private val activeWebViews = mutableMapOf<String, WeakReference<WebView>>()
+
+    fun registerWebView(tabId: String, webView: WebView) {
+        activeWebViews[tabId] = WeakReference(webView)
+    }
+
+    fun unregisterWebView(tabId: String) {
+        activeWebViews.remove(tabId)
+    }
+
+    fun getActiveWebView(tabId: String? = null): WebView? {
+        val targetId = tabId ?: _currentTabId.value
+        return activeWebViews[targetId]?.get()
+    }
 
     // Tab State
     private val _tabs = MutableStateFlow<List<BrowserTab>>(emptyList())
@@ -148,6 +178,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val https = prefs.getBoolean("force_https", true)
         val addressBottom = prefs.getBoolean("address_bar_bottom", true)
         val aiAuto = prefs.getBoolean("ai_search_auto_trigger", true)
+        val autoLoad = prefs.getBoolean("auto_load_target_on_focus", true)
+        val autoTargetUrl = prefs.getString("auto_load_target_url", ADDRESS_BAR_TARGET_URL) ?: ADDRESS_BAR_TARGET_URL
+        val bridgeEnabled = prefs.getBoolean("bidirectional_bridge_enabled", true)
+        val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", true)
 
         return BrowserSettings(
             searchEngine = engine,
@@ -158,7 +192,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             torProxyHost = torHost,
             torProxyPort = torPort,
             addressBarBottom = addressBottom,
-            aiSearchAutoTrigger = aiAuto
+            aiSearchAutoTrigger = aiAuto,
+            autoLoadTargetOnFocus = autoLoad,
+            autoLoadTargetUrl = autoTargetUrl,
+            bidirectionalBridgeEnabled = bridgeEnabled,
+            bridgeApplyToAllWebsites = bridgeApplyAll
         )
     }
 
@@ -173,6 +211,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             .putBoolean("force_https", s.forceHttps)
             .putBoolean("address_bar_bottom", s.addressBarBottom)
             .putBoolean("ai_search_auto_trigger", s.aiSearchAutoTrigger)
+            .putBoolean("auto_load_target_on_focus", s.autoLoadTargetOnFocus)
+            .putString("auto_load_target_url", s.autoLoadTargetUrl)
+            .putBoolean("bidirectional_bridge_enabled", s.bidirectionalBridgeEnabled)
+            .putBoolean("bridge_apply_all_websites", s.bridgeApplyToAllWebsites)
             .apply()
     }
 
@@ -365,20 +407,51 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return
 
-        val isQuestion = trimmed.endsWith("?") || 
-            trimmed.startsWith("what", ignoreCase = true) ||
-            trimmed.startsWith("who", ignoreCase = true) ||
-            trimmed.startsWith("how", ignoreCase = true) ||
-            trimmed.startsWith("why", ignoreCase = true) ||
-            trimmed.startsWith("explain", ignoreCase = true)
+        val activeTab = currentTab.value
+        val routing = InputRouter.resolveRouting(
+            input = trimmed,
+            currentTabUrl = activeTab?.url,
+            isWebAppReady = webAppBridge.connectionState.value == WebAppConnectionState.READY ||
+                    webAppBridge.connectionState.value == WebAppConnectionState.PROCESSING,
+            inputRouterEnabled = _settings.value.bidirectionalBridgeEnabled,
+            bridgeApplyToAllWebsites = _settings.value.bridgeApplyToAllWebsites
+        )
 
-        if (_settings.value.searchEngine == SearchEngineType.GVONE && isQuestion && _settings.value.aiSearchAutoTrigger) {
-            performAISearch(trimmed)
-            return
+        when (routing) {
+            InputDestination.DELIVER_TO_WEB_APP -> {
+                val activeWebView = getActiveWebView(activeTab?.id)
+                val delivered = webAppBridge.deliverAddressBarInput(activeWebView, trimmed, action = "submit")
+                if (!delivered) {
+                    // Safe fallback if active WebView was missing or detached
+                    val destinationUrl = resolveUrlOrSearch(trimmed)
+                    loadUrlInCurrentTab(destinationUrl)
+                } else {
+                    // Successfully delivered input directly to the Web App without page reload/navigation!
+                    closeSheet()
+                }
+            }
+
+            InputDestination.NAVIGATE_URL -> {
+                val destinationUrl = InputRouter.formatNavigationUrl(trimmed)
+                loadUrlInCurrentTab(destinationUrl)
+            }
+
+            InputDestination.UNIVERSAL_SEARCH, InputDestination.AI_SEARCH -> {
+                val isQuestion = trimmed.endsWith("?") || 
+                    trimmed.startsWith("what", ignoreCase = true) ||
+                    trimmed.startsWith("who", ignoreCase = true) ||
+                    trimmed.startsWith("how", ignoreCase = true) ||
+                    trimmed.startsWith("why", ignoreCase = true) ||
+                    trimmed.startsWith("explain", ignoreCase = true)
+
+                if (_settings.value.searchEngine == SearchEngineType.GVONE && isQuestion && _settings.value.aiSearchAutoTrigger) {
+                    performAISearch(trimmed)
+                } else {
+                    val destinationUrl = resolveUrlOrSearch(trimmed)
+                    loadUrlInCurrentTab(destinationUrl)
+                }
+            }
         }
-
-        val destinationUrl = resolveUrlOrSearch(trimmed)
-        loadUrlInCurrentTab(destinationUrl)
     }
 
     fun performAISearch(query: String) {

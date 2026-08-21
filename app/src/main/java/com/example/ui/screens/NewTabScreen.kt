@@ -49,14 +49,14 @@ fun NewTabScreen(
     modifier: Modifier = Modifier
 ) {
     val shortcuts = listOf(
+        ShortcutItem("RSS Group Feed", "https://rssgroupfeed-jaelvwfd.manus.space", Icons.Rounded.RssFeed, Color(0xFFF59E0B)),
         ShortcutItem("Quanta Magazine", "https://www.quantamagazine.org", Icons.Rounded.AutoAwesome, Color(0xFF6366F1)),
         ShortcutItem("DuckDuckGo", "https://duckduckgo.com", Icons.Rounded.Search, Color(0xFFDE5833)),
         ShortcutItem("Wikipedia", "https://en.wikipedia.org", Icons.Rounded.MenuBook, Color(0xFF006699)),
         ShortcutItem("GitHub", "https://github.com", Icons.Rounded.Code, Color(0xFF8B5CF6)),
         ShortcutItem("Bloomberg", "https://www.bloomberg.com", Icons.Rounded.TrendingUp, Color(0xFF10B981)),
         ShortcutItem("Apple", "https://www.apple.com", Icons.Rounded.Devices, Color(0xFF06B6D4)),
-        ShortcutItem("Hacker News", "https://news.ycombinator.com", Icons.Rounded.Forum, Color(0xFFFF6600)),
-        ShortcutItem("Reddit", "https://www.reddit.com", Icons.Rounded.ChatBubbleOutline, Color(0xFFFF4500))
+        ShortcutItem("Hacker News", "https://news.ycombinator.com", Icons.Rounded.Forum, Color(0xFFFF6600))
     )
 
     val aiSuggestions = listOf(
