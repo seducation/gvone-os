@@ -343,14 +343,41 @@ fun FloatingAddressBar(
                             singleLine = true,
                             cursorBrush = SolidColor(if (isPrivate) GVONESecondary else GVONEPrimary),
                             keyboardOptions = KeyboardOptions(
-                                imeAction = ImeAction.Go,
+                                imeAction = ImeAction.Search,
                                 keyboardType = if (isBridgeActiveForCurrentPage) KeyboardType.Text else KeyboardType.Uri
                             ),
                             keyboardActions = KeyboardActions(
-                                onGo = {
+                                onSearch = {
+                                    val query = inputText.trim()
                                     isFocused = false
                                     focusManager.clearFocus()
-                                    onNavigate(inputText)
+                                    if (query.isNotEmpty()) {
+                                        onNavigate(query)
+                                    }
+                                },
+                                onSend = {
+                                    val query = inputText.trim()
+                                    isFocused = false
+                                    focusManager.clearFocus()
+                                    if (query.isNotEmpty()) {
+                                        onNavigate(query)
+                                    }
+                                },
+                                onGo = {
+                                    val query = inputText.trim()
+                                    isFocused = false
+                                    focusManager.clearFocus()
+                                    if (query.isNotEmpty()) {
+                                        onNavigate(query)
+                                    }
+                                },
+                                onDone = {
+                                    val query = inputText.trim()
+                                    isFocused = false
+                                    focusManager.clearFocus()
+                                    if (query.isNotEmpty()) {
+                                        onNavigate(query)
+                                    }
                                 }
                             ),
                             decorationBox = { innerTextField ->

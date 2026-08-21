@@ -1,12 +1,19 @@
 package com.example.ui.components
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Message
+import android.os.SystemClock
+import android.text.InputType
+import android.view.KeyEvent
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputConnectionWrapper
 import android.webkit.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -83,7 +90,8 @@ fun GVONEWebView(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
-                    WebView(context).apply {
+                    GVONEActionWebView(context).apply {
+                        isBridgeActive = bridgeEnabled && (bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url))
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
@@ -123,6 +131,16 @@ fun GVONEWebView(
                                 loadProgress = newProgress
                                 isLoading = newProgress < 100
                                 onProgressChanged(newProgress)
+                                if (newProgress >= 20) {
+                                    view?.let { wv ->
+                                        webAppBridge?.injectBridgeRuntime(
+                                            wv,
+                                            lastLoadedUrl ?: tab.url,
+                                            enabled = bridgeEnabled,
+                                            applyToAll = bridgeApplyToAll
+                                        )
+                                    }
+                                }
                             }
 
                             override fun onReceivedTitle(view: WebView?, title: String?) {
@@ -256,6 +274,9 @@ fun GVONEWebView(
                 },
                 update = { webView ->
                     webViewInstance = webView
+                    if (webView is GVONEActionWebView) {
+                        webView.isBridgeActive = bridgeEnabled && (bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url))
+                    }
                     onRegisterWebView?.invoke(tab.id, webView)
 
                     val targetUA = if (tab.desktopMode) {
@@ -467,5 +488,111 @@ private fun TorFailClosedErrorScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Custom WebView that intercepts IME input connection setup to enforce Search / Send action keys
+ * on Android soft keyboards (Gboard, Samsung Keyboard, etc.) rather than generic Next/Arrow keys.
+ */
+class GVONEActionWebView(context: Context) : WebView(context) {
+    var isBridgeActive: Boolean = true
+
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+        val originalConnection = super.onCreateInputConnection(outAttrs)
+        if (originalConnection != null) {
+            if (isBridgeActive) {
+                // Strip Next, None, and Previous actions that show the side-arrow / next key
+                outAttrs.imeOptions = (outAttrs.imeOptions and (
+                    EditorInfo.IME_ACTION_NEXT.inv() and
+                    EditorInfo.IME_ACTION_NONE.inv() and
+                    EditorInfo.IME_ACTION_PREVIOUS.inv() and
+                    EditorInfo.IME_ACTION_UNSPECIFIED.inv() and
+                    EditorInfo.IME_MASK_ACTION.inv()
+                )) or EditorInfo.IME_ACTION_SEARCH or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+
+                // Ensure single-line search/send semantics so Enter executes submission rather than line breaks
+                outAttrs.inputType = (outAttrs.inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE.inv()) or InputType.TYPE_CLASS_TEXT
+            }
+            return GVONESearchInputConnection(originalConnection, true, this)
+        }
+        return originalConnection
+    }
+}
+
+/**
+ * Wrapper for InputConnection that directs mobile keyboard Search/Send/Go/Enter actions
+ * straight to the web app's unified submission pipeline.
+ */
+class GVONESearchInputConnection(
+    target: InputConnection,
+    mutable: Boolean,
+    private val webView: WebView
+) : InputConnectionWrapper(target, mutable) {
+
+    override fun performEditorAction(editorAction: Int): Boolean {
+        if (editorAction == EditorInfo.IME_ACTION_SEARCH ||
+            editorAction == EditorInfo.IME_ACTION_SEND ||
+            editorAction == EditorInfo.IME_ACTION_GO ||
+            editorAction == EditorInfo.IME_ACTION_DONE ||
+            editorAction == EditorInfo.IME_ACTION_UNSPECIFIED) {
+
+            webView.evaluateJavascript(
+                """
+                (function() {
+                    if (window.__GVONE_EXECUTE_SUBMIT__) {
+                        window.__GVONE_EXECUTE_SUBMIT__(null, 'ime_action');
+                    } else {
+                        var targetInput = document.activeElement || document.querySelector('textarea:not([disabled]), input[type="search"]:not([disabled]), input[type="text"]:not([disabled]), input:not([type]):not([disabled]), [contenteditable="true"]');
+                        if (targetInput) {
+                            var form = targetInput.form || targetInput.closest('form');
+                            var btn = (form || document).querySelector('button[type="submit"], button[aria-label*="send" i], button[aria-label*="search" i], button[aria-label*="submit" i], button[data-testid*="send" i]');
+                            if (btn) {
+                                btn.click();
+                            } else if (form) {
+                                if (typeof form.requestSubmit === 'function') form.requestSubmit();
+                                else form.submit();
+                            }
+                            ['keydown', 'keypress', 'keyup'].forEach(function(evtName) {
+                                targetInput.dispatchEvent(new KeyboardEvent(evtName, {
+                                    key: 'Enter',
+                                    code: 'Enter',
+                                    keyCode: 13,
+                                    which: 13,
+                                    charCode: 13,
+                                    bubbles: true,
+                                    cancelable: true,
+                                    composed: true
+                                }));
+                            });
+                        }
+                    }
+                })();
+                """.trimIndent(),
+                null
+            )
+            val now = SystemClock.uptimeMillis()
+            webView.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0))
+            webView.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0))
+            super.performEditorAction(editorAction)
+            return true
+        }
+        return super.performEditorAction(editorAction)
+    }
+
+    override fun sendKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
+            webView.evaluateJavascript(
+                """
+                (function() {
+                    if (window.__GVONE_EXECUTE_SUBMIT__) {
+                        window.__GVONE_EXECUTE_SUBMIT__(null, 'key_enter');
+                    }
+                })();
+                """.trimIndent(),
+                null
+            )
+        }
+        return super.sendKeyEvent(event)
     }
 }

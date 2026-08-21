@@ -310,8 +310,40 @@ class GVONEWebAppBridge(
                     isProcessing: false
                 };
 
+                // React/Vue/Angular controlled input value helper
+                function setNativeInputValue(el, value) {
+                    if (!el) return;
+                    try {
+                        if (el.isContentEditable) {
+                            el.innerText = value;
+                            el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                            return;
+                        }
+                        var prototype = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+                        var descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+                        if (descriptor && descriptor.set) {
+                            descriptor.set.call(el, value);
+                        } else {
+                            el.value = value;
+                        }
+                        el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                    } catch (e) {
+                        try {
+                            el.value = value;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                        } catch (err) {}
+                    }
+                }
+
                 // Helper to find the primary search/chat input on the page
                 function findPrimarySearchChatInput() {
+                    var focused = document.activeElement;
+                    if (focused && (focused.tagName === 'INPUT' || focused.tagName === 'TEXTAREA' || focused.isContentEditable)) {
+                        return focused;
+                    }
                     return document.querySelector(
                         'input[type="search"]:not([disabled]), ' +
                         'textarea:not([disabled]), ' +
@@ -324,15 +356,27 @@ class GVONEWebAppBridge(
                 // Helper to find the matching send/submit/search button
                 function findSubmitButton(inputEl) {
                     if (inputEl && inputEl.form) {
-                        var formBtn = inputEl.form.querySelector('button[type="submit"], input[type="submit"]');
+                        var formBtn = inputEl.form.querySelector('button[type="submit"], input[type="submit"], button:not([disabled])');
                         if (formBtn) return formBtn;
                     }
+                    if (inputEl) {
+                        var container = inputEl.closest('form, [role="search"], [role="region"], .input-container, .search-container, .chat-input-wrapper, fieldset, div');
+                        if (container) {
+                            var nearbyBtn = container.querySelector(
+                                'button[aria-label*="send" i], button[aria-label*="search" i], button[aria-label*="submit" i], button[aria-label*="ask" i], button[aria-label*="prompt" i], ' +
+                                'button[data-testid*="send" i], button[data-testid*="submit" i], button[data-testid*="search" i], ' +
+                                'button[title*="send" i], button[title*="search" i], button[title*="submit" i], ' +
+                                'button.send-btn, button.send-button, button.submit-btn, button.search-btn, ' +
+                                'button[type="submit"], [role="button"][aria-label*="send" i], [role="button"][aria-label*="search" i]'
+                            );
+                            if (nearbyBtn) return nearbyBtn;
+                        }
+                    }
                     return document.querySelector(
-                        'button[type="submit"], ' +
-                        'button[aria-label*="send" i], button[title*="send" i], ' +
-                        'button[aria-label*="search" i], button[title*="search" i], ' +
-                        'button[aria-label*="submit" i], button[title*="submit" i], ' +
-                        'button.send-button, button.submit-btn, button.search-button, ' +
+                        'button[data-testid*="send" i], button[data-testid*="submit" i], button[data-testid*="search" i], ' +
+                        'button[aria-label*="send" i], button[aria-label*="search" i], button[aria-label*="submit" i], button[aria-label*="ask" i], ' +
+                        'button[title*="send" i], button[title*="search" i], button[title*="submit" i], ' +
+                        'button.send-button, button.submit-btn, button.search-button, button[type="submit"], input[type="submit"], ' +
                         '[role="button"][aria-label*="send" i], [role="button"][aria-label*="search" i]'
                     );
                 }
@@ -381,7 +425,7 @@ class GVONEWebAppBridge(
                     }, true);
                 }
 
-                // Global unified submit handler with request deduplication
+                // Global unified submit handler with multi-strategy execution
                 window.__GVONE_EXECUTE_SUBMIT__ = function(targetInput, triggerSource) {
                     try {
                         var inputEl = targetInput || findPrimarySearchChatInput();
@@ -392,8 +436,9 @@ class GVONEWebAppBridge(
                         currentText = currentText.trim();
 
                         var now = Date.now();
-                        // Deduplication: prevent firing twice within 600ms for exact same text
-                        if (now - window.__GVONE_SUBMIT_STATE__.lastSubmitTime < 600 && 
+                        // Deduplication: only debounce rapid repeated triggers of exact same text within 300ms
+                        if (triggerSource !== 'address_bar_bridge' &&
+                            now - window.__GVONE_SUBMIT_STATE__.lastSubmitTime < 300 && 
                             window.__GVONE_SUBMIT_STATE__.lastSubmitText === currentText &&
                             currentText.length > 0) {
                             console.log('[GVONE Bridge] Debounced duplicate submission from:', triggerSource);
@@ -406,7 +451,16 @@ class GVONEWebAppBridge(
 
                         console.log('[GVONE Bridge] Executing submission via:', triggerSource, 'text:', currentText);
 
-                        // 1. If web app exposes a custom submission handler, invoke it
+                        // 1. Dispatch unified CustomEvents on window and document
+                        var submitEvt = new CustomEvent('gvone:submit', {
+                            detail: { text: currentText, source: triggerSource },
+                            bubbles: true,
+                            cancelable: true
+                        });
+                        window.dispatchEvent(submitEvt);
+                        document.dispatchEvent(submitEvt);
+
+                        // 2. If web app exposes a custom submission handler, invoke it
                         if (typeof window.onGVONEBrowserSubmit === 'function') {
                             window.onGVONEBrowserSubmit({ text: currentText, source: triggerSource });
                             if (window.GVONEBrowserBridge) {
@@ -415,47 +469,55 @@ class GVONEWebAppBridge(
                             return true;
                         }
 
-                        // 2. Click the matching Send / Search button
+                        var submitted = false;
+
+                        // 3. Click the matching Send / Search button
                         var sendBtn = findSubmitButton(inputEl);
                         if (sendBtn && !sendBtn.disabled) {
-                            sendBtn.click();
-                            if (window.GVONEBrowserBridge) {
-                                window.GVONEBrowserBridge.notifyState('processing');
-                            }
-                            return true;
+                            try {
+                                sendBtn.click();
+                                submitted = true;
+                            } catch (e) {}
                         }
 
-                        // 3. If enclosed in a form, submit the form
+                        // 4. If enclosed in a form, submit the form
                         if (inputEl && inputEl.form) {
-                            if (typeof inputEl.form.requestSubmit === 'function') {
-                                inputEl.form.requestSubmit();
-                            } else {
-                                inputEl.form.submit();
-                            }
-                            if (window.GVONEBrowserBridge) {
-                                window.GVONEBrowserBridge.notifyState('processing');
-                            }
-                            return true;
+                            try {
+                                if (typeof inputEl.form.requestSubmit === 'function') {
+                                    inputEl.form.requestSubmit();
+                                    submitted = true;
+                                } else {
+                                    inputEl.form.submit();
+                                    submitted = true;
+                                }
+                            } catch (e) {}
                         }
 
-                        // 4. Dispatch synthetic Enter event to trigger web app framework listeners
+                        // 5. Dispatch synthetic Enter events (keydown, keypress, keyup) for modern SPA frameworks (React/Vue/AI chats)
                         if (inputEl) {
-                            var enterEvent = new KeyboardEvent('keydown', {
-                                key: 'Enter',
-                                code: 'Enter',
-                                keyCode: 13,
-                                which: 13,
-                                bubbles: true,
-                                cancelable: true
+                            ['keydown', 'keypress', 'keyup'].forEach(function(evtName) {
+                                try {
+                                    var evt = new KeyboardEvent(evtName, {
+                                        key: 'Enter',
+                                        code: 'Enter',
+                                        keyCode: 13,
+                                        which: 13,
+                                        charCode: 13,
+                                        bubbles: true,
+                                        cancelable: true,
+                                        composed: true
+                                    });
+                                    inputEl.dispatchEvent(evt);
+                                    submitted = true;
+                                } catch (e) {}
                             });
-                            inputEl.dispatchEvent(enterEvent);
-                            if (window.GVONEBrowserBridge) {
-                                window.GVONEBrowserBridge.notifyState('processing');
-                            }
-                            return true;
                         }
 
-                        return false;
+                        if (window.GVONEBrowserBridge) {
+                            window.GVONEBrowserBridge.notifyState('processing');
+                        }
+
+                        return submitted;
                     } catch (err) {
                         console.error('[GVONE Bridge] Error during submission execution:', err);
                         return false;
@@ -495,29 +557,23 @@ class GVONEWebAppBridge(
                                     success: true
                                 }));
                             }
+                            if (action === 'submit') {
+                                window.__GVONE_EXECUTE_SUBMIT__(null, 'address_bar_bridge');
+                            }
                             return true;
                         }
 
-                        // 4. Universal Fallback: Inject into chat/search input and trigger submit or keep focused
+                        // 4. Universal Fallback: Inject into chat/search input and trigger submit
                         var targetInput = findPrimarySearchChatInput();
                         if (targetInput) {
                             configureSearchChatInput(targetInput);
-                            
                             targetInput.focus();
-                            if (targetInput.isContentEditable) {
-                                targetInput.innerText = text;
-                            } else {
-                                targetInput.value = text;
-                            }
-
-                            // Trigger framework reactive state updates
-                            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+                            setNativeInputValue(targetInput, text);
 
                             if (action === 'submit') {
                                 setTimeout(function() {
                                     window.__GVONE_EXECUTE_SUBMIT__(targetInput, 'address_bar_bridge');
-                                }, 50);
+                                }, 30);
                             }
 
                             if (window.GVONEBrowserBridge) {
@@ -589,10 +645,9 @@ class GVONEWebAppBridge(
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return false
 
-        // Prevent duplicate rapid submissions (debounce 500ms for exact same text)
         val now = System.currentTimeMillis()
-        if (now - lastSubmissionTimestamp < 500 && _lastDeliveredText.value == trimmed) {
-            Log.d(TAG, "Skipping duplicate submission: $trimmed")
+        if (action != "submit" && now - lastSubmissionTimestamp < 300 && _lastDeliveredText.value == trimmed) {
+            Log.d(TAG, "Skipping duplicate input sync: $trimmed")
             return true
         }
 
@@ -623,13 +678,48 @@ class GVONEWebAppBridge(
                             payload: data
                         }, '*');
                         
-                        var targetInput = document.querySelector('textarea, input[type="text"], input[type="search"]');
+                        var targetInput = document.querySelector('textarea:not([disabled]), input[type="search"]:not([disabled]), input[type="text"]:not([disabled]), input:not([type]):not([disabled]), [contenteditable="true"]');
                         if (targetInput) {
-                            targetInput.value = data.text;
-                            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
-                            var sendButton = document.querySelector('button[type="submit"], button[aria-label*="send" i]');
-                            if (sendButton) sendButton.click();
+                            targetInput.focus();
+                            try {
+                                if (targetInput.isContentEditable) {
+                                    targetInput.innerText = data.text;
+                                } else {
+                                    var proto = targetInput.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+                                    var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                                    if (desc && desc.set) desc.set.call(targetInput, data.text);
+                                    else targetInput.value = data.text;
+                                }
+                                targetInput.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                                targetInput.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+                            } catch (e) {
+                                targetInput.value = data.text;
+                            }
+
+                            if (data.action === 'submit') {
+                                setTimeout(function() {
+                                    var form = targetInput.form || targetInput.closest('form');
+                                    var btn = (form || document).querySelector('button[type="submit"], button[aria-label*="send" i], button[aria-label*="search" i], button[aria-label*="submit" i], button[data-testid*="send" i]');
+                                    if (btn) {
+                                        btn.click();
+                                    } else if (form) {
+                                        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+                                        else form.submit();
+                                    }
+                                    ['keydown', 'keypress', 'keyup'].forEach(function(evtName) {
+                                        targetInput.dispatchEvent(new KeyboardEvent(evtName, {
+                                            key: 'Enter',
+                                            code: 'Enter',
+                                            keyCode: 13,
+                                            which: 13,
+                                            charCode: 13,
+                                            bubbles: true,
+                                            cancelable: true,
+                                            composed: true
+                                        }));
+                                    });
+                                }, 30);
+                            }
                             return true;
                         }
                         return false;
