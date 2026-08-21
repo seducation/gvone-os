@@ -43,6 +43,7 @@ fun GVONEWebView(
     onDisableTor: () -> Unit = {},
     onLaunchOrbot: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     onTitleChanged: (String) -> Unit,
     onUrlChanged: (String) -> Unit,
     onFaviconChanged: (String?) -> Unit,
@@ -70,6 +71,7 @@ fun GVONEWebView(
                 onDisableTor = onDisableTor,
                 onLaunchOrbot = onLaunchOrbot,
                 onOpenSettings = onOpenSettings,
+                onOpenDiagnostics = onOpenDiagnostics,
                 modifier = Modifier.fillMaxSize()
             )
         } else {
@@ -282,6 +284,7 @@ private fun TorFailClosedErrorScreen(
     onDisableTor: () -> Unit,
     onLaunchOrbot: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -358,7 +361,26 @@ private fun TorFailClosedErrorScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Diagnostic Action: Run Full Network Diagnostic
+            Button(
+                onClick = onOpenDiagnostics,
+                modifier = Modifier.fillMaxWidth().testTag("tor_failclosed_diagnostics_btn"),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(vertical = 10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Troubleshoot,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Run Network Diagnostic", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Primary Actions: Launch Orbot & Retry
             Row(

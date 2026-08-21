@@ -40,6 +40,7 @@ fun SettingsScreen(
     onToggleTor: () -> Unit = {},
     onTestTor: () -> Unit = {},
     onRetryTor: () -> Unit = {},
+    onOpenTorDiagnostics: () -> Unit = {},
     onSettingsChanged: (BrowserSettings) -> Unit,
     onClearBrowsingData: () -> Unit,
     onBack: () -> Unit,
@@ -138,6 +139,7 @@ fun SettingsScreen(
                     onToggleTor = onToggleTor,
                     onTestTor = onTestTor,
                     onRetryTor = onRetryTor,
+                    onOpenTorDiagnostics = onOpenTorDiagnostics,
                     onUpdateProxyConfig = { host, port ->
                         onSettingsChanged(settings.copy(torProxyHost = host, torProxyPort = port))
                     }
@@ -331,6 +333,7 @@ fun TorControlCard(
     onToggleTor: () -> Unit,
     onTestTor: () -> Unit,
     onRetryTor: () -> Unit,
+    onOpenTorDiagnostics: () -> Unit = {},
     onUpdateProxyConfig: (host: String, port: Int) -> Unit = { _, _ -> }
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -527,16 +530,37 @@ fun TorControlCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (isEnabled) {
-                    // "Test TOR Connection" Action Button
+                    // "Network Diagnostic" Action Button
                     Button(
+                        onClick = onOpenTorDiagnostics,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("open_tor_diagnostics_btn"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF7C3AED),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(vertical = 10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Troubleshoot,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Diagnostics", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // "Test TOR Connection" Action Button
+                    OutlinedButton(
                         onClick = onTestTor,
                         enabled = !isTorTesting,
                         modifier = Modifier
                             .weight(1f)
                             .testTag("test_tor_connection_btn"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = GVONESecondary.copy(alpha = 0.85f),
-                            contentColor = Color.Black
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = GVONESecondary
                         ),
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(vertical = 10.dp)
@@ -544,19 +568,19 @@ fun TorControlCard(
                         if (isTorTesting) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
-                                color = Color.Black,
+                                color = GVONESecondary,
                                 strokeWidth = 2.dp
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Testing…", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Testing…", fontSize = 12.sp)
                         } else {
                             Icon(
                                 imageVector = Icons.Rounded.NetworkCheck,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Test Connection", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Test Route", fontSize = 12.sp)
                         }
                     }
                 }
@@ -574,8 +598,8 @@ fun TorControlCard(
                         modifier = Modifier.size(16.dp),
                         tint = GVONEPrimary
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Proxy Config (${settings.torProxyPort})", fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Config (${settings.torProxyPort})", fontSize = 12.sp)
                 }
             }
 

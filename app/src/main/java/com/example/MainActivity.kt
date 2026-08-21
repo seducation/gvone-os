@@ -70,6 +70,8 @@ fun BrowserApp(
     val findQuery by viewModel.findQuery.collectAsStateWithLifecycle()
     val findIndex by viewModel.findCurrentIndex.collectAsStateWithLifecycle()
     val findCount by viewModel.findMatchCount.collectAsStateWithLifecycle()
+    val diagnosticReport by viewModel.diagnosticReport.collectAsStateWithLifecycle()
+    val isDiagnosing by viewModel.isDiagnosing.collectAsStateWithLifecycle()
 
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
@@ -114,6 +116,7 @@ fun BrowserApp(
                     onDisableTor = { viewModel.disableTorAndReload() },
                     onLaunchOrbot = launchOrbot,
                     onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
+                    onOpenDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
                     onTitleChanged = { title ->
                         viewModel.updateCurrentTabState(title = title)
                     },
@@ -217,9 +220,23 @@ fun BrowserApp(
                 onToggleTor = { viewModel.toggleTor() },
                 onTestTor = { viewModel.testTorConnection() },
                 onRetryTor = { viewModel.retryTorConnection() },
+                onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
                 onSettingsChanged = { viewModel.updateSettings(it) },
                 onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onBack = { viewModel.closeSheet() }
+            )
+        }
+
+        // Tor Network Diagnostics Bottom Sheet
+        if (activeSheet == ActiveSheet.TorDiagnostics) {
+            TorDiagnosticsSheet(
+                report = diagnosticReport,
+                isDiagnosing = isDiagnosing,
+                settings = settings,
+                onRunDiagnostics = { viewModel.runTorDiagnostics() },
+                onApplyFix = { fix -> viewModel.applyDiagnosticFix(fix) },
+                onReapplyProxy = { viewModel.forceReapplyWebViewProxy() },
+                onClose = { viewModel.closeSheet() }
             )
         }
 

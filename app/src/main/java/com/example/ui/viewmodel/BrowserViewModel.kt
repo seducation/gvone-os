@@ -9,9 +9,7 @@ import com.example.data.ai.GVONEAIService
 import com.example.data.download.BrowserDownloadManager
 import com.example.data.model.*
 import com.example.data.repository.BrowserRepository
-import com.example.data.tor.TorConnectionState
-import com.example.data.tor.TorManager
-import com.example.data.tor.TorTestResult
+import com.example.data.tor.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -32,6 +30,7 @@ sealed interface ActiveSheet {
     object SiteInfo : ActiveSheet
     object FindInPage : ActiveSheet
     object AISearchResult : ActiveSheet
+    object TorDiagnostics : ActiveSheet
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -87,6 +86,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val torStatus = torManager.torStatus
     val torTestResult: StateFlow<TorTestResult?> = torManager.testResult
     val isTorTesting: StateFlow<Boolean> = torManager.isTesting
+    val diagnosticReport: StateFlow<TorDiagnosticReport?> = torManager.diagnosticReport
+    val isDiagnosing: StateFlow<Boolean> = torManager.isDiagnosing
 
     val currentTab: StateFlow<BrowserTab?> = combine(_tabs, _currentTabId) { tabsList, currentId ->
         tabsList.find { it.id == currentId } ?: tabsList.firstOrNull()
@@ -448,6 +449,44 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun retryTorConnection() {
         viewModelScope.launch {
             torManager.reconnect(host = _settings.value.torProxyHost, port = _settings.value.torProxyPort)
+        }
+    }
+
+    fun runTorDiagnostics() {
+        viewModelScope.launch {
+            torManager.runDetailedDiagnostics(
+                host = _settings.value.torProxyHost,
+                port = _settings.value.torProxyPort
+            )
+        }
+    }
+
+    fun forceReapplyWebViewProxy() {
+        torManager.configureWebViewProxy(_settings.value.torProxyHost, _settings.value.torProxyPort)
+    }
+
+    fun applyDiagnosticFix(fix: String) {
+        when {
+            fix.startsWith("SWITCH_PORT_") -> {
+                val port = fix.removePrefix("SWITCH_PORT_").toIntOrNull() ?: 9050
+                val updated = _settings.value.copy(torProxyPort = port, torEnabled = true)
+                updateSettings(updated)
+                runTorDiagnostics()
+            }
+            fix == "REAPPLY_PROXY" -> {
+                forceReapplyWebViewProxy()
+                runTorDiagnostics()
+            }
+            fix == "NEW_CIRCUIT" -> {
+                viewModelScope.launch {
+                    torManager.newIdentity()
+                    torManager.testTorConnection()
+                    runTorDiagnostics()
+                }
+            }
+            fix == "DISABLE_TOR" -> {
+                disableTorAndReload()
+            }
         }
     }
 
