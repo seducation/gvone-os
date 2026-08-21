@@ -104,32 +104,34 @@ fun BrowserApp(
     ) {
         // Main Browser View Area
         if (currentTab != null) {
-            GVONEWebView(
-                tab = currentTab!!,
-                isTorActive = settings.torEnabled,
-                torConnectionState = torStatus.state,
-                torLastError = torStatus.lastError,
-                onRetryTor = { viewModel.retryTorConnection() },
-                onDisableTor = { viewModel.disableTorAndReload() },
-                onLaunchOrbot = launchOrbot,
-                onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
-                onTitleChanged = { title ->
-                    viewModel.updateCurrentTabState(title = title)
-                },
-                onUrlChanged = { url ->
-                    viewModel.updateCurrentTabState(url = url)
-                },
-                onFaviconChanged = { favicon ->
-                    viewModel.updateCurrentTabState(faviconUrl = favicon)
-                },
-                onProgressChanged = { progress ->
-                    viewModel.updateCurrentTabState(progress = progress, isLoading = progress < 100)
-                },
-                onStartDownload = { url, userAgent, contentDisposition, mimeType ->
-                    // Trigger download via DownloadManager
-                },
-                modifier = Modifier.fillMaxSize()
-            )
+            key(currentTab!!.id) {
+                GVONEWebView(
+                    tab = currentTab!!,
+                    isTorActive = settings.torEnabled,
+                    torConnectionState = torStatus.state,
+                    torLastError = torStatus.lastError,
+                    onRetryTor = { viewModel.retryTorConnection() },
+                    onDisableTor = { viewModel.disableTorAndReload() },
+                    onLaunchOrbot = launchOrbot,
+                    onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
+                    onTitleChanged = { title ->
+                        viewModel.updateCurrentTabState(title = title)
+                    },
+                    onUrlChanged = { url ->
+                        viewModel.updateCurrentTabState(url = url)
+                    },
+                    onFaviconChanged = { favicon ->
+                        viewModel.updateCurrentTabState(faviconUrl = favicon)
+                    },
+                    onProgressChanged = { progress ->
+                        viewModel.updateCurrentTabState(progress = progress, isLoading = progress < 100)
+                    },
+                    onStartDownload = { url, userAgent, contentDisposition, mimeType ->
+                        // Trigger download via DownloadManager
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         // Top Find in Page Bar if active

@@ -1,10 +1,14 @@
 package com.example.ui.components
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.net.http.SslError
+import android.os.Message
 import android.view.ViewGroup
 import android.webkit.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -17,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,9 +50,16 @@ fun GVONEWebView(
     onStartDownload: (url: String, userAgent: String?, contentDisposition: String?, mimeType: String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var loadProgress by remember { mutableStateOf(0) }
+    var loadProgress by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(false) }
     var webViewError by remember { mutableStateOf<String?>(null) }
+    var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+    var lastLoadedUrl by remember(tab.id) { mutableStateOf<String?>(null) }
+
+    // Intercept back button when the webview can navigate backward
+    BackHandler(enabled = webViewInstance?.canGoBack() == true) {
+        webViewInstance?.goBack()
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         // When Tor is enabled and has connection failure, fail closed to prevent leaking cleartext traffic
@@ -73,6 +85,12 @@ fun GVONEWebView(
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
+                            databaseEnabled = true
+                            mediaPlaybackRequiresUserGesture = false
+                            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                            setSupportMultipleWindows(false)
+                            javaScriptCanOpenWindowsAutomatically = true
+                            cacheMode = WebSettings.LOAD_DEFAULT
                             loadWithOverviewMode = true
                             useWideViewPort = true
                             builtInZoomControls = true
@@ -112,28 +130,89 @@ fun GVONEWebView(
                             ) {
                                 callback?.invoke(origin, false, false)
                             }
+
+                            override fun onCreateWindow(
+                                view: WebView?,
+                                isDialog: Boolean,
+                                isUserGesture: Boolean,
+                                resultMsg: Message?
+                            ): Boolean {
+                                val href = view?.handler?.obtainMessage()
+                                view?.requestFocusNodeHref(href)
+                                val url = href?.data?.getString("url")
+                                if (!url.isNullOrBlank()) {
+                                    view.loadUrl(url)
+                                    return true
+                                }
+                                return false
+                            }
                         }
 
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                val url = request?.url?.toString() ?: return false
+                                val uri = request?.url ?: return false
+                                val url = uri.toString()
+                                
+                                // Standard HTTP/HTTPS links: let the WebView navigate internally without intercepting
                                 if (url.startsWith("http://") || url.startsWith("https://")) {
-                                    onUrlChanged(url)
                                     return false
                                 }
+
+                                // External schemes (intent://, market://, tel:, mailto:, vnd.youtube:, etc.)
+                                try {
+                                    val context = view?.context ?: return true
+                                    if (url.startsWith("intent://")) {
+                                        val parsedIntent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                                        if (parsedIntent != null) {
+                                            if (parsedIntent.resolveActivity(context.packageManager) != null) {
+                                                context.startActivity(parsedIntent)
+                                                return true
+                                            }
+                                            val fallbackUrl = parsedIntent.getStringExtra("browser_fallback_url")
+                                            if (!fallbackUrl.isNullOrBlank()) {
+                                                view.loadUrl(fallbackUrl)
+                                                return true
+                                            }
+                                        }
+                                    } else {
+                                        val externalIntent = Intent(Intent.ACTION_VIEW, uri)
+                                        if (externalIntent.resolveActivity(context.packageManager) != null) {
+                                            context.startActivity(externalIntent)
+                                            return true
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    // Ignore unsupported schemes safely
+                                }
                                 return true
+                            }
+
+                            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                                super.doUpdateVisitedHistory(view, url, isReload)
+                                url?.let {
+                                    lastLoadedUrl = it
+                                    onUrlChanged(it)
+                                }
                             }
 
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                 isLoading = true
                                 webViewError = null
-                                url?.let { onUrlChanged(it) }
+                                url?.let {
+                                    lastLoadedUrl = it
+                                    onUrlChanged(it)
+                                }
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 isLoading = false
-                                url?.let { onUrlChanged(it) }
-                                view?.title?.let { onTitleChanged(it) }
+                                url?.let {
+                                    lastLoadedUrl = it
+                                    onUrlChanged(it)
+                                }
+                                view?.title?.let {
+                                    if (it.isNotBlank()) onTitleChanged(it)
+                                }
                             }
 
                             override fun onReceivedError(
@@ -149,24 +228,31 @@ fun GVONEWebView(
                             }
 
                             override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                                // Enforce strict security unless user explicitly bypasses
                                 handler?.cancel()
                             }
                         }
 
                         if (tab.url.isNotBlank() && tab.url != "gvone://newtab") {
+                            lastLoadedUrl = tab.url
                             loadUrl(tab.url)
                         }
+
+                        webViewInstance = this
                     }
                 },
                 update = { webView ->
-                    if (tab.desktopMode) {
-                        webView.settings.userAgentString = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    } else {
-                        webView.settings.userAgentString = null
+                    webViewInstance = webView
+
+                    val targetUA = if (tab.desktopMode) {
+                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    } else null
+                    if (webView.settings.userAgentString != targetUA) {
+                        webView.settings.userAgentString = targetUA
                     }
 
-                    if (tab.url.isNotBlank() && tab.url != "gvone://newtab" && webView.url != tab.url) {
+                    // Only trigger loadUrl if tab.url is programmatically updated to a new destination
+                    if (tab.url.isNotBlank() && tab.url != "gvone://newtab" && tab.url != lastLoadedUrl) {
+                        lastLoadedUrl = tab.url
                         webView.loadUrl(tab.url)
                     }
                 }
