@@ -16,13 +16,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Accept Android SDK Licenses
+      - name: Setup Android SDK
         run: |
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
           yes | sdkmanager --licenses || true
 
       - name: Prepare build environment
