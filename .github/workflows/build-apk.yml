@@ -29,22 +29,12 @@ jobs:
 
       - name: Prepare Environment & Keystore
         run: |
-          # 1. Generate Gradle wrapper jar if missing
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            gradle wrapper --gradle-version 9.3.1
-          fi
-          chmod +x ./gradlew
-
-          # 2. Environment file
+          # 1. Environment file
           if [ ! -f .env ]; then
             cp .env.example .env
           fi
 
-          # 3. Configure gradle.properties for CI runner (daemon mode for KSP)
-          sed -i 's/kotlin.compiler.execution.strategy=in-process/kotlin.compiler.execution.strategy=daemon/g' gradle.properties || true
-          sed -i 's/org.gradle.configuration-cache=true/org.gradle.configuration-cache=false/g' gradle.properties || true
-
-          # 4. Decode debug.keystore from base64 if present, else generate fresh with keytool
+          # 2. Decode debug.keystore from base64 if present, else generate fresh with keytool
           if [ -f debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore || base64 --decode debug.keystore.base64 > debug.keystore || true
           fi
@@ -56,7 +46,7 @@ jobs:
 
       - name: Build Debug APK
         run: |
-          gradle :app:assembleDebug --stacktrace --no-configuration-cache -Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8 -Djava.awt.headless=true" -Dkotlin.compiler.execution.strategy=daemon -Dksp.useKSP2=true
+          gradle :app:assembleDebug --stacktrace --no-configuration-cache -Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8 -Djava.awt.headless=true" -Dksp.useKSP2=true
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
