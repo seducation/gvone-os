@@ -304,6 +304,9 @@ fun BrowserApp(
                 onOpenHistory = { viewModel.openSheet(ActiveSheet.History) },
                 onOpenBookmarks = { viewModel.openSheet(ActiveSheet.Bookmarks) },
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
+                onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
+                onNavigateToUrl = { url -> viewModel.loadUrlInCurrentTab(url) },
+                onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onClose = { viewModel.closeSheet() }
             )
         }
