@@ -22,24 +22,23 @@ jobs:
           distribution: 'temurin'
 
       - name: Set up Android SDK
-        run: |
-          mkdir -p "${HOME}/.android"
-          touch "${HOME}/.android/repositories.cfg"
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 platforms;android-35 build-tools;35.0.0'
 
-          # Accept SDK licenses
-          yes | sdkmanager --licenses || true
-
-          # Install target platforms and build tools
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platforms;android-35" "build-tools;35.0.0" || true
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: false
 
       - name: Prepare build environment
         run: |
-          # 1. Ensure .env and .env.example exist
+          # 1. Ensure .env and .env.example exist with valid non-empty values
           if [ ! -f .env.example ]; then
-            touch .env.example
+            echo 'GEMINI_API_KEY="DEFAULT_GEMINI_API_KEY"' > .env.example
           fi
-          if [ ! -f .env ]; then
-            cp .env.example .env || touch .env
+          if [ ! -f .env ] || [ ! -s .env ]; then
+            echo 'GEMINI_API_KEY="DEFAULT_GEMINI_API_KEY"' > .env
           fi
 
           # 2. Decode debug.keystore from base64 safely if present
@@ -47,20 +46,14 @@ jobs:
             cat debug.keystore.base64 | tr -d '\r\n ' | base64 -d > debug.keystore || true
           fi
 
-          # 3. Fallback: generate fresh keystore if missing or empty
-          if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
-            echo "Generating fresh debug.keystore..."
-            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          fi
-
-          # 4. Ensure gradlew is executable
+          # 3. Ensure gradlew is executable
           chmod +x ./gradlew || true
 
       - name: Build Debug APK
         env:
           GRADLE_OPTS: "-Xmx4096m -Dfile.encoding=UTF-8 -Djava.awt.headless=true"
         run: |
-          ./gradlew :app:assembleDebug --stacktrace --no-daemon --no-configuration-cache
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
       - name: Upload Debug APK
         if: always()
