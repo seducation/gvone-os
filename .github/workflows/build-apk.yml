@@ -21,14 +21,11 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
+      - name: Prepare build environment
         run: |
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
-          yes | sdkmanager --licenses || true
 
-      - name: Prepare build environment
-        run: |
           echo 'GEMINI_API_KEY="DEFAULT_GEMINI_API_KEY"' > .env.example
           echo 'GEMINI_API_KEY="DEFAULT_GEMINI_API_KEY"' > .env
 
@@ -48,5 +45,5 @@ jobs:
         with:
           name: gvone-browser-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
