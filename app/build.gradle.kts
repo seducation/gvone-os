@@ -31,7 +31,7 @@ android {
       keyAlias = "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
-    create("debugConfig") {
+    getByName("debug") {
       val customDebugKeystore = file("${rootDir}/debug.keystore")
       if (customDebugKeystore.exists()) {
         storeFile = customDebugKeystore
@@ -50,10 +50,7 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      val customDebugKeystore = file("${rootDir}/debug.keystore")
-      if (customDebugKeystore.exists()) {
-        signingConfig = signingConfigs.getByName("debugConfig")
-      }
+      signingConfig = signingConfigs.getByName("debug")
     }
   }
   compileOptions {
