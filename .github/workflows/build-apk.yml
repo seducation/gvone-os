@@ -36,7 +36,11 @@ jobs:
             cp .env.example .env
           fi
 
-          # 3. Decode debug.keystore from base64 if present, else generate fresh with keytool
+          # 3. Configure gradle.properties for CI runner (daemon mode for KSP)
+          sed -i 's/kotlin.compiler.execution.strategy=in-process/kotlin.compiler.execution.strategy=daemon/g' gradle.properties || true
+          sed -i 's/org.gradle.configuration-cache=true/org.gradle.configuration-cache=false/g' gradle.properties || true
+
+          # 4. Decode debug.keystore from base64 if present, else generate fresh with keytool
           if [ -f debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore || base64 --decode debug.keystore.base64 > debug.keystore || true
           fi
@@ -47,8 +51,10 @@ jobs:
           fi
 
       - name: Build Debug APK
+        env:
+          GRADLE_OPTS: "-Xmx4096m -Dfile.encoding=UTF-8"
         run: |
-          ./gradlew :app:assembleDebug --stacktrace --no-daemon --no-configuration-cache -Dkotlin.compiler.execution.strategy=daemon -Dksp.useKSP2=true
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon -Pksp.useKSP2=true
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
