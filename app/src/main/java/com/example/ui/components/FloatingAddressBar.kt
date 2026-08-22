@@ -111,10 +111,10 @@ fun FloatingAddressBar(
     val focusRequester = remember { FocusRequester() }
 
     // Synchronize non-focused address bar input with active tab URL without wiping active user typing
-    LaunchedEffect(currentTab?.url, isFocused, isBridgeActiveForCurrentPage, isYouTubeHome) {
+    LaunchedEffect(currentTab?.url, isFocused) {
         if (!isFocused) {
             val url = currentTab?.url.orEmpty()
-            inputText = if (isBridgeActiveForCurrentPage || isYouTubeHome || isInternalHomeUrl(url)) "" else url
+            inputText = if (isInternalHomeUrl(url)) "" else url
         }
     }
 
@@ -128,11 +128,9 @@ fun FloatingAddressBar(
         }
     }
 
-    val displayHost = remember(currentTab?.url, isBridgeActiveForCurrentPage) {
+    val displayHost = remember(currentTab?.url) {
         val url = currentTab?.url ?: ""
-        if (isBridgeActiveForCurrentPage) {
-            "" // Hide URL completely when Bridge / Type-to-Write mode is active
-        } else if (isInternalHomeUrl(url)) {
+        if (isInternalHomeUrl(url)) {
             if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name"
         } else {
             try {
@@ -284,7 +282,7 @@ fun FloatingAddressBar(
                             }
                         }
                         isFocused = true
-                        if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
+                        if (isInternalHomeUrl(currentUrl)) {
                             inputText = ""
                         } else {
                             inputText = currentUrl
@@ -327,7 +325,7 @@ fun FloatingAddressBar(
                         contentAlignment = Alignment.CenterStart
                     ) {
                         BasicTextField(
-                            value = if (isFocused) inputText else (if (isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage) "" else displayHost),
+                            value = if (isFocused) inputText else (if (isInternalHomeUrl(currentTab?.url)) "" else displayHost),
                             onValueChange = { newText ->
                                 inputText = newText
                             },
@@ -345,7 +343,7 @@ fun FloatingAddressBar(
                                                     onNavigate(targetUrl)
                                                 }
                                             }
-                                            if (isBridgeActiveForCurrentPage || isYouTubeHome || isInternalHomeUrl(currentUrl)) {
+                                            if (isInternalHomeUrl(currentUrl)) {
                                                 inputText = ""
                                             } else {
                                                 inputText = currentUrl
@@ -355,9 +353,9 @@ fun FloatingAddressBar(
                                 }
                                 .testTag("address_bar_input"),
                             textStyle = TextStyle(
-                                color = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage)) Color(0xFF8E9BAE) else Color(0xFFE6EDF6),
+                                color = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url))) Color(0xFF8E9BAE) else Color(0xFFE6EDF6),
                                 fontSize = 14.sp,
-                                fontWeight = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage)) FontWeight.Normal else FontWeight.SemiBold
+                                fontWeight = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url))) FontWeight.Normal else FontWeight.SemiBold
                             ),
                             singleLine = true,
                             cursorBrush = SolidColor(if (isPrivate) GVONESecondary else GVONEPrimary),
@@ -401,18 +399,7 @@ fun FloatingAddressBar(
                             ),
                             decorationBox = { innerTextField ->
                                 if (!isFocused) {
-                                    if (isBridgeActiveForCurrentPage) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = if (isPrivate) "Type to write (Private)..." else "Type to write / search...",
-                                                color = Color(0xFF94A3B8),
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Normal,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                    } else if (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url)) {
+                                    if (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url)) {
                                         Text(
                                             text = displayHost,
                                             color = Color(0xFF8E9BAE),

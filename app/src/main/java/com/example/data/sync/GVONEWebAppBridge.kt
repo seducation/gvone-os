@@ -177,10 +177,10 @@ object InputRouter {
             return InputDestination.UNIVERSAL_SEARCH
         }
 
-        // 2. Deliver directly to Web App if current active page is a trusted GVONE origin or YouTube
+        // 2. Deliver directly to Web App if current active page is a trusted GVONE origin, YouTube, or if apply to all websites is enabled
         val isGVONEActive = PageContextDetector.isTrustedGVONEOrigin(currentTabUrl)
         val isYouTubeActive = PageContextDetector.isYouTubeOrigin(currentTabUrl)
-        if (isGVONEActive || isYouTubeActive) {
+        if (isGVONEActive || isYouTubeActive || bridgeApplyToAllWebsites) {
             return InputDestination.DELIVER_TO_WEB_APP
         }
 
@@ -313,6 +313,7 @@ class GVONEWebAppBridge(
                 window.__GVONE_BRIDGE_INSTALLED__ = true;
                 var isTrustedOrigin = $isTrustedOrigin;
                 var isYouTubeOrigin = $isYouTubeOrigin || (window.location && (window.location.hostname.indexOf('youtube.com') !== -1 || window.location.hostname.indexOf('youtu.be') !== -1));
+                var applyToAll = $applyToAll;
 
                 // Create standard GVONE global object
                 window.GVONE = window.GVONE || {};
@@ -794,8 +795,8 @@ class GVONEWebAppBridge(
                     }, false);
                 }
 
-                // Scan & observe DOM to auto-configure search/chat inputs ONLY on trusted GVONE Web App origins
-                if (isTrustedOrigin) {
+                // Scan & observe DOM to auto-configure search/chat inputs on trusted GVONE Web App origins or when applyToAll is enabled
+                if (isTrustedOrigin || applyToAll) {
                     function scanAndConfigureInputs() {
                         var inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
                         for (var i = 0; i < inputs.length; i++) {
