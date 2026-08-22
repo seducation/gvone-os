@@ -396,18 +396,18 @@ class GVONEWebAppBridge(
                                     if (typeof form.requestSubmit === 'function') form.requestSubmit();
                                     else form.submit();
                                 } else {
-                                    ['keydown', 'keypress', 'keyup'].forEach(function(evtName) {
-                                        ytInput.dispatchEvent(new KeyboardEvent(evtName, {
+                                    try {
+                                        var evt = new KeyboardEvent('keydown', {
                                             key: 'Enter',
                                             code: 'Enter',
                                             keyCode: 13,
                                             which: 13,
-                                            charCode: 13,
                                             bubbles: true,
                                             cancelable: true,
                                             composed: true
-                                        }));
-                                    });
+                                        });
+                                        ytInput.dispatchEvent(evt);
+                                    } catch (e) {}
                                 }
                             }, 30);
                         }
@@ -455,18 +455,18 @@ class GVONEWebAppBridge(
                                             if (typeof form.requestSubmit === 'function') form.requestSubmit();
                                             else form.submit();
                                         } else {
-                                            ['keydown', 'keypress', 'keyup'].forEach(function(evtName) {
-                                                openedInput.dispatchEvent(new KeyboardEvent(evtName, {
+                                            try {
+                                                var evt = new KeyboardEvent('keydown', {
                                                     key: 'Enter',
                                                     code: 'Enter',
                                                     keyCode: 13,
                                                     which: 13,
-                                                    charCode: 13,
                                                     bubbles: true,
                                                     cancelable: true,
                                                     composed: true
-                                                }));
-                                            });
+                                                });
+                                                openedInput.dispatchEvent(evt);
+                                            } catch (e) {}
                                         }
                                     }, 30);
                                 }
