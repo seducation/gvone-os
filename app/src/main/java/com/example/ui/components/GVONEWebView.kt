@@ -91,7 +91,7 @@ fun GVONEWebView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
                     GVONEActionWebView(context).apply {
-                        isBridgeActive = bridgeEnabled && (bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url))
+                        isBridgeActive = bridgeEnabled && (bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url) || com.example.data.sync.PageContextDetector.isYouTubeOrigin(tab.url))
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
@@ -275,7 +275,7 @@ fun GVONEWebView(
                 update = { webView ->
                     webViewInstance = webView
                     if (webView is GVONEActionWebView) {
-                        webView.isBridgeActive = bridgeEnabled && (bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url))
+                        webView.isBridgeActive = bridgeEnabled && (bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url) || com.example.data.sync.PageContextDetector.isYouTubeOrigin(tab.url))
                     }
                     onRegisterWebView?.invoke(tab.id, webView)
 

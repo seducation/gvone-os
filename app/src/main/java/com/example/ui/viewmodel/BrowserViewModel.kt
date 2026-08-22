@@ -422,9 +422,19 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 val activeWebView = getActiveWebView(activeTab?.id)
                 val delivered = webAppBridge.deliverAddressBarInput(activeWebView, trimmed, action = "submit")
                 if (!delivered) {
-                    // Safe fallback if active WebView was missing or detached
-                    val destinationUrl = resolveUrlOrSearch(trimmed)
-                    loadUrlInCurrentTab(destinationUrl)
+                    // Safe fallback if active WebView was missing, detached, or on YouTube
+                    if (com.example.data.sync.PageContextDetector.isYouTubeOrigin(activeTab?.url)) {
+                        val encoded = java.net.URLEncoder.encode(trimmed, "UTF-8")
+                        val ytUrl = if (activeTab?.url?.contains("m.youtube.com") == true) {
+                            "https://m.youtube.com/results?search_query=$encoded"
+                        } else {
+                            "https://www.youtube.com/results?search_query=$encoded"
+                        }
+                        loadUrlInCurrentTab(ytUrl)
+                    } else {
+                        val destinationUrl = resolveUrlOrSearch(trimmed)
+                        loadUrlInCurrentTab(destinationUrl)
+                    }
                 } else {
                     // Successfully delivered input directly to the Web App without page reload/navigation!
                     closeSheet()

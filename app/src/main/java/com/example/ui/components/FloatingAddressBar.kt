@@ -86,7 +86,6 @@ fun FloatingAddressBar(
     val autoLoadEnabled = settings?.autoLoadTargetOnFocus ?: true
     val targetUrl = settings?.autoLoadTargetUrl ?: ADDRESS_BAR_TARGET_URL
     val bridgeEnabled = settings?.bidirectionalBridgeEnabled ?: true
-    val bridgeApplyAll = settings?.bridgeApplyToAllWebsites ?: true
 
     val isGVONEActive = remember(currentTab?.url, targetUrl) {
         val url = currentTab?.url.orEmpty()
@@ -94,16 +93,30 @@ fun FloatingAddressBar(
             (targetUrl.isNotBlank() && url.contains(targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')))
     }
 
-    val isBridgeActiveForCurrentPage = remember(bridgeEnabled, bridgeApplyAll, isGVONEActive, currentTab?.url) {
-        bridgeEnabled && (bridgeApplyAll || isGVONEActive)
+    val isYouTubeActive = remember(currentTab?.url) {
+        PageContextDetector.isYouTubeOrigin(currentTab?.url)
     }
 
-    var inputText by remember(currentTab?.url, isBridgeActiveForCurrentPage) {
-        val displayUrl = if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentTab?.url)) "" else (currentTab?.url ?: "")
-        mutableStateOf(displayUrl)
+    val isYouTubeHome = remember(currentTab?.url) {
+        PageContextDetector.isYouTubeHomepage(currentTab?.url)
     }
+
+    // Direct Bridge / Type-to-write input mode is active on trusted GVONE origins or YouTube
+    val isBridgeActiveForCurrentPage = remember(bridgeEnabled, isGVONEActive) {
+        bridgeEnabled && isGVONEActive
+    }
+
+    var inputText by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
+
+    // Synchronize non-focused address bar input with active tab URL without wiping active user typing
+    LaunchedEffect(currentTab?.url, isFocused, isBridgeActiveForCurrentPage, isYouTubeHome) {
+        if (!isFocused) {
+            val url = currentTab?.url.orEmpty()
+            inputText = if (isBridgeActiveForCurrentPage || isYouTubeHome || isInternalHomeUrl(url)) "" else url
+        }
+    }
 
     LaunchedEffect(isFocused) {
         if (isFocused) {
@@ -263,15 +276,19 @@ fun FloatingAddressBar(
                         )
                     }
                     .clickable {
-                        if (autoLoadEnabled && targetUrl.isNotBlank()) {
-                            val currentUrl = currentTab?.url.orEmpty()
+                        val currentUrl = currentTab?.url.orEmpty()
+                        if (autoLoadEnabled && targetUrl.isNotBlank() && isInternalHomeUrl(currentUrl)) {
                             val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
                             if (!currentUrl.contains(cleanTarget)) {
                                 onNavigate(targetUrl)
                             }
                         }
                         isFocused = true
-                        inputText = ""
+                        if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
+                            inputText = ""
+                        } else {
+                            inputText = currentUrl
+                        }
                         try {
                             focusRequester.requestFocus()
                         } catch (_: Exception) {}
@@ -311,10 +328,8 @@ fun FloatingAddressBar(
                     ) {
                         BasicTextField(
                             value = if (isFocused) inputText else (if (isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage) "" else displayHost),
-                            onValueChange = {
-                                if (isFocused) {
-                                    inputText = it
-                                }
+                            onValueChange = { newText ->
+                                inputText = newText
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -323,14 +338,18 @@ fun FloatingAddressBar(
                                     if (state.isFocused != isFocused) {
                                         isFocused = state.isFocused
                                         if (state.isFocused) {
-                                            if (autoLoadEnabled && targetUrl.isNotBlank()) {
-                                                val currentUrl = currentTab?.url.orEmpty()
+                                            val currentUrl = currentTab?.url.orEmpty()
+                                            if (autoLoadEnabled && targetUrl.isNotBlank() && isInternalHomeUrl(currentUrl)) {
                                                 val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
                                                 if (!currentUrl.contains(cleanTarget)) {
                                                     onNavigate(targetUrl)
                                                 }
                                             }
-                                            inputText = ""
+                                            if (isBridgeActiveForCurrentPage || isYouTubeHome || isInternalHomeUrl(currentUrl)) {
+                                                inputText = ""
+                                            } else {
+                                                inputText = currentUrl
+                                            }
                                         }
                                     }
                                 }
@@ -344,7 +363,7 @@ fun FloatingAddressBar(
                             cursorBrush = SolidColor(if (isPrivate) GVONESecondary else GVONEPrimary),
                             keyboardOptions = KeyboardOptions(
                                 imeAction = ImeAction.Search,
-                                keyboardType = if (isBridgeActiveForCurrentPage) KeyboardType.Text else KeyboardType.Uri
+                                keyboardType = if (isBridgeActiveForCurrentPage || isYouTubeActive) KeyboardType.Text else KeyboardType.Uri
                             ),
                             keyboardActions = KeyboardActions(
                                 onSearch = {
@@ -405,7 +424,7 @@ fun FloatingAddressBar(
                                     }
                                 } else if (isFocused && inputText.isEmpty()) {
                                     Text(
-                                        text = if (isBridgeActiveForCurrentPage) "Type to write, prompt, or enter URL..." else if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name",
+                                        text = if (isYouTubeActive) "Search YouTube" else if (isBridgeActiveForCurrentPage) "Type to write, prompt, or enter URL..." else if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name",
                                         color = Color(0xFF8E9BAE),
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Normal,

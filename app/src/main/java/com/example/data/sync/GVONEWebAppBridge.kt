@@ -86,6 +86,24 @@ object PageContextDetector {
         }
     }
 
+    fun isYouTubeOrigin(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val lower = url.trim().lowercase(Locale.ROOT)
+        return lower.contains("youtube.com") || lower.contains("youtu.be")
+    }
+
+    fun isYouTubeHomepage(url: String?): Boolean {
+        if (!isYouTubeOrigin(url)) return false
+        return try {
+            val uri = URI(url!!.trim())
+            val path = uri.path ?: ""
+            path.isEmpty() || path == "/" || path == "/feed/explore" || path == "/home"
+        } catch (_: Exception) {
+            val lower = url!!.trim().lowercase(Locale.ROOT)
+            lower.endsWith("youtube.com") || lower.endsWith("youtube.com/") || lower.endsWith("m.youtube.com") || lower.endsWith("m.youtube.com/")
+        }
+    }
+
     fun getCleanOrigin(url: String?): String? {
         if (url.isNullOrBlank()) return null
         return try {
@@ -159,9 +177,10 @@ object InputRouter {
             return InputDestination.UNIVERSAL_SEARCH
         }
 
-        // 2. If Bridge applies to all websites or the current active page is a trusted origin
+        // 2. Deliver directly to Web App if current active page is a trusted GVONE origin or YouTube
         val isGVONEActive = PageContextDetector.isTrustedGVONEOrigin(currentTabUrl)
-        if (bridgeApplyToAllWebsites || isGVONEActive) {
+        val isYouTubeActive = PageContextDetector.isYouTubeOrigin(currentTabUrl)
+        if (isGVONEActive || isYouTubeActive) {
             return InputDestination.DELIVER_TO_WEB_APP
         }
 
@@ -282,7 +301,9 @@ class GVONEWebAppBridge(
         applyToAll: Boolean = true
     ) {
         if (!enabled) return
-        if (!applyToAll && !PageContextDetector.isTrustedGVONEOrigin(currentUrl)) {
+        val isTrustedOrigin = PageContextDetector.isTrustedGVONEOrigin(currentUrl)
+        val isYouTubeOrigin = PageContextDetector.isYouTubeOrigin(currentUrl)
+        if (!applyToAll && !isTrustedOrigin && !isYouTubeOrigin) {
             return
         }
 
@@ -290,6 +311,8 @@ class GVONEWebAppBridge(
             (function() {
                 if (window.__GVONE_BRIDGE_INSTALLED__) return;
                 window.__GVONE_BRIDGE_INSTALLED__ = true;
+                var isTrustedOrigin = $isTrustedOrigin;
+                var isYouTubeOrigin = $isYouTubeOrigin || (window.location && (window.location.hostname.indexOf('youtube.com') !== -1 || window.location.hostname.indexOf('youtu.be') !== -1));
 
                 // Create standard GVONE global object
                 window.GVONE = window.GVONE || {};
@@ -336,6 +359,130 @@ class GVONEWebAppBridge(
                             el.dispatchEvent(new Event('change', { bubbles: true }));
                         } catch (err) {}
                     }
+                }
+
+                // Dedicated YouTube Search activator
+                function activateYouTubeSearch(text, action) {
+                    if (!text && action !== 'submit') return false;
+
+                    // 1. Try to find already open/rendered search input
+                    var ytInput = document.querySelector(
+                        'input[name="search_query"], ' +
+                        'input.searchbox-input, ' +
+                        'input#search, ' +
+                        'ytm-searchbox input, ' +
+                        'ytd-searchbox input, ' +
+                        'form.searchbox input, ' +
+                        'input[type="search"]'
+                    );
+
+                    if (ytInput) {
+                        ytInput.focus();
+                        if (text) setNativeInputValue(ytInput, text);
+                        if (action === 'submit') {
+                            setTimeout(function() {
+                                var form = ytInput.form || ytInput.closest('form');
+                                var searchBtn = (form || document).querySelector(
+                                    'button#search-icon-legacy, ' +
+                                    'button.searchbox-submit, ' +
+                                    'button[aria-label="Search" i], ' +
+                                    'button[aria-label="Search YouTube" i], ' +
+                                    'button[type="submit"]'
+                                );
+                                if (searchBtn && !searchBtn.disabled) {
+                                    searchBtn.click();
+                                } else if (form) {
+                                    if (typeof form.requestSubmit === 'function') form.requestSubmit();
+                                    else form.submit();
+                                } else {
+                                    ['keydown', 'keypress', 'keyup'].forEach(function(evtName) {
+                                        ytInput.dispatchEvent(new KeyboardEvent(evtName, {
+                                            key: 'Enter',
+                                            code: 'Enter',
+                                            keyCode: 13,
+                                            which: 13,
+                                            charCode: 13,
+                                            bubbles: true,
+                                            cancelable: true,
+                                            composed: true
+                                        }));
+                                    });
+                                }
+                            }, 30);
+                        }
+                        return true;
+                    }
+
+                    // 2. On YouTube mobile homepage, search box is behind the topbar search icon button.
+                    // Click search button to open the input field.
+                    var topbarSearchBtn = document.querySelector(
+                        'button[aria-label*="Search" i], ' +
+                        'button.topbar-search-button, ' +
+                        'button.mobile-topbar-header-search-icon, ' +
+                        'ytm-searchbox button, ' +
+                        'button[data-target-id="search-btn"], ' +
+                        '[aria-label="Search YouTube"], ' +
+                        '[aria-label="Search"]'
+                    );
+
+                    if (topbarSearchBtn) {
+                        topbarSearchBtn.click();
+                        setTimeout(function() {
+                            var openedInput = document.querySelector(
+                                'input[name="search_query"], ' +
+                                'input.searchbox-input, ' +
+                                'input#search, ' +
+                                'ytm-searchbox input, ' +
+                                'form.searchbox input, ' +
+                                'input[type="search"]'
+                            );
+                            if (openedInput) {
+                                openedInput.focus();
+                                if (text) setNativeInputValue(openedInput, text);
+                                if (action === 'submit') {
+                                    setTimeout(function() {
+                                        var form = openedInput.form || openedInput.closest('form');
+                                        var submitBtn = (form || document).querySelector(
+                                            'button#search-icon-legacy, ' +
+                                            'button.searchbox-submit, ' +
+                                            'button[aria-label*="Search" i], ' +
+                                            'button[type="submit"]'
+                                        );
+                                        if (submitBtn) {
+                                            submitBtn.click();
+                                        } else if (form) {
+                                            if (typeof form.requestSubmit === 'function') form.requestSubmit();
+                                            else form.submit();
+                                        } else {
+                                            ['keydown', 'keypress', 'keyup'].forEach(function(evtName) {
+                                                openedInput.dispatchEvent(new KeyboardEvent(evtName, {
+                                                    key: 'Enter',
+                                                    code: 'Enter',
+                                                    keyCode: 13,
+                                                    which: 13,
+                                                    charCode: 13,
+                                                    bubbles: true,
+                                                    cancelable: true,
+                                                    composed: true
+                                                }));
+                                            });
+                                        }
+                                    }, 30);
+                                }
+                            } else if (action === 'submit' && text) {
+                                window.location.href = (window.location.origin || 'https://m.youtube.com') + '/results?search_query=' + encodeURIComponent(text);
+                            }
+                        }, 40);
+                        return true;
+                    }
+
+                    // 3. Robust URL fallback on YouTube
+                    if (action === 'submit' && text) {
+                        window.location.href = (window.location.origin || 'https://m.youtube.com') + '/results?search_query=' + encodeURIComponent(text);
+                        return true;
+                    }
+
+                    return false;
                 }
 
                 // Helper to find the primary search/chat input on the page
@@ -532,7 +679,22 @@ class GVONEWebAppBridge(
                         
                         console.log('[GVONE Bridge] Received input from browser address bar:', text, 'action:', action);
 
-                        // 1. Dispatch custom DOM event for custom Web App listener
+                        // 1. YouTube specific handler
+                        if (isYouTubeOrigin || (window.location && (window.location.hostname.indexOf('youtube.com') !== -1 || window.location.hostname.indexOf('youtu.be') !== -1))) {
+                            var ytHandled = activateYouTubeSearch(text, action);
+                            if (ytHandled) {
+                                if (window.GVONEBrowserBridge) {
+                                    window.GVONEBrowserBridge.postMessageToBrowser(JSON.stringify({
+                                        type: 'input_acknowledged',
+                                        text: text,
+                                        success: true
+                                    }));
+                                }
+                                return true;
+                            }
+                        }
+
+                        // 2. Dispatch custom DOM event for custom Web App listener
                         var customEvt = new CustomEvent('gvone:browser_input', {
                             detail: eventData,
                             bubbles: true,
@@ -541,13 +703,13 @@ class GVONEWebAppBridge(
                         window.dispatchEvent(customEvt);
                         document.dispatchEvent(customEvt);
 
-                        // 2. Dispatch window.postMessage for standard web app listeners
+                        // 3. Dispatch window.postMessage for standard web app listeners
                         window.postMessage({
                             type: 'INPUT_FROM_BROWSER',
                             payload: eventData
                         }, '*');
 
-                        // 3. Check for direct callback if exposed by web app
+                        // 4. Check for direct callback if exposed by web app
                         if (typeof window.onGVONEBrowserInput === 'function') {
                             window.onGVONEBrowserInput(eventData);
                             if (window.GVONEBrowserBridge) {
@@ -563,7 +725,7 @@ class GVONEWebAppBridge(
                             return true;
                         }
 
-                        // 4. Universal Fallback: Inject into chat/search input and trigger submit
+                        // 5. Universal Fallback: Inject into chat/search input and trigger submit
                         var targetInput = findPrimarySearchChatInput();
                         if (targetInput) {
                             configureSearchChatInput(targetInput);
@@ -593,33 +755,74 @@ class GVONEWebAppBridge(
                     }
                 };
 
-                // Scan & observe DOM to auto-configure any search/chat inputs dynamically
-                function scanAndConfigureInputs() {
-                    var inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
-                    for (var i = 0; i < inputs.length; i++) {
-                        configureSearchChatInput(inputs[i]);
-                    }
+                // On YouTube homepage, typing immediately activates YouTube search without requiring tapping the Search icon
+                if (isYouTubeOrigin) {
+                    document.addEventListener('keydown', function(e) {
+                        if (e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return;
+                        var active = document.activeElement;
+                        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
+                            return;
+                        }
+
+                        // Avoid interrupting video player shortcuts on /watch or /shorts pages
+                        var path = (window.location.pathname || '').toLowerCase();
+                        if (path.indexOf('/watch') !== -1 || path.indexOf('/shorts') !== -1) {
+                            return;
+                        }
+
+                        // Check for single printable character (letters, numbers, etc.)
+                        if (e.key && e.key.length === 1 && !e.repeat) {
+                            var searchInput = document.querySelector('input[name="search_query"], input.searchbox-input, input#search, input[type="search"]');
+                            if (!searchInput) {
+                                var searchBtn = document.querySelector(
+                                    'button[aria-label*="Search" i], button.topbar-search-button, button.mobile-topbar-header-search-icon, ytm-searchbox button, [aria-label="Search YouTube"], [aria-label="Search"]'
+                                );
+                                if (searchBtn) {
+                                    searchBtn.click();
+                                }
+                            }
+
+                            setTimeout(function() {
+                                var target = document.querySelector('input[name="search_query"], input.searchbox-input, input#search, input[type="search"]');
+                                if (target) {
+                                    target.focus();
+                                    var val = target.value || '';
+                                    setNativeInputValue(target, val + e.key);
+                                }
+                            }, 30);
+                        }
+                    }, false);
                 }
 
-                // Initial scan
-                scanAndConfigureInputs();
-
-                // Listen for focusin so newly rendered inputs get configured immediately on tap
-                document.addEventListener('focusin', function(e) {
-                    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
-                        configureSearchChatInput(e.target);
+                // Scan & observe DOM to auto-configure search/chat inputs ONLY on trusted GVONE Web App origins
+                if (isTrustedOrigin) {
+                    function scanAndConfigureInputs() {
+                        var inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
+                        for (var i = 0; i < inputs.length; i++) {
+                            configureSearchChatInput(inputs[i]);
+                        }
                     }
-                }, true);
 
-                // MutationObserver for dynamic SPAs (React, Vue, etc.)
-                if (window.MutationObserver) {
-                    var observer = new MutationObserver(function(mutations) {
-                        scanAndConfigureInputs();
-                    });
-                    observer.observe(document.documentElement || document.body, {
-                        childList: true,
-                        subtree: true
-                    });
+                    // Initial scan
+                    scanAndConfigureInputs();
+
+                    // Listen for focusin so newly rendered inputs get configured immediately on tap
+                    document.addEventListener('focusin', function(e) {
+                        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
+                            configureSearchChatInput(e.target);
+                        }
+                    }, true);
+
+                    // MutationObserver for dynamic SPAs on trusted GVONE origins
+                    if (window.MutationObserver) {
+                        var observer = new MutationObserver(function(mutations) {
+                            scanAndConfigureInputs();
+                        });
+                        observer.observe(document.documentElement || document.body, {
+                            childList: true,
+                            subtree: true
+                        });
+                    }
                 }
 
                 // Notify native browser that page is ready
@@ -677,6 +880,31 @@ class GVONEWebAppBridge(
                             type: 'INPUT_FROM_BROWSER',
                             payload: data
                         }, '*');
+
+                        // Check for YouTube fallback
+                        if (window.location && (window.location.hostname.indexOf('youtube.com') !== -1 || window.location.hostname.indexOf('youtu.be') !== -1)) {
+                            var ytInput = document.querySelector('input[name="search_query"], input.searchbox-input, input#search, input[type="search"]');
+                            if (!ytInput) {
+                                var btn = document.querySelector('button[aria-label*="Search" i], button.topbar-search-button, button.mobile-topbar-header-search-icon, ytm-searchbox button, [aria-label="Search YouTube"]');
+                                if (btn) btn.click();
+                            }
+                            if (data.action === 'submit' && data.text) {
+                                setTimeout(function() {
+                                    var opened = document.querySelector('input[name="search_query"], input.searchbox-input, input#search, input[type="search"]');
+                                    if (opened) {
+                                        opened.focus();
+                                        opened.value = data.text;
+                                        var form = opened.form || opened.closest('form');
+                                        if (form && typeof form.requestSubmit === 'function') form.requestSubmit();
+                                        else if (form) form.submit();
+                                        else window.location.href = (window.location.origin || 'https://m.youtube.com') + '/results?search_query=' + encodeURIComponent(data.text);
+                                    } else {
+                                        window.location.href = (window.location.origin || 'https://m.youtube.com') + '/results?search_query=' + encodeURIComponent(data.text);
+                                    }
+                                }, 40);
+                                return true;
+                            }
+                        }
                         
                         var targetInput = document.querySelector('textarea:not([disabled]), input[type="search"]:not([disabled]), input[type="text"]:not([disabled]), input:not([type]):not([disabled]), [contenteditable="true"]');
                         if (targetInput) {
