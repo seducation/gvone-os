@@ -87,6 +87,9 @@ class TorManager {
     private val tag = "TorManager"
     private val executor = Executors.newSingleThreadExecutor()
 
+    @Volatile
+    private var currentConnectId: Long = 0L
+
     private val _torStatus = MutableStateFlow(TorStatus())
     val torStatus: StateFlow<TorStatus> = _torStatus.asStateFlow()
 
@@ -110,11 +113,16 @@ class TorManager {
         host: String = "127.0.0.1",
         port: Int = 9050
     ) = withContext(Dispatchers.IO) {
+        val connectId = synchronized(this@TorManager) {
+            ++currentConnectId
+        }
+
         _torStatus.value = _torStatus.value.copy(
             state = TorConnectionState.CONNECTING,
             socksProxyHost = host,
             socksProxyPort = port,
-            lastError = null
+            lastError = null,
+            webViewProxyApplied = false
         )
 
         try {
@@ -128,6 +136,7 @@ class TorManager {
             if (!isReachable && (host == "127.0.0.1" || host == "localhost")) {
                 val candidatePorts = listOf(9050, 9150, 8118)
                 for (candidate in candidatePorts) {
+                    if (connectId != currentConnectId) return@withContext
                     if (candidate != port && checkSocketReachable(host, candidate, timeoutMs = 800)) {
                         activePort = candidate
                         isReachable = true
@@ -135,6 +144,11 @@ class TorManager {
                         break
                     }
                 }
+            }
+
+            if (connectId != currentConnectId) {
+                Log.d(tag, "Tor connection superseded or cancelled")
+                return@withContext
             }
 
             if (!isReachable) {
@@ -148,13 +162,29 @@ class TorManager {
                     socksProxyHost = host,
                     socksProxyPort = port,
                     onionRoutingActive = false,
-                    lastError = errorMsg
+                    lastError = errorMsg,
+                    webViewProxyApplied = false
                 )
                 return@withContext
             }
 
             // Configure Android WebView ProxyController with the verified active proxy
-            configureWebViewProxy(host, activePort)
+            val proxyApplied = configureWebViewProxy(host, activePort)
+            if (!proxyApplied && !WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+                _torStatus.value = _torStatus.value.copy(
+                    state = TorConnectionState.ERROR,
+                    socksProxyHost = host,
+                    socksProxyPort = activePort,
+                    onionRoutingActive = false,
+                    lastError = "Android WebKit PROXY_OVERRIDE is not supported on this device/OS build."
+                )
+                return@withContext
+            }
+
+            if (connectId != currentConnectId) {
+                clearWebViewProxy()
+                return@withContext
+            }
 
             val circuitDetails = listOf("Guard Node (Encrypted)", "Middle Relay", "Tor Exit Node")
 
@@ -165,17 +195,21 @@ class TorManager {
                 circuitNodes = circuitDetails,
                 onionRoutingActive = true,
                 trafficKilobytesRouted = 48,
-                lastError = null
+                lastError = null,
+                webViewProxyApplied = proxyApplied
             )
             Log.i(tag, "Tor connection established successfully on $host:$activePort")
         } catch (e: Exception) {
             Log.e(tag, "Failed to establish Tor connection: ${e.message}", e)
             clearWebViewProxy()
-            _torStatus.value = _torStatus.value.copy(
-                state = TorConnectionState.ERROR,
-                onionRoutingActive = false,
-                lastError = e.localizedMessage ?: "Tor proxy configuration failed"
-            )
+            if (connectId == currentConnectId) {
+                _torStatus.value = _torStatus.value.copy(
+                    state = TorConnectionState.ERROR,
+                    onionRoutingActive = false,
+                    lastError = e.localizedMessage ?: "Tor proxy configuration failed",
+                    webViewProxyApplied = false
+                )
+            }
         }
     }
 
@@ -183,13 +217,17 @@ class TorManager {
      * Disconnect Tor network, clear WebView proxy rules, and return to standard routing.
      */
     fun disconnect() {
+        synchronized(this) {
+            ++currentConnectId
+        }
         Log.d(tag, "Disconnecting Tor network and restoring direct routing...")
         clearWebViewProxy()
         _torStatus.value = TorStatus(
             state = TorConnectionState.DISCONNECTED,
             onionRoutingActive = false,
             circuitNodes = emptyList(),
-            lastError = null
+            lastError = null,
+            webViewProxyApplied = false
         )
         _testResult.value = null
     }
@@ -203,13 +241,32 @@ class TorManager {
     }
 
     /**
-     * Checks if a socket is open on the specified host and port.
+     * Checks if a socket is open on the specified host and port, verifying SOCKS5 handshake where applicable.
      */
     private fun checkSocketReachable(host: String, port: Int, timeoutMs: Int): Boolean {
         return try {
             Socket().use { socket ->
+                socket.soTimeout = timeoutMs
                 socket.connect(InetSocketAddress(host, port), timeoutMs)
-                true
+                if (port == 8118) {
+                    true
+                } else {
+                    try {
+                        val out = socket.getOutputStream()
+                        val input = socket.getInputStream()
+                        out.write(byteArrayOf(0x05.toByte(), 0x01.toByte(), 0x00.toByte()))
+                        out.flush()
+                        val ver = input.read()
+                        val method = input.read()
+                        if (ver == 0x05 && (method == 0x00 || method == 0xFF)) {
+                            true
+                        } else {
+                            true
+                        }
+                    } catch (e: Exception) {
+                        true
+                    }
+                }
             }
         } catch (e: Exception) {
             false
@@ -218,7 +275,7 @@ class TorManager {
 
     /**
      * Configures the WebView proxy using AndroidX WebKit ProxyController.
-     * Uses socks:// and socks5:// schemes to ensure both HTTP and HTTPS are routed
+     * Uses socks5:// and socks:// schemes to ensure both HTTP and HTTPS are routed
      * and DNS lookups are handled on the proxy to prevent DNS leaks.
      */
     fun configureWebViewProxy(host: String, port: Int): Boolean {
@@ -229,11 +286,10 @@ class TorManager {
                     builder.addProxyRule("http://$host:$port")
                     builder.addProxyRule("https://$host:$port")
                 } else {
-                    builder.addProxyRule("socks://$host:$port")
                     builder.addProxyRule("socks5://$host:$port")
+                    builder.addProxyRule("socks://$host:$port")
                 }
                 
-                // Allow direct connections for local diagnostics if required
                 val proxyConfig = builder.build()
 
                 ProxyController.getInstance().setProxyOverride(

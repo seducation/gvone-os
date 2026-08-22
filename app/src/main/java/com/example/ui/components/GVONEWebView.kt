@@ -86,6 +86,12 @@ fun GVONEWebView(
                 onOpenDiagnostics = onOpenDiagnostics,
                 modifier = Modifier.fillMaxSize()
             )
+        } else if (isTorActive && torConnectionState == TorConnectionState.CONNECTING) {
+            TorConnectingScreen(
+                onDisableTor = onDisableTor,
+                onOpenDiagnostics = onOpenDiagnostics,
+                modifier = Modifier.fillMaxSize()
+            )
         } else {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
@@ -487,6 +493,89 @@ private fun TorFailClosedErrorScreen(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("Settings", fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Connecting placeholder displayed while Tor SOCKS5 proxy and WebKit proxy override are initializing.
+ * Ensures no requests leave the device in cleartext before the proxy connection is fully active.
+ */
+@Composable
+private fun TorConnectingScreen(
+    onDisableTor: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(Color(0xFF0B0E14))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            CircularProgressIndicator(
+                color = GVONESecondary,
+                strokeWidth = 3.dp,
+                modifier = Modifier.size(48.dp)
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Text(
+                text = "Connecting to TOR Network",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Establishing SOCKS5 proxy and verifying remote DNS routing. Fail-Closed protection is active.",
+                color = Color(0xFF94A3B8),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                TextButton(
+                    onClick = onDisableTor,
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF94A3B8))
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Public,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Cancel / Direct Mode", fontSize = 12.sp)
+                }
+
+                TextButton(
+                    onClick = onOpenDiagnostics,
+                    colors = ButtonDefaults.textButtonColors(contentColor = GVONESecondary)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Troubleshoot,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Diagnostics", fontSize = 12.sp)
                 }
             }
         }
