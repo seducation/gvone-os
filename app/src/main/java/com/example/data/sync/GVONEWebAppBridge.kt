@@ -538,42 +538,40 @@ class GVONEWebAppBridge(
                     return 'search';
                 }
 
-                // Configures an input element with the proper platform IME search/send actions
+                // Configures an input element with the proper platform IME search/send actions for trusted GVONE Web Apps ONLY
                 function configureSearchChatInput(el) {
                     if (!el || el.__gvone_configured__) return;
                     el.__gvone_configured__ = true;
 
+                    // Do not alter non-text inputs (password, email, number, etc.)
+                    if (el.tagName === 'INPUT' && el.type && el.type !== 'text' && el.type !== 'search') {
+                        return;
+                    }
+
+                    var isTextArea = el.tagName === 'TEXTAREA';
                     var hint = getEnterKeyHintType(el);
                     
-                    // 1. Explicitly configure enterkeyhint so Android IME displays Search / Send icon instead of Next/Arrow
-                    el.setAttribute('enterkeyhint', hint);
-                    
-                    // 2. Set inputmode to search for search/submit keyboard semantics
-                    if (!el.getAttribute('inputmode')) {
-                        el.setAttribute('inputmode', 'search');
+                    // 1. Explicitly configure enterkeyhint on single-line inputs
+                    if (!isTextArea) {
+                        el.setAttribute('enterkeyhint', hint);
                     }
 
-                    // 3. If standard input, ensure type="search" or proper form semantics
-                    if (el.tagName === 'INPUT' && el.type === 'text' && !el.getAttribute('data-preserve-type')) {
-                        try {
-                            el.type = 'search';
-                        } catch (e) {}
-                    }
-
-                    // 4. Handle mobile keyboard Search/Send action & desktop Enter without Shift
-                    el.addEventListener('keydown', function(e) {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                            var text = el.isContentEditable ? el.innerText : el.value;
-                            if (text && text.trim().length > 0) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                window.__GVONE_EXECUTE_SUBMIT__(el, 'keyboard_' + hint);
+                    // 2. Handle Enter key for single-line search/chat inputs without Shift
+                    if (!isTextArea) {
+                        el.addEventListener('keydown', function(e) {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                var text = el.isContentEditable ? el.innerText : el.value;
+                                if (text && text.trim().length > 0) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    window.__GVONE_EXECUTE_SUBMIT__(el, 'keyboard_' + hint);
+                                }
                             }
-                        }
-                    }, true);
+                        }, true);
+                    }
                 }
 
-                // Global unified submit handler with multi-strategy execution
+                // Global unified submit handler with single authoritative execution path
                 window.__GVONE_EXECUTE_SUBMIT__ = function(targetInput, triggerSource) {
                     try {
                         var inputEl = targetInput || findPrimarySearchChatInput();
@@ -584,20 +582,17 @@ class GVONEWebAppBridge(
                         currentText = currentText.trim();
 
                         var now = Date.now();
-                        // Deduplication: only debounce rapid repeated triggers of exact same text within 300ms
+                        // Deduplication: prevent duplicate submission within 300ms for identical text
                         if (triggerSource !== 'address_bar_bridge' &&
                             now - window.__GVONE_SUBMIT_STATE__.lastSubmitTime < 300 && 
                             window.__GVONE_SUBMIT_STATE__.lastSubmitText === currentText &&
                             currentText.length > 0) {
-                            console.log('[GVONE Bridge] Debounced duplicate submission from:', triggerSource);
                             return true;
                         }
 
                         window.__GVONE_SUBMIT_STATE__.lastSubmitTime = now;
                         window.__GVONE_SUBMIT_STATE__.lastSubmitText = currentText;
                         window.__GVONE_SUBMIT_STATE__.isProcessing = true;
-
-                        console.log('[GVONE Bridge] Executing submission via:', triggerSource, 'text:', currentText);
 
                         // 1. Dispatch unified CustomEvents on window and document
                         var submitEvt = new CustomEvent('gvone:submit', {
@@ -608,7 +603,7 @@ class GVONEWebAppBridge(
                         window.dispatchEvent(submitEvt);
                         document.dispatchEvent(submitEvt);
 
-                        // 2. If web app exposes a custom submission handler, invoke it
+                        // 2. If web app exposes a custom submission handler, invoke it and finish
                         if (typeof window.onGVONEBrowserSubmit === 'function') {
                             window.onGVONEBrowserSubmit({ text: currentText, source: triggerSource });
                             if (window.GVONEBrowserBridge) {
@@ -619,17 +614,15 @@ class GVONEWebAppBridge(
 
                         var submitted = false;
 
-                        // 3. Click the matching Send / Search button
+                        // 3. Single-path submission: Try Submit/Send button first
                         var sendBtn = findSubmitButton(inputEl);
                         if (sendBtn && !sendBtn.disabled) {
                             try {
                                 sendBtn.click();
                                 submitted = true;
                             } catch (e) {}
-                        }
-
-                        // 4. If enclosed in a form, submit the form
-                        if (inputEl && inputEl.form) {
+                        } else if (inputEl && inputEl.form) {
+                            // 4. Fallback to form submission only if no button was clicked
                             try {
                                 if (typeof inputEl.form.requestSubmit === 'function') {
                                     inputEl.form.requestSubmit();
@@ -639,26 +632,21 @@ class GVONEWebAppBridge(
                                     submitted = true;
                                 }
                             } catch (e) {}
-                        }
-
-                        // 5. Dispatch synthetic Enter events (keydown, keypress, keyup) for modern SPA frameworks (React/Vue/AI chats)
-                        if (inputEl) {
-                            ['keydown', 'keypress', 'keyup'].forEach(function(evtName) {
-                                try {
-                                    var evt = new KeyboardEvent(evtName, {
-                                        key: 'Enter',
-                                        code: 'Enter',
-                                        keyCode: 13,
-                                        which: 13,
-                                        charCode: 13,
-                                        bubbles: true,
-                                        cancelable: true,
-                                        composed: true
-                                    });
-                                    inputEl.dispatchEvent(evt);
-                                    submitted = true;
-                                } catch (e) {}
-                            });
+                        } else if (inputEl) {
+                            // 5. Fallback to single Enter keydown event only if neither button nor form exists
+                            try {
+                                var evt = new KeyboardEvent('keydown', {
+                                    key: 'Enter',
+                                    code: 'Enter',
+                                    keyCode: 13,
+                                    which: 13,
+                                    bubbles: true,
+                                    cancelable: true,
+                                    composed: true
+                                });
+                                inputEl.dispatchEvent(evt);
+                                submitted = true;
+                            } catch (e) {}
                         }
 
                         if (window.GVONEBrowserBridge) {
@@ -795,8 +783,8 @@ class GVONEWebAppBridge(
                     }, false);
                 }
 
-                // Scan & observe DOM to auto-configure search/chat inputs on trusted GVONE Web App origins or when applyToAll is enabled
-                if (isTrustedOrigin || applyToAll) {
+                // Scan & observe DOM to auto-configure search/chat inputs on trusted GVONE Web App origins ONLY
+                if (isTrustedOrigin) {
                     function scanAndConfigureInputs() {
                         var inputs = document.querySelectorAll('input, textarea, [contenteditable="true"]');
                         for (var i = 0; i < inputs.length; i++) {

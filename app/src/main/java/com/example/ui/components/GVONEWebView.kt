@@ -504,13 +504,17 @@ class GVONEActionWebView(context: Context) : WebView(context) {
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         val originalConnection = super.onCreateInputConnection(outAttrs) ?: return null
 
-        // For standard websites, return native WebView InputConnection completely untouched
-        if (!isBridgeActive) {
+        val currentUrl = this.url
+        val isTrustedOrigin = com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(currentUrl)
+
+        // For standard websites (Google, YouTube, Reddit, Wikipedia, login forms, textareas, search boxes, etc.),
+        // return native WebView InputConnection completely untouched without wrapping or modifying EditorInfo
+        if (!isBridgeActive || !isTrustedOrigin) {
             return originalConnection
         }
 
-        // For trusted GVONE Web App pages, only adjust IME action hint for single-line search/action inputs
-        // without stripping multiline flags from textareas
+        // For trusted GVONE Web App pages only, adjust IME action hint for single-line search/action inputs
+        // while strictly preserving multiline flags, password types, and textareas
         val isMultiLine = (outAttrs.inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
         if (!isMultiLine) {
             val currentAction = outAttrs.imeOptions and EditorInfo.IME_MASK_ACTION
