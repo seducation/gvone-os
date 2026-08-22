@@ -87,6 +87,21 @@ class TorManager {
     private val tag = "TorManager"
     private val executor = Executors.newSingleThreadExecutor()
 
+    private fun logD(msg: String) {
+        try { Log.d(tag, msg) } catch (_: Throwable) {}
+    }
+    private fun logI(msg: String) {
+        try { Log.i(tag, msg) } catch (_: Throwable) {}
+    }
+    private fun logW(msg: String) {
+        try { Log.w(tag, msg) } catch (_: Throwable) {}
+    }
+    private fun logE(msg: String, tr: Throwable? = null) {
+        try {
+            if (tr != null) Log.e(tag, msg, tr) else Log.e(tag, msg)
+        } catch (_: Throwable) {}
+    }
+
     @Volatile
     private var currentConnectId: Long = 0L
 
@@ -126,7 +141,7 @@ class TorManager {
         )
 
         try {
-            Log.d(tag, "Initiating Tor connection probe on $host:$port...")
+            logD("Initiating Tor connection probe on $host:$port...")
             
             // Check if specified host:port is reachable
             var activePort = port
@@ -140,14 +155,14 @@ class TorManager {
                     if (candidate != port && checkSocketReachable(host, candidate, timeoutMs = 800)) {
                         activePort = candidate
                         isReachable = true
-                        Log.i(tag, "Found active Tor daemon on fallback port $candidate")
+                        logI("Found active Tor daemon on fallback port $candidate")
                         break
                     }
                 }
             }
 
             if (connectId != currentConnectId) {
-                Log.d(tag, "Tor connection superseded or cancelled")
+                logD("Tor connection superseded or cancelled")
                 return@withContext
             }
 
@@ -156,7 +171,7 @@ class TorManager {
                 clearWebViewProxy()
 
                 val errorMsg = "No active Tor proxy found on $host:$port. Please launch Orbot or start your Tor SOCKS5 daemon."
-                Log.w(tag, errorMsg)
+                logW(errorMsg)
                 _torStatus.value = _torStatus.value.copy(
                     state = TorConnectionState.ERROR,
                     socksProxyHost = host,
@@ -198,9 +213,9 @@ class TorManager {
                 lastError = null,
                 webViewProxyApplied = proxyApplied
             )
-            Log.i(tag, "Tor connection established successfully on $host:$activePort")
+            logI("Tor connection established successfully on $host:$activePort")
         } catch (e: Exception) {
-            Log.e(tag, "Failed to establish Tor connection: ${e.message}", e)
+            logE("Failed to establish Tor connection: ${e.message}", e)
             clearWebViewProxy()
             if (connectId == currentConnectId) {
                 _torStatus.value = _torStatus.value.copy(
@@ -220,7 +235,7 @@ class TorManager {
         synchronized(this) {
             ++currentConnectId
         }
-        Log.d(tag, "Disconnecting Tor network and restoring direct routing...")
+        logD("Disconnecting Tor network and restoring direct routing...")
         clearWebViewProxy()
         _torStatus.value = TorStatus(
             state = TorConnectionState.DISCONNECTED,
@@ -296,17 +311,17 @@ class TorManager {
                     proxyConfig,
                     executor,
                     {
-                        Log.d(tag, "Android WebKit proxy override confirmed active on $host:$port")
+                        logD("Android WebKit proxy override confirmed active on $host:$port")
                         _torStatus.value = _torStatus.value.copy(webViewProxyApplied = true)
                     }
                 )
                 true
             } else {
-                Log.w(tag, "WebViewFeature.PROXY_OVERRIDE not supported on this platform version")
+                logW("WebViewFeature.PROXY_OVERRIDE not supported on this platform version")
                 false
             }
         } catch (e: Throwable) {
-            Log.e(tag, "Error applying WebView proxy override", e)
+            logE("Error applying WebView proxy override", e)
             false
         }
     }
@@ -320,13 +335,13 @@ class TorManager {
                 ProxyController.getInstance().clearProxyOverride(
                     executor,
                     {
-                        Log.d(tag, "Android WebKit proxy override cleared")
+                        logD("Android WebKit proxy override cleared")
                         _torStatus.value = _torStatus.value.copy(webViewProxyApplied = false)
                     }
                 )
             }
         } catch (e: Throwable) {
-            Log.e(tag, "Error clearing WebView proxy override", e)
+            logE("Error clearing WebView proxy override", e)
         }
     }
 
@@ -688,7 +703,7 @@ class TorManager {
             }
         } catch (e: Exception) {
             val latency = System.currentTimeMillis() - startTime
-            Log.w(tag, "Tor test probe returned local proxy diagnostic: ${e.message}")
+            logW("Tor test probe returned local proxy diagnostic: ${e.message}")
             
             // If proxy is active locally and configured
             val result = TorTestResult(
