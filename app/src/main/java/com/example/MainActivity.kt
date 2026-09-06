@@ -22,6 +22,9 @@ import com.example.data.tor.TorConnectionState
 import com.example.ui.components.FloatingAddressBar
 import com.example.ui.components.GVONEWebView
 import com.example.ui.components.ShortsAudioPill
+import com.example.ui.contextmenu.LinkContextMenuBottomSheet
+import com.example.ui.contextmenu.PagePreviewSheet
+import com.example.ui.contextmenu.TabGroupPickerSheet
 import com.example.ui.screens.*
 import com.example.ui.theme.GVONEBrowserTheme
 import com.example.ui.viewmodel.ActiveSheet
@@ -79,6 +82,9 @@ fun BrowserApp(
     val isCurrentTabShorts by viewModel.isCurrentTabShorts.collectAsStateWithLifecycle()
     val isShortsMuted by viewModel.isShortsMuted.collectAsStateWithLifecycle()
     val mediaPlayerStatus by viewModel.mediaPlayerStatus.collectAsStateWithLifecycle()
+    val contextMenuData by viewModel.contextMenuData.collectAsStateWithLifecycle()
+    val pagePreviewData by viewModel.pagePreviewData.collectAsStateWithLifecycle()
+    val groupPickerUrl by viewModel.groupPickerUrl.collectAsStateWithLifecycle()
 
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
@@ -162,6 +168,9 @@ fun BrowserApp(
                             onProgressChanged = { progress ->
                                 viewModel.updateTabState(tabId = tab.id, progress = progress, isLoading = progress < 100)
                             },
+                            onContextMenuDetected = { data ->
+                                viewModel.triggerContextMenu(data)
+                            },
                             onPageScroll = { scrollY, dy ->
                                 if (isCurrent) {
                                     if (scrollY <= 24) {
@@ -177,7 +186,7 @@ fun BrowserApp(
                                 }
                             },
                             onStartDownload = { url, userAgent, contentDisposition, mimeType ->
-                                // Trigger download via DownloadManager
+                                viewModel.downloadResource(url, mimeType, context)
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -422,6 +431,47 @@ fun BrowserApp(
                 tab = currentTab,
                 isTorActive = isTorActive,
                 onDismiss = { viewModel.closeSheet() }
+            )
+        }
+
+        // Chrome-like Long-Press Context Menu for Links & Media
+        contextMenuData?.let { data ->
+            LinkContextMenuBottomSheet(
+                data = data,
+                onDismiss = { viewModel.dismissContextMenu() },
+                onOpenInNewTab = { url -> viewModel.openInNewTabFromContextMenu(url, inBackground = true, context = context) },
+                onOpenInNewTabInGroup = { url -> viewModel.openInNewTabInGroupFromContextMenu(url, context = context) },
+                onOpenInIncognito = { url -> viewModel.openInIncognitoFromContextMenu(url, context = context) },
+                onOpenInNewWindow = { url -> viewModel.openInNewWindowFromContextMenu(url, context = context) },
+                onPreviewPage = { url, title -> viewModel.showPagePreview(url, title) },
+                onCopyLinkAddress = { url -> viewModel.copyLinkAddress(url, context = context) },
+                onCopyLinkText = { text -> viewModel.copyLinkText(text, context = context) },
+                onDownloadResource = { url, mimeType -> viewModel.downloadResource(url, mimeType, context = context) },
+                onToggleBookmark = { url, title, faviconUrl -> viewModel.toggleBookmarkFromContextMenu(url, title, faviconUrl, context = context) },
+                onToggleReadingList = { url, title, faviconUrl -> viewModel.toggleReadingListFromContextMenu(url, title, faviconUrl, context = context) },
+                onShareLink = { url, title -> viewModel.shareLink(url, title, context = context) }
+            )
+        }
+
+        // Lightweight Page Preview Bottom Sheet
+        pagePreviewData?.let { preview ->
+            PagePreviewSheet(
+                data = preview,
+                onClose = { viewModel.dismissPagePreview() },
+                onOpenInTab = { url ->
+                    viewModel.dismissPagePreview()
+                    viewModel.createNewTab(url = url, inBackground = false)
+                }
+            )
+        }
+
+        // Tab Group Picker Dialog/Sheet (When user selects "Open in new tab in group" with multiple existing groups)
+        groupPickerUrl?.let { targetUrl ->
+            TabGroupPickerSheet(
+                groups = tabGroups,
+                onDismiss = { viewModel.dismissGroupPicker() },
+                onSelectGroup = { groupId -> viewModel.selectGroupAndAddTab(groupId, targetUrl, context = context) },
+                onCreateGroupAndAdd = { groupName -> viewModel.createGroupAndAddTab(groupName, targetUrl, context = context) }
             )
         }
     }

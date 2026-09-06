@@ -38,10 +38,12 @@ class BrowserRepository(context: Context) {
     // Bookmarks
     val bookmarks: Flow<List<BookmarkEntry>> = bookmarkDao.getAllBookmarks()
     fun searchBookmarks(query: String) = bookmarkDao.searchBookmarks(query)
-    suspend fun isBookmarked(url: String): Boolean = bookmarkDao.getBookmarkByUrl(url) != null
+    suspend fun isBookmarked(url: String): Boolean = bookmarkDao.getStandardBookmarkByUrl(url) != null
+    suspend fun isInReadingList(url: String): Boolean = bookmarkDao.getReadingListByUrl(url) != null
     suspend fun addBookmark(bookmark: BookmarkEntry) = bookmarkDao.insertBookmark(bookmark)
     suspend fun removeBookmark(bookmark: BookmarkEntry) = bookmarkDao.deleteBookmark(bookmark)
     suspend fun removeBookmarkByUrl(url: String) = bookmarkDao.deleteByUrl(url)
+    suspend fun removeBookmarkByUrlAndType(url: String, isReadingList: Boolean) = bookmarkDao.deleteByUrlAndType(url, isReadingList)
 
     // Downloads
     val downloads: Flow<List<DownloadItem>> = downloadDao.getAllDownloads()

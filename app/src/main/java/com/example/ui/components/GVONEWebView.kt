@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.BrowserTab
 import com.example.data.sync.GVONEWebAppBridge
+import com.example.ui.contextmenu.ContextMenuTargetType
+import com.example.ui.contextmenu.LinkContextMenuData
 import com.example.data.tor.TorConnectionState
 import com.example.ui.theme.*
 
@@ -63,6 +65,7 @@ fun GVONEWebView(
     onUrlChanged: (String) -> Unit,
     onFaviconChanged: (String?) -> Unit,
     onProgressChanged: (Int) -> Unit,
+    onContextMenuDetected: ((LinkContextMenuData) -> Unit)? = null,
     onStartDownload: (url: String, userAgent: String?, contentDisposition: String?, mimeType: String?) -> Unit,
     onPageScroll: ((scrollY: Int, dy: Int) -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -138,6 +141,58 @@ fun GVONEWebView(
                             onStartDownload(url, userAgent, contentDisposition, mimetype)
                         }
 
+                        setOnLongClickListener { view ->
+                            val wv = view as? WebView ?: return@setOnLongClickListener false
+                            val hit = wv.hitTestResult ?: return@setOnLongClickListener false
+                            when (hit.type) {
+                                WebView.HitTestResult.SRC_ANCHOR_TYPE -> {
+                                    val url = hit.extra
+                                    if (!url.isNullOrBlank()) {
+                                        onContextMenuDetected?.invoke(
+                                            LinkContextMenuData(
+                                                url = url,
+                                                targetType = ContextMenuTargetType.LINK
+                                            )
+                                        )
+                                        return@setOnLongClickListener true
+                                    }
+                                }
+                                WebView.HitTestResult.IMAGE_TYPE -> {
+                                    val url = hit.extra
+                                    if (!url.isNullOrBlank()) {
+                                        onContextMenuDetected?.invoke(
+                                            LinkContextMenuData(
+                                                url = url,
+                                                srcUrl = url,
+                                                targetType = ContextMenuTargetType.IMAGE
+                                            )
+                                        )
+                                        return@setOnLongClickListener true
+                                    }
+                                }
+                                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                                    val imageUrl = hit.extra
+                                    val message = wv.handler.obtainMessage()
+                                    wv.requestFocusNodeHref(message)
+                                    val linkUrl = message.data.getString("url") ?: imageUrl
+                                    val title = message.data.getString("title") ?: ""
+                                    val src = message.data.getString("src") ?: imageUrl
+                                    if (!linkUrl.isNullOrBlank()) {
+                                        onContextMenuDetected?.invoke(
+                                            LinkContextMenuData(
+                                                url = linkUrl,
+                                                title = title,
+                                                srcUrl = src,
+                                                targetType = ContextMenuTargetType.IMAGE_LINK
+                                            )
+                                        )
+                                        return@setOnLongClickListener true
+                                    }
+                                }
+                            }
+                            false
+                        }
+
                         webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 loadProgress = newProgress
@@ -152,6 +207,7 @@ fun GVONEWebView(
                                             applyToAll = bridgeApplyToAll,
                                             shortsAudioMode = shortsAudioMode
                                         )
+                                        webAppBridge?.injectContextMenuScript(wv)
                                     }
                                 }
                             }
@@ -247,6 +303,7 @@ fun GVONEWebView(
                                     view?.let { wv ->
                                         webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode)
                                         webAppBridge?.injectBackgroundPlayerScript(wv, backgroundPlayEnabled)
+                                        webAppBridge?.injectContextMenuScript(wv)
                                     }
                                 }
                             }
@@ -260,6 +317,7 @@ fun GVONEWebView(
                                     view?.let { wv ->
                                         webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode)
                                         webAppBridge?.injectBackgroundPlayerScript(wv, backgroundPlayEnabled)
+                                        webAppBridge?.injectContextMenuScript(wv)
                                     }
                                 }
                                 view?.title?.let {
@@ -271,6 +329,7 @@ fun GVONEWebView(
                                 super.onPageCommitVisible(view, url)
                                 view?.let { wv ->
                                     webAppBridge?.injectBackgroundPlayerScript(wv, backgroundPlayEnabled)
+                                    webAppBridge?.injectContextMenuScript(wv)
                                 }
                             }
 

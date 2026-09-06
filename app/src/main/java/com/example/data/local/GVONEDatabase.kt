@@ -44,6 +44,12 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE url = :url LIMIT 1")
     suspend fun getBookmarkByUrl(url: String): BookmarkEntry?
 
+    @Query("SELECT * FROM bookmarks WHERE url = :url AND isReadingList = 0 LIMIT 1")
+    suspend fun getStandardBookmarkByUrl(url: String): BookmarkEntry?
+
+    @Query("SELECT * FROM bookmarks WHERE url = :url AND isReadingList = 1 LIMIT 1")
+    suspend fun getReadingListByUrl(url: String): BookmarkEntry?
+
     @Query("SELECT * FROM bookmarks WHERE title LIKE '%' || :query || '%' OR url LIKE '%' || :query || '%'")
     fun searchBookmarks(query: String): Flow<List<BookmarkEntry>>
 
@@ -58,6 +64,9 @@ interface BookmarkDao {
 
     @Query("DELETE FROM bookmarks WHERE url = :url")
     suspend fun deleteByUrl(url: String)
+
+    @Query("DELETE FROM bookmarks WHERE url = :url AND isReadingList = :isReadingList")
+    suspend fun deleteByUrlAndType(url: String, isReadingList: Boolean)
 }
 
 @Dao

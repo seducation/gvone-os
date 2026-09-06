@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 import java.net.URI
 import java.util.Locale
+import com.example.ui.contextmenu.ContextMenuTargetType
+import com.example.ui.contextmenu.LinkContextMenuData
 
 /**
  * Web App Connection and Processing States
@@ -259,6 +261,8 @@ class GVONEWebAppBridge(
     private val _mediaPlayerState = MutableStateFlow<MediaPlayerStatus?>(null)
     val mediaPlayerState: StateFlow<MediaPlayerStatus?> = _mediaPlayerState.asStateFlow()
 
+    var onContextMenuListener: ((LinkContextMenuData) -> Unit)? = null
+
     private var lastSubmissionTimestamp = 0L
 
     /**
@@ -306,10 +310,44 @@ class GVONEWebAppBridge(
                         _mediaPlayerState.value = newStatus
                         onMediaPlayerStateChanged(isPlaying, isMuted, title, isShorts)
                     }
+                    "context_menu_triggered" -> {
+                        onContextMenuTriggered(messageJson)
+                    }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse message from web app", e)
+        }
+    }
+
+    @JavascriptInterface
+    fun onContextMenuTriggered(messageJson: String) {
+        try {
+            val json = JSONObject(messageJson)
+            val url = json.optString("url")
+            if (url.isBlank() || url.startsWith("javascript:")) return
+
+            val targetTypeStr = json.optString("targetType", "LINK")
+            val targetType = try {
+                ContextMenuTargetType.valueOf(targetTypeStr.uppercase(Locale.ROOT))
+            } catch (_: Exception) {
+                ContextMenuTargetType.LINK
+            }
+
+            val data = LinkContextMenuData(
+                url = url,
+                title = json.optString("title"),
+                text = json.optString("text"),
+                srcUrl = json.optString("srcUrl").ifBlank { null },
+                targetType = targetType,
+                mimeType = json.optString("mimeType").ifBlank { null }
+            )
+
+            mainHandler.post {
+                onContextMenuListener?.invoke(data)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse context menu message", e)
         }
     }
 
@@ -1460,6 +1498,218 @@ class GVONEWebAppBridge(
                 } catch(e) {
                     console.warn('[GVONE Background Player] setup error:', e);
                 }
+            })();
+        """.trimIndent()
+        mainHandler.post {
+            webView.evaluateJavascript(script, null)
+        }
+    }
+
+    /**
+     * Injects Chrome-like long-press context menu detection script across all websites.
+     * Accurately identifies links, images, media, documents, and YouTube video elements
+     * with touch slop and 500ms duration verification.
+     */
+    fun injectContextMenuScript(webView: WebView) {
+        val script = """
+            (function() {
+                if (window.__GVONE_CONTEXT_MENU_INSTALLED__) return;
+                window.__GVONE_CONTEXT_MENU_INSTALLED__ = true;
+
+                var startX = 0;
+                var startY = 0;
+                var longPressTimer = null;
+                var touchTarget = null;
+                var touchMoved = false;
+
+                function getFileType(url) {
+                    if (!url) return null;
+                    var clean = url.split('?')[0].toLowerCase();
+                    if (clean.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/)) return 'IMAGE';
+                    if (clean.match(/\.(mp4|webm|mkv|mov|avi|flv|m3u8|mpd)$/)) return 'VIDEO';
+                    if (clean.match(/\.(mp3|wav|ogg|m4a|aac|flac)$/)) return 'AUDIO';
+                    if (clean.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|tar|gz|apk)$/)) return 'DOCUMENT';
+                    return null;
+                }
+
+                function extractElementInfo(el) {
+                    if (!el || el === document.body || el === document.documentElement) return null;
+                    var curr = el;
+                    var anchor = null;
+                    var image = null;
+                    var video = null;
+                    var audio = null;
+                    var depth = 0;
+
+                    while (curr && curr !== document.body && curr !== document.documentElement && depth < 12) {
+                        depth++;
+                        var tag = (curr.tagName || '').toLowerCase();
+                        if (!video && tag === 'video') video = curr;
+                        if (!audio && tag === 'audio') audio = curr;
+                        if (!image && tag === 'img') image = curr;
+                        if (!anchor && tag === 'a' && curr.href) anchor = curr;
+                        if (!anchor && curr.getAttribute) {
+                            var role = curr.getAttribute('role');
+                            var dataHref = curr.getAttribute('data-href') || curr.getAttribute('data-url');
+                            if (role === 'link' || dataHref) {
+                                try {
+                                    var resolved = dataHref ? new URL(dataHref, window.location.href).href : window.location.href;
+                                    anchor = {
+                                        href: resolved,
+                                        innerText: curr.innerText || curr.textContent || '',
+                                        title: curr.title || curr.getAttribute('aria-label') || ''
+                                    };
+                                } catch(e) {}
+                            }
+                        }
+                        curr = curr.parentElement;
+                    }
+
+                    if (video) {
+                        var vSrc = video.currentSrc || video.src || (video.querySelector('source') ? video.querySelector('source').src : '') || (anchor ? anchor.href : '');
+                        var vTitle = video.title || video.getAttribute('aria-label') || (anchor ? (anchor.innerText || anchor.title) : '') || 'Video';
+                        return {
+                            url: vSrc || (anchor ? anchor.href : window.location.href),
+                            title: vTitle,
+                            text: vTitle,
+                            srcUrl: vSrc,
+                            targetType: 'VIDEO'
+                        };
+                    }
+
+                    if (audio) {
+                        var aSrc = audio.currentSrc || audio.src || (audio.querySelector('source') ? audio.querySelector('source').src : '');
+                        var aTitle = audio.title || (anchor ? (anchor.innerText || anchor.title) : '') || 'Audio';
+                        return {
+                            url: aSrc || (anchor ? anchor.href : window.location.href),
+                            title: aTitle,
+                            text: aTitle,
+                            srcUrl: aSrc,
+                            targetType: 'AUDIO'
+                        };
+                    }
+
+                    if (anchor && image) {
+                        var iSrc = image.currentSrc || image.src || '';
+                        var linkText = (anchor.innerText || anchor.textContent || image.alt || image.title || anchor.title || '').trim();
+                        return {
+                            url: anchor.href,
+                            title: linkText || anchor.href,
+                            text: linkText,
+                            srcUrl: iSrc,
+                            targetType: 'IMAGE_LINK'
+                        };
+                    }
+
+                    if (image) {
+                        var imgSrc = image.currentSrc || image.src || '';
+                        var alt = (image.alt || image.title || '').trim();
+                        return {
+                            url: imgSrc,
+                            title: alt || imgSrc,
+                            text: alt,
+                            srcUrl: imgSrc,
+                            targetType: 'IMAGE'
+                        };
+                    }
+
+                    if (anchor) {
+                        var fileType = getFileType(anchor.href);
+                        var aText = (anchor.innerText || anchor.textContent || anchor.getAttribute('aria-label') || anchor.title || '').trim();
+                        return {
+                            url: anchor.href,
+                            title: aText || anchor.title || anchor.href,
+                            text: aText,
+                            srcUrl: null,
+                            targetType: fileType ? fileType : 'LINK'
+                        };
+                    }
+
+                    return null;
+                }
+
+                function triggerNativeContextMenu(info) {
+                    if (!info || !info.url) return;
+                    try {
+                        var payload = JSON.stringify(info);
+                        if (window.GVONEBrowserBridge && typeof window.GVONEBrowserBridge.onContextMenuTriggered === 'function') {
+                            window.GVONEBrowserBridge.onContextMenuTriggered(payload);
+                        } else if (window.GVONEBrowserBridge && typeof window.GVONEBrowserBridge.postMessageToBrowser === 'function') {
+                            window.GVONEBrowserBridge.postMessageToBrowser(JSON.stringify({
+                                type: 'context_menu_triggered',
+                                url: info.url,
+                                title: info.title,
+                                text: info.text,
+                                srcUrl: info.srcUrl,
+                                targetType: info.targetType
+                            }));
+                        }
+                    } catch(err) {
+                        console.warn('[GVONE ContextMenu] dispatch error:', err);
+                    }
+                }
+
+                // 1. Native DOM contextmenu listener (capture phase)
+                window.addEventListener('contextmenu', function(e) {
+                    var target = e.target || document.elementFromPoint(e.clientX, e.clientY);
+                    var info = extractElementInfo(target);
+                    if (info) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        triggerNativeContextMenu(info);
+                    }
+                }, true);
+
+                // 2. Touch-based long-press listener (with touch slop and cancel)
+                window.addEventListener('touchstart', function(e) {
+                    if (e.touches.length !== 1) {
+                        if (longPressTimer) clearTimeout(longPressTimer);
+                        return;
+                    }
+                    var touch = e.touches[0];
+                    startX = touch.clientX;
+                    startY = touch.clientY;
+                    touchTarget = touch.target;
+                    touchMoved = false;
+
+                    if (longPressTimer) clearTimeout(longPressTimer);
+                    longPressTimer = setTimeout(function() {
+                        if (touchMoved) return;
+                        var target = touchTarget || document.elementFromPoint(startX, startY);
+                        var info = extractElementInfo(target);
+                        if (info) {
+                            triggerNativeContextMenu(info);
+                        }
+                    }, 480);
+                }, { passive: true });
+
+                window.addEventListener('touchmove', function(e) {
+                    if (!longPressTimer) return;
+                    if (e.touches.length > 0) {
+                        var touch = e.touches[0];
+                        var dx = touch.clientX - startX;
+                        var dy = touch.clientY - startY;
+                        if (Math.hypot(dx, dy) > 12) {
+                            touchMoved = true;
+                            clearTimeout(longPressTimer);
+                            longPressTimer = null;
+                        }
+                    }
+                }, { passive: true });
+
+                window.addEventListener('touchend', function() {
+                    if (longPressTimer) {
+                        clearTimeout(longPressTimer);
+                        longPressTimer = null;
+                    }
+                }, { passive: true });
+
+                window.addEventListener('touchcancel', function() {
+                    if (longPressTimer) {
+                        clearTimeout(longPressTimer);
+                        longPressTimer = null;
+                    }
+                }, { passive: true });
             })();
         """.trimIndent()
         mainHandler.post {

@@ -2,16 +2,22 @@ package com.example.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.webkit.CookieManager
 import android.webkit.WebView
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.MainActivity
 import com.example.data.ai.GVONEAIService
 import com.example.data.download.BrowserDownloadManager
 import com.example.data.model.*
 import com.example.data.repository.BrowserRepository
 import com.example.data.sync.*
 import com.example.data.tor.*
+import com.example.ui.contextmenu.LinkContextMenuData
+import com.example.ui.contextmenu.PagePreviewData
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.lang.ref.WeakReference
@@ -89,6 +95,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val _activeGroupId = MutableStateFlow<String?>(null)
     val activeGroupId: StateFlow<String?> = _activeGroupId.asStateFlow()
+
+    // Long-press Context Menu & Preview State
+    private val _contextMenuData = MutableStateFlow<LinkContextMenuData?>(null)
+    val contextMenuData: StateFlow<LinkContextMenuData?> = _contextMenuData.asStateFlow()
+
+    private val _pagePreviewData = MutableStateFlow<PagePreviewData?>(null)
+    val pagePreviewData: StateFlow<PagePreviewData?> = _pagePreviewData.asStateFlow()
+
+    private val _groupPickerUrl = MutableStateFlow<String?>(null)
+    val groupPickerUrl: StateFlow<String?> = _groupPickerUrl.asStateFlow()
 
     // Navigation and Active Sheet State
     private val _activeSheet = MutableStateFlow<ActiveSheet>(ActiveSheet.None)
@@ -219,6 +235,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 torManager.connect(host = _settings.value.torProxyHost, port = _settings.value.torProxyPort)
             }
         }
+
+        // Connect WebView context menu detection bridge to ViewModel
+        webAppBridge.onContextMenuListener = { data ->
+            triggerContextMenu(data)
+        }
     }
 
     private fun loadPersistedSettings(): BrowserSettings {
@@ -332,7 +353,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun createNewTab(
         url: String = HOME_WEB_APP_URL,
         isPrivate: Boolean = _isPrivateMode.value,
-        groupId: String? = _activeGroupId.value
+        groupId: String? = _activeGroupId.value,
+        inBackground: Boolean = false
     ) {
         val newTab = BrowserTab(
             id = UUID.randomUUID().toString(),
@@ -342,11 +364,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             tabGroupId = groupId
         )
         _tabs.value = _tabs.value + newTab
-        _currentTabId.value = newTab.id
-        _activeGroupId.value = groupId
-        _addressBarInput.value = if (isInternalHomeUrl(url)) "" else url
+        if (!inBackground) {
+            _currentTabId.value = newTab.id
+            _activeGroupId.value = groupId
+            _addressBarInput.value = if (isInternalHomeUrl(url)) "" else url
+            closeSheet()
+        }
         persistTabsAndActiveState()
-        closeSheet()
     }
 
     fun closeTab(tabId: String) {
@@ -1015,5 +1039,196 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             "if (window.__GVONE_MEDIA_NEXT__) window.__GVONE_MEDIA_NEXT__();",
             null
         )
+    }
+
+    // --- Context Menu Operations ---
+
+    fun triggerContextMenu(data: LinkContextMenuData) {
+        viewModelScope.launch {
+            val isBookmarked = repository.isBookmarked(data.url)
+            val isInReadingList = repository.isInReadingList(data.url)
+            val activeGroupId = currentTab.value?.tabGroupId ?: _activeGroupId.value
+            _contextMenuData.value = data.copy(
+                isBookmarked = isBookmarked,
+                isInReadingList = isInReadingList,
+                activeTabGroupId = activeGroupId
+            )
+        }
+    }
+
+    fun dismissContextMenu() {
+        _contextMenuData.value = null
+    }
+
+    fun openInNewTabFromContextMenu(url: String, inBackground: Boolean = true, context: Context? = null) {
+        createNewTab(url = url, inBackground = inBackground)
+        if (inBackground && context != null) {
+            Toast.makeText(context, "Tab opened in background", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun openInNewTabInGroupFromContextMenu(url: String, context: Context? = null) {
+        val currentGroupId = currentTab.value?.tabGroupId ?: _activeGroupId.value
+        if (currentGroupId != null) {
+            createNewTab(url = url, groupId = currentGroupId, inBackground = true)
+            if (context != null) {
+                val groupName = _tabGroups.value.firstOrNull { it.id == currentGroupId }?.name ?: "Group"
+                Toast.makeText(context, "Added tab to group '$groupName'", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            if (_tabGroups.value.isNotEmpty()) {
+                _groupPickerUrl.value = url
+            } else {
+                val domain = try {
+                    java.net.URI(url).host?.removePrefix("www.") ?: "Group 1"
+                } catch (_: Exception) {
+                    "Group 1"
+                }
+                val newGroupId = createTabGroup(domain, "#3B82F6")
+                val currentId = _currentTabId.value
+                _tabs.value = _tabs.value.map {
+                    if (it.id == currentId) it.copy(tabGroupId = newGroupId) else it
+                }
+                createNewTab(url = url, groupId = newGroupId, inBackground = true)
+                if (context != null) {
+                    Toast.makeText(context, "Created '$domain' group and added tab", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    fun selectGroupAndAddTab(groupId: String, url: String, context: Context? = null) {
+        _groupPickerUrl.value = null
+        createNewTab(url = url, groupId = groupId, inBackground = true)
+        if (context != null) {
+            val groupName = _tabGroups.value.firstOrNull { it.id == groupId }?.name ?: "Group"
+            Toast.makeText(context, "Added tab to group '$groupName'", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun createGroupAndAddTab(groupName: String, url: String, context: Context? = null) {
+        _groupPickerUrl.value = null
+        val newGroupId = createTabGroup(groupName, "#10B981")
+        createNewTab(url = url, groupId = newGroupId, inBackground = true)
+        if (context != null) {
+            Toast.makeText(context, "Created '$groupName' group and added tab", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun dismissGroupPicker() {
+        _groupPickerUrl.value = null
+    }
+
+    fun openInIncognitoFromContextMenu(url: String, context: Context? = null) {
+        createNewTab(url = url, isPrivate = true, groupId = null, inBackground = false)
+        if (context != null) {
+            Toast.makeText(context, "Opened in Incognito tab", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun openInNewWindowFromContextMenu(url: String, context: Context) {
+        try {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                data = Uri.parse(url)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            createNewTab(url = url, inBackground = false)
+            Toast.makeText(context, "Multi-window unsupported; opened in new tab", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun showPagePreview(url: String, title: String) {
+        _pagePreviewData.value = PagePreviewData(url = url, title = title)
+    }
+
+    fun dismissPagePreview() {
+        _pagePreviewData.value = null
+    }
+
+    fun copyLinkAddress(url: String, context: Context) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Link Address", url))
+        Toast.makeText(context, "Link copied to clipboard", Toast.LENGTH_SHORT).show()
+    }
+
+    fun copyLinkText(text: String, context: Context) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("Link Text", text))
+        Toast.makeText(context, "Link text copied", Toast.LENGTH_SHORT).show()
+    }
+
+    fun downloadResource(url: String, mimeType: String?, context: Context) {
+        viewModelScope.launch {
+            try {
+                downloadManager.startDownload(url = url, userAgent = null, contentDisposition = null, mimeType = mimeType)
+                val fileName = url.substringAfterLast("/").substringBefore("?").ifBlank { "resource" }
+                Toast.makeText(context, "Download started: $fileName", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun toggleBookmarkFromContextMenu(url: String, title: String, faviconUrl: String?, context: Context) {
+        viewModelScope.launch {
+            val already = repository.isBookmarked(url)
+            if (already) {
+                repository.removeBookmarkByUrlAndType(url, isReadingList = false)
+                Toast.makeText(context, "Removed from bookmarks", Toast.LENGTH_SHORT).show()
+            } else {
+                repository.addBookmark(
+                    BookmarkEntry(
+                        title = title.ifBlank { url },
+                        url = url,
+                        folder = "Favorites",
+                        faviconUrl = faviconUrl,
+                        isReadingList = false
+                    )
+                )
+                Toast.makeText(context, "Added to bookmarks", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun toggleReadingListFromContextMenu(url: String, title: String, faviconUrl: String?, context: Context) {
+        viewModelScope.launch {
+            val already = repository.isInReadingList(url)
+            if (already) {
+                repository.removeBookmarkByUrlAndType(url, isReadingList = true)
+                Toast.makeText(context, "Removed from reading list", Toast.LENGTH_SHORT).show()
+            } else {
+                repository.addBookmark(
+                    BookmarkEntry(
+                        title = title.ifBlank { url },
+                        url = url,
+                        folder = "Reading List",
+                        faviconUrl = faviconUrl,
+                        isReadingList = true
+                    )
+                )
+                Toast.makeText(context, "Added to reading list", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun shareLink(url: String, title: String?, context: Context) {
+        try {
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                putExtra(Intent.EXTRA_TEXT, url)
+                if (!title.isNullOrBlank()) {
+                    putExtra(Intent.EXTRA_SUBJECT, title)
+                    putExtra(Intent.EXTRA_TITLE, title)
+                }
+                type = "text/plain"
+            }
+            val shareIntent = Intent.createChooser(sendIntent, "Share link via")
+            shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(shareIntent)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Failed to share link", Toast.LENGTH_SHORT).show()
+        }
     }
 }

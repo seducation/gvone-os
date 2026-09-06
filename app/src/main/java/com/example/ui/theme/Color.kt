@@ -12,6 +12,8 @@ val GVONEPrimaryVariant = Color(0xFF4F46E5)
 val GVONESecondary = Color(0xFF06B6D4)
 val GVONETertiary = Color(0xFF10B981)
 val GVONEAccentRed = Color(0xFFEF4444)
+val GVONEAccentPurple = Color(0xFFA855F7)
+val GVONEAccentOrange = Color(0xFFF97316)
 
 val GVONETextPrimary = Color(0xFFF0F6FC)
 val GVONETextSecondary = Color(0xFF8B949E)
