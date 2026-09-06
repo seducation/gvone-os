@@ -759,9 +759,15 @@ fun EnvironmentSwitchSheet(
                                     }
                                 }
                                 Text(
-                                    text = "${env.objects.size} items • ${env.background.presetId.replaceFirstChar { it.uppercase() }}",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 11.sp
+                                    text = if (!env.startPageUrl.isNullOrBlank()) {
+                                        "Start page: ${env.startPageUrl}"
+                                    } else {
+                                        "${env.objects.size} items • ${env.background.presetId.replaceFirstChar { it.uppercase() }}"
+                                    },
+                                    color = if (!env.startPageUrl.isNullOrBlank()) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
 
@@ -896,10 +902,10 @@ fun CreateEnvironmentDialog(
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(Icons.Rounded.Link, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
-                    Text("Starting Link (Optional)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Starting Link / Default Start Page", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
 
-                Text("Quick Suggestions:", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                Text("Paste or pick any website URL to automatically open as this environment's start page:", color = Color(0xFF94A3B8), fontSize = 11.sp)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(linkPresets) { preset ->
                         Surface(

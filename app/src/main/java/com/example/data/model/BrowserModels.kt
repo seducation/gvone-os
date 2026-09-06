@@ -9,9 +9,7 @@ const val ADDRESS_BAR_TARGET_URL = "https://charassist-c4uzg7hb.manus.space"
 
 fun isInternalHomeUrl(url: String?): Boolean {
     if (url.isNullOrBlank()) return true
-    if (url == START_PAGE_URL || url == "about:blank" || url == "chrome://newtab" || url == "gvone://newtab") return true
-    val lower = url.lowercase()
-    return lower.contains("rssgroupfeed-jaelvwfd.manus.space")
+    return url == START_PAGE_URL || url == "about:blank" || url == "chrome://newtab" || url == "gvone://newtab"
 }
 
 enum class TabSortOption {
@@ -26,6 +24,7 @@ data class TabGroup(
     val name: String,
     val order: Int = 0,
     val colorHex: String? = null,
+    val environmentId: String = "personal",
     val createdAt: Long = System.currentTimeMillis()
 )
 
@@ -43,6 +42,7 @@ data class BrowserTab(
     val isLoading: Boolean = false,
     val progress: Int = 100,
     val tabGroupId: String? = null,
+    val environmentId: String = "personal",
     val createdAt: Long = System.currentTimeMillis(),
     val lastAccessedAt: Long = System.currentTimeMillis()
 )

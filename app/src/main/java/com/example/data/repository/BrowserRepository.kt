@@ -57,15 +57,19 @@ class BrowserRepository(context: Context) {
 
     // Tab Session Restore
     val savedTabs: Flow<List<BrowserTab>> = tabSessionDao.getAllTabs()
+    fun getTabsByEnvironment(envId: String): Flow<List<BrowserTab>> = tabSessionDao.getTabsByEnvironment(envId)
     suspend fun saveTab(tab: BrowserTab) = tabSessionDao.insertOrUpdateTab(tab)
     suspend fun saveTabs(tabs: List<BrowserTab>) = tabSessionDao.insertOrUpdateTabs(tabs)
     suspend fun deleteTab(id: String) = tabSessionDao.deleteById(id)
+    suspend fun deleteTabsByEnvironment(envId: String) = tabSessionDao.deleteByEnvironment(envId)
     suspend fun clearTabs() = tabSessionDao.clearAllTabs()
 
     // Tab Groups
     val tabGroups: Flow<List<TabGroup>> = tabGroupDao.getAllGroups()
+    fun getGroupsByEnvironment(envId: String): Flow<List<TabGroup>> = tabGroupDao.getGroupsByEnvironment(envId)
     suspend fun saveGroup(group: TabGroup) = tabGroupDao.insertOrUpdateGroup(group)
     suspend fun saveGroups(groups: List<TabGroup>) = tabGroupDao.insertOrUpdateGroups(groups)
     suspend fun deleteGroup(id: String) = tabGroupDao.deleteById(id)
+    suspend fun deleteGroupsByEnvironment(envId: String) = tabGroupDao.deleteByEnvironment(envId)
     suspend fun clearGroups() = tabGroupDao.clearAllGroups()
 }

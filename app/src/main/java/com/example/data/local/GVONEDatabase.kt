@@ -104,6 +104,9 @@ interface TabSessionDao {
     @Query("SELECT * FROM browser_tabs ORDER BY lastAccessedAt DESC")
     fun getAllTabs(): Flow<List<BrowserTab>>
 
+    @Query("SELECT * FROM browser_tabs WHERE environmentId = :envId ORDER BY lastAccessedAt DESC")
+    fun getTabsByEnvironment(envId: String): Flow<List<BrowserTab>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateTab(tab: BrowserTab)
 
@@ -116,6 +119,9 @@ interface TabSessionDao {
     @Query("DELETE FROM browser_tabs WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("DELETE FROM browser_tabs WHERE environmentId = :envId")
+    suspend fun deleteByEnvironment(envId: String)
+
     @Query("DELETE FROM browser_tabs")
     suspend fun clearAllTabs()
 }
@@ -124,6 +130,9 @@ interface TabSessionDao {
 interface TabGroupDao {
     @Query("SELECT * FROM tab_groups ORDER BY `order` ASC, createdAt ASC")
     fun getAllGroups(): Flow<List<TabGroup>>
+
+    @Query("SELECT * FROM tab_groups WHERE environmentId = :envId ORDER BY `order` ASC, createdAt ASC")
+    fun getGroupsByEnvironment(envId: String): Flow<List<TabGroup>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateGroup(group: TabGroup)
@@ -136,6 +145,9 @@ interface TabGroupDao {
 
     @Query("DELETE FROM tab_groups WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM tab_groups WHERE environmentId = :envId")
+    suspend fun deleteByEnvironment(envId: String)
 
     @Query("DELETE FROM tab_groups")
     suspend fun clearAllGroups()
@@ -150,7 +162,7 @@ interface TabGroupDao {
         BrowserTab::class,
         TabGroup::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class GVONEDatabase : RoomDatabase() {

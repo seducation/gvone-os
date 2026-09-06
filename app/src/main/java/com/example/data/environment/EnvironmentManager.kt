@@ -44,6 +44,8 @@ class EnvironmentManager(context: Context) {
         val ensuredList = finalList.map { env ->
             if (env.id == "personal") {
                 val hasRssLink = env.objects.any { it is CanvasObject.LinkObject && it.url.contains("rssgroupfeed-jaelvwfd.manus.space") }
+                val startPage = if (env.startPageUrl.isNullOrBlank()) "https://rssgroupfeed-jaelvwfd.manus.space" else env.startPageUrl
+                val envWithStartPage = env.copy(startPageUrl = startPage)
                 if (!hasRssLink) {
                     val defaultRss = CanvasObject.LinkObject(
                         id = "p_link_rss",
@@ -58,9 +60,9 @@ class EnvironmentManager(context: Context) {
                     )
                     val nonLinks = env.objects.filterNot { it is CanvasObject.LinkObject }
                     val links = env.objects.filterIsInstance<CanvasObject.LinkObject>()
-                    env.copy(objects = nonLinks + listOf(defaultRss) + links)
+                    envWithStartPage.copy(objects = nonLinks + listOf(defaultRss) + links)
                 } else {
-                    env
+                    envWithStartPage
                 }
             } else {
                 env
@@ -127,22 +129,25 @@ class EnvironmentManager(context: Context) {
             )
         )
 
-        if (!initialLinkUrl.isNullOrBlank()) {
-            val trimmedUrl = if (initialLinkUrl.startsWith("http://") || initialLinkUrl.startsWith("https://")) {
+        val resolvedStartUrl = if (!initialLinkUrl.isNullOrBlank()) {
+            if (initialLinkUrl.startsWith("http://") || initialLinkUrl.startsWith("https://")) {
                 initialLinkUrl.trim()
             } else {
                 "https://${initialLinkUrl.trim()}"
             }
+        } else null
+
+        if (resolvedStartUrl != null) {
             val title = if (!initialLinkTitle.isNullOrBlank()) {
                 initialLinkTitle.trim()
             } else {
-                trimmedUrl.removePrefix("https://").removePrefix("http://").removePrefix("www.").substringBefore("/")
+                resolvedStartUrl.removePrefix("https://").removePrefix("http://").removePrefix("www.").substringBefore("/")
             }
             baseObjects.add(
                 CanvasObject.LinkObject(
                     id = UUID.randomUUID().toString(),
                     title = title,
-                    url = trimmedUrl,
+                    url = resolvedStartUrl,
                     iconName = "Globe",
                     accentColorHex = preset.accentHex,
                     x = 0f,
@@ -166,7 +171,8 @@ class EnvironmentManager(context: Context) {
                 presetId = preset.id
             ),
             layoutMode = EnvironmentLayoutMode.GRID,
-            objects = baseObjects
+            objects = baseObjects,
+            startPageUrl = resolvedStartUrl
         )
 
         val updated = _environments.value + newEnv
@@ -256,6 +262,9 @@ class EnvironmentManager(context: Context) {
             obj.put("themeMode", env.themeMode)
             obj.put("layoutMode", env.layoutMode.name)
             obj.put("createdAt", env.createdAt)
+            if (!env.startPageUrl.isNullOrBlank()) {
+                obj.put("startPageUrl", env.startPageUrl)
+            }
 
             // Background
             val bgObj = JSONObject()
@@ -343,6 +352,11 @@ class EnvironmentManager(context: Context) {
                 EnvironmentLayoutMode.GRID
             }
             val createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+            val startPageUrl = if (obj.has("startPageUrl")) {
+                obj.getString("startPageUrl").ifBlank { if (id == "personal") "https://rssgroupfeed-jaelvwfd.manus.space" else null }
+            } else {
+                if (id == "personal") "https://rssgroupfeed-jaelvwfd.manus.space" else null
+            }
 
             val bgObj = obj.optJSONObject("background")
             val background = if (bgObj != null) {
@@ -480,6 +494,7 @@ class EnvironmentManager(context: Context) {
                     background = background,
                     layoutMode = layoutMode,
                     objects = objects,
+                    startPageUrl = startPageUrl,
                     createdAt = createdAt
                 )
             )
@@ -502,6 +517,7 @@ class EnvironmentManager(context: Context) {
                 presetId = "aurora"
             ),
             layoutMode = EnvironmentLayoutMode.GRID,
+            startPageUrl = "https://rssgroupfeed-jaelvwfd.manus.space",
             objects = listOf(
                 CanvasObject.WidgetObject(
                     id = "p_search",

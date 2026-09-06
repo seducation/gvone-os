@@ -167,5 +167,6 @@ data class Environment(
     val background: EnvironmentBackground = EnvironmentBackground(),
     val layoutMode: EnvironmentLayoutMode = EnvironmentLayoutMode.GRID,
     val objects: List<CanvasObject> = emptyList(),
+    val startPageUrl: String? = null,
     val createdAt: Long = System.currentTimeMillis()
 )

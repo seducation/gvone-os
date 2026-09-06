@@ -78,6 +78,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Tab State
+    private val _allTabs = MutableStateFlow<List<BrowserTab>>(emptyList())
     private val _tabs = MutableStateFlow<List<BrowserTab>>(emptyList())
     val tabs: StateFlow<List<BrowserTab>> = _tabs.asStateFlow()
 
@@ -91,6 +92,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val tabSortOption: StateFlow<TabSortOption> = _tabSortOption.asStateFlow()
 
     // Tab Groups State
+    private val _allTabGroups = MutableStateFlow<List<TabGroup>>(emptyList())
     private val _tabGroups = MutableStateFlow<List<TabGroup>>(emptyList())
     val tabGroups: StateFlow<List<TabGroup>> = _tabGroups.asStateFlow()
 
@@ -145,7 +147,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun switchEnvironment(id: String) {
+        val oldEnvId = environmentManager.activeEnvironmentId.value
+        if (oldEnvId == id && _tabs.value.isNotEmpty()) return
+
+        // 1. Save active tab & group for old environment
+        prefs.edit()
+            .putString("last_active_tab_$oldEnvId", _currentTabId.value)
+            .putString("last_active_group_$oldEnvId", _activeGroupId.value)
+            .apply()
+
+        // 2. Switch environment in EnvironmentManager
         environmentManager.switchEnvironment(id)
+        val targetEnv = environmentManager.currentEnvironment.value
+
+        // 3. Load & sync tabs and groups for targetEnv
+        activateEnvironmentTabsAndGroups(targetEnv)
     }
 
     fun createEnvironment(
@@ -156,7 +172,23 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         initialLinkUrl: String? = null,
         initialLinkTitle: String? = null
     ): Environment {
-        return environmentManager.createEnvironment(name, icon, theme, preset, initialLinkUrl, initialLinkTitle)
+        val newEnv = environmentManager.createEnvironment(name, icon, theme, preset, initialLinkUrl, initialLinkTitle)
+        if (!newEnv.startPageUrl.isNullOrBlank()) {
+            val linkTab = BrowserTab(
+                id = UUID.randomUUID().toString(),
+                title = initialLinkTitle?.ifBlank { null } ?: (if (newEnv.startPageUrl.contains("rssgroupfeed")) "RSS Group Feed" else name),
+                url = newEnv.startPageUrl,
+                isPrivate = false,
+                tabGroupId = null,
+                environmentId = newEnv.id
+            )
+            _allTabs.value = _allTabs.value + linkTab
+            viewModelScope.launch {
+                repository.saveTab(linkTab)
+            }
+        }
+        switchEnvironment(newEnv.id)
+        return newEnv
     }
 
     fun updateEnvironment(env: Environment) {
@@ -164,11 +196,119 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun duplicateEnvironment(id: String) {
+        val oldActiveId = environmentManager.activeEnvironmentId.value
+        prefs.edit()
+            .putString("last_active_tab_$oldActiveId", _currentTabId.value)
+            .putString("last_active_group_$oldActiveId", _activeGroupId.value)
+            .apply()
+
         environmentManager.duplicateEnvironment(id)
+        val newEnv = environmentManager.currentEnvironment.value
+        val originalTabs = _allTabs.value.filter { it.environmentId == id }
+        val originalGroups = _allTabGroups.value.filter { it.environmentId == id }
+
+        val groupIdMap = mutableMapOf<String, String>()
+        val clonedGroups = originalGroups.map { g ->
+            val newGId = UUID.randomUUID().toString()
+            groupIdMap[g.id] = newGId
+            g.copy(id = newGId, environmentId = newEnv.id)
+        }
+        val clonedTabs = originalTabs.map { t ->
+            t.copy(
+                id = UUID.randomUUID().toString(),
+                environmentId = newEnv.id,
+                tabGroupId = t.tabGroupId?.let { groupIdMap[it] }
+            )
+        }
+        _allTabGroups.value = _allTabGroups.value + clonedGroups
+        _allTabs.value = _allTabs.value + clonedTabs
+        viewModelScope.launch {
+            repository.saveGroups(clonedGroups)
+            repository.saveTabs(clonedTabs)
+        }
+        activateEnvironmentTabsAndGroups(newEnv)
     }
 
     fun deleteEnvironment(id: String) {
         environmentManager.deleteEnvironment(id)
+        viewModelScope.launch {
+            repository.deleteTabsByEnvironment(id)
+            repository.deleteGroupsByEnvironment(id)
+        }
+        _allTabs.value = _allTabs.value.filter { it.environmentId != id }
+        _allTabGroups.value = _allTabGroups.value.filter { it.environmentId != id }
+        activateEnvironmentTabsAndGroups(environmentManager.currentEnvironment.value)
+    }
+
+    private fun activateEnvironmentTabsAndGroups(env: Environment) {
+        val envId = env.id
+        var envTabs = _allTabs.value.filter { it.environmentId == envId }
+        var envGroups = _allTabGroups.value.filter { it.environmentId == envId }
+
+        if (envTabs.isEmpty()) {
+            val startUrl = if (!env.startPageUrl.isNullOrBlank()) {
+                env.startPageUrl
+            } else {
+                START_PAGE_URL
+            }
+            val startTitle = when {
+                envId == "personal" || startUrl.contains("rssgroupfeed") -> "RSS Group Feed"
+                isInternalHomeUrl(startUrl) -> "Start Page"
+                else -> "${env.name} Start"
+            }
+            val initialTab = BrowserTab(
+                id = UUID.randomUUID().toString(),
+                title = startTitle,
+                url = startUrl,
+                isPrivate = false,
+                tabGroupId = null,
+                environmentId = envId
+            )
+            envTabs = listOf(initialTab)
+            _allTabs.value = _allTabs.value + initialTab
+            viewModelScope.launch {
+                repository.saveTab(initialTab)
+            }
+        }
+
+        if (envGroups.isEmpty()) {
+            if (envId == "work") {
+                val workGroup = TabGroup(
+                    id = UUID.randomUUID().toString(),
+                    name = "Work",
+                    order = 0,
+                    colorHex = "#3B82F6",
+                    environmentId = "work"
+                )
+                envGroups = listOf(workGroup)
+                _allTabGroups.value = _allTabGroups.value + workGroup
+                viewModelScope.launch { repository.saveGroup(workGroup) }
+            } else if (envId == "study") {
+                val studyGroup = TabGroup(
+                    id = UUID.randomUUID().toString(),
+                    name = "Study",
+                    order = 0,
+                    colorHex = "#10B981",
+                    environmentId = "study"
+                )
+                envGroups = listOf(studyGroup)
+                _allTabGroups.value = _allTabGroups.value + studyGroup
+                viewModelScope.launch { repository.saveGroup(studyGroup) }
+            }
+        }
+
+        _tabs.value = envTabs
+        _tabGroups.value = envGroups
+
+        val savedTabId = prefs.getString("last_active_tab_$envId", null)
+        val targetTab = envTabs.find { it.id == savedTabId } ?: envTabs.first()
+        _currentTabId.value = targetTab.id
+        _isPrivateMode.value = targetTab.isPrivate
+        _activeGroupId.value = targetTab.tabGroupId
+        _addressBarInput.value = if (isInternalHomeUrl(targetTab.url)) "" else targetTab.url
+
+        persistTabsAndActiveState()
+        persistGroups()
     }
 
     fun addCanvasObject(obj: CanvasObject) {
@@ -217,45 +357,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
-        val initialWorkGroupId = UUID.randomUUID().toString()
-        val defaultWorkGroup = TabGroup(
-            id = initialWorkGroupId,
-            name = "Work",
-            order = 0,
-            colorHex = "#3B82F6"
-        )
-        val defaultStudyGroup = TabGroup(
-            id = UUID.randomUUID().toString(),
-            name = "Study",
-            order = 1,
-            colorHex = "#10B981"
-        )
-
-        // Initialize default tabs running the integrated web app
-        val initialTabs = listOf(
+        val initialPersonalTabs = listOf(
             BrowserTab(
-                id = UUID.randomUUID().toString(),
-                title = "Start Page",
-                url = START_PAGE_URL,
+                id = "tab_rss_feed",
+                title = "RSS Group Feed",
+                url = "https://rssgroupfeed-jaelvwfd.manus.space",
                 faviconUrl = null,
                 isPrivate = false,
-                tabGroupId = null // Ungrouped
-            ),
-            BrowserTab(
-                id = UUID.randomUUID().toString(),
-                title = "Physicists Reveal a Quantum Geometry",
-                url = "https://www.quantamagazine.org",
-                faviconUrl = "https://www.quantamagazine.org/favicon.ico",
-                isPrivate = false,
-                tabGroupId = initialWorkGroupId // Work group
-            ),
-            BrowserTab(
-                id = UUID.randomUUID().toString(),
-                title = "Apple",
-                url = "https://www.apple.com",
-                faviconUrl = "https://www.apple.com/favicon.ico",
-                isPrivate = false,
-                tabGroupId = initialWorkGroupId // Work group
+                tabGroupId = null,
+                environmentId = "personal"
             ),
             BrowserTab(
                 id = UUID.randomUUID().toString(),
@@ -263,39 +373,101 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 url = "https://duckduckgo.com",
                 faviconUrl = "https://duckduckgo.com/favicon.ico",
                 isPrivate = false,
-                tabGroupId = null // Ungrouped
+                tabGroupId = null,
+                environmentId = "personal"
             )
         )
-        _tabGroups.value = listOf(defaultWorkGroup, defaultStudyGroup)
-        _tabs.value = initialTabs
-        _currentTabId.value = initialTabs[0].id
-        _activeGroupId.value = null
-        _addressBarInput.value = ""
+
+        val initialWorkGroupId = UUID.randomUUID().toString()
+        val defaultWorkGroup = TabGroup(
+            id = initialWorkGroupId,
+            name = "Work",
+            order = 0,
+            colorHex = "#3B82F6",
+            environmentId = "work"
+        )
+        val defaultStudyGroup = TabGroup(
+            id = UUID.randomUUID().toString(),
+            name = "Study",
+            order = 0,
+            colorHex = "#10B981",
+            environmentId = "study"
+        )
+
+        val initialWorkTabs = listOf(
+            BrowserTab(
+                id = UUID.randomUUID().toString(),
+                title = "Physicists Reveal a Quantum Geometry",
+                url = "https://www.quantamagazine.org",
+                faviconUrl = "https://www.quantamagazine.org/favicon.ico",
+                isPrivate = false,
+                tabGroupId = initialWorkGroupId,
+                environmentId = "work"
+            ),
+            BrowserTab(
+                id = UUID.randomUUID().toString(),
+                title = "Apple",
+                url = "https://www.apple.com",
+                faviconUrl = "https://www.apple.com/favicon.ico",
+                isPrivate = false,
+                tabGroupId = initialWorkGroupId,
+                environmentId = "work"
+            )
+        )
+
+        val initialStudyTabs = listOf(
+            BrowserTab(
+                id = UUID.randomUUID().toString(),
+                title = "Wikipedia",
+                url = "https://en.wikipedia.org",
+                faviconUrl = "https://en.wikipedia.org/favicon.ico",
+                isPrivate = false,
+                tabGroupId = defaultStudyGroup.id,
+                environmentId = "study"
+            )
+        )
+
+        val allInitialTabs = initialPersonalTabs + initialWorkTabs + initialStudyTabs
+        val allInitialGroups = listOf(defaultWorkGroup, defaultStudyGroup)
+
+        _allTabGroups.value = allInitialGroups
+        _allTabs.value = allInitialTabs
+
+        val activeEnv = environmentManager.currentEnvironment.value
+        val initialActiveTabs = allInitialTabs.filter { it.environmentId == activeEnv.id }.ifEmpty { initialPersonalTabs }
+        val initialActiveGroups = allInitialGroups.filter { it.environmentId == activeEnv.id }
+        _tabGroups.value = initialActiveGroups
+        _tabs.value = initialActiveTabs
+        _currentTabId.value = initialActiveTabs.first().id
+        _activeGroupId.value = initialActiveTabs.first().tabGroupId
+        _addressBarInput.value = if (isInternalHomeUrl(initialActiveTabs.first().url)) "" else initialActiveTabs.first().url
 
         // Restore tab groups and tabs from Room database asynchronously
         viewModelScope.launch {
             repository.tabGroups.take(1).collect { savedGroups ->
-                if (savedGroups.isNotEmpty()) {
-                    _tabGroups.value = savedGroups
+                val resolvedGroups = if (savedGroups.isNotEmpty()) {
+                    savedGroups.map { if (it.environmentId.isBlank()) it.copy(environmentId = "personal") else it }
                 } else {
-                    repository.saveGroups(listOf(defaultWorkGroup, defaultStudyGroup))
+                    repository.saveGroups(allInitialGroups)
+                    allInitialGroups
                 }
+                _allTabGroups.value = resolvedGroups
+                val curEnvId = environmentManager.activeEnvironmentId.value
+                _tabGroups.value = resolvedGroups.filter { it.environmentId == curEnvId }
             }
         }
 
         viewModelScope.launch {
             repository.savedTabs.take(1).collect { savedTabsList ->
-                if (savedTabsList.isNotEmpty()) {
-                    _tabs.value = savedTabsList
-                    val lastTabId = prefs.getString("last_active_tab_id", null)
-                    val targetTab = savedTabsList.find { it.id == lastTabId } ?: savedTabsList.first()
-                    _currentTabId.value = targetTab.id
-                    _isPrivateMode.value = targetTab.isPrivate
-                    _activeGroupId.value = targetTab.tabGroupId
-                    _addressBarInput.value = if (isInternalHomeUrl(targetTab.url)) "" else targetTab.url
+                val resolvedTabs = if (savedTabsList.isNotEmpty()) {
+                    savedTabsList.map { if (it.environmentId.isBlank()) it.copy(environmentId = "personal") else it }
                 } else {
-                    repository.saveTabs(initialTabs)
+                    repository.saveTabs(allInitialTabs)
+                    allInitialTabs
                 }
+                _allTabs.value = resolvedTabs
+                val curEnv = environmentManager.currentEnvironment.value
+                activateEnvironmentTabsAndGroups(curEnv)
             }
         }
 
@@ -393,16 +565,26 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun persistTabsAndActiveState() {
+        val currentEnvId = environmentManager.activeEnvironmentId.value
+        val otherTabs = _allTabs.value.filter { it.environmentId != currentEnvId }
+        val allUpdated = otherTabs + _tabs.value
+        _allTabs.value = allUpdated
         viewModelScope.launch {
             repository.saveTabs(_tabs.value)
             prefs.edit()
                 .putString("last_active_tab_id", _currentTabId.value)
                 .putString("last_active_group_id", _activeGroupId.value)
+                .putString("last_active_tab_$currentEnvId", _currentTabId.value)
+                .putString("last_active_group_$currentEnvId", _activeGroupId.value)
                 .apply()
         }
     }
 
     private fun persistGroups() {
+        val currentEnvId = environmentManager.activeEnvironmentId.value
+        val otherGroups = _allTabGroups.value.filter { it.environmentId != currentEnvId }
+        val allUpdated = otherGroups + _tabGroups.value
+        _allTabGroups.value = allUpdated
         viewModelScope.launch {
             repository.saveGroups(_tabGroups.value)
         }
@@ -421,23 +603,33 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun createNewTab(
-        url: String = START_PAGE_URL,
+        url: String? = null,
         isPrivate: Boolean = _isPrivateMode.value,
         groupId: String? = _activeGroupId.value,
         inBackground: Boolean = false
     ) {
+        val currentEnv = environmentManager.currentEnvironment.value
+        val defaultUrl = if (!currentEnv.startPageUrl.isNullOrBlank()) currentEnv.startPageUrl else START_PAGE_URL
+        val targetUrl = url ?: defaultUrl
+        val targetTitle = when {
+            isInternalHomeUrl(targetUrl) -> "Start Page"
+            targetUrl.contains("rssgroupfeed") -> "RSS Group Feed"
+            targetUrl == currentEnv.startPageUrl -> "${currentEnv.name} Start"
+            else -> "New Tab"
+        }
         val newTab = BrowserTab(
             id = UUID.randomUUID().toString(),
-            title = if (isInternalHomeUrl(url)) "Start Page" else "New Tab",
-            url = url,
+            title = targetTitle,
+            url = targetUrl,
             isPrivate = isPrivate,
-            tabGroupId = groupId
+            tabGroupId = groupId,
+            environmentId = currentEnv.id
         )
         _tabs.value = _tabs.value + newTab
         if (!inBackground) {
             _currentTabId.value = newTab.id
             _activeGroupId.value = groupId
-            _addressBarInput.value = if (isInternalHomeUrl(url)) "" else url
+            _addressBarInput.value = if (isInternalHomeUrl(targetUrl)) "" else targetUrl
             closeSheet()
         }
         persistTabsAndActiveState()
@@ -458,6 +650,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val targetTab = currentList[index]
         val newList = currentList.filter { it.id != tabId }
         _tabs.value = newList
+        _allTabs.value = _allTabs.value.filter { it.id != tabId }
         viewModelScope.launch {
             repository.deleteTab(tabId)
         }
@@ -475,6 +668,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun closeAllTabs(isPrivateOnly: Boolean = false) {
+        val currentEnvId = environmentManager.activeEnvironmentId.value
         if (isPrivateOnly) {
             val toDelete = _tabs.value.filter { it.isPrivate }
             viewModelScope.launch {
@@ -482,6 +676,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             }
             val remaining = _tabs.value.filter { !it.isPrivate }
             _tabs.value = remaining
+            _allTabs.value = _allTabs.value.filter { !(it.environmentId == currentEnvId && it.isPrivate) }
             if (remaining.isEmpty()) {
                 createNewTab(isPrivate = false, groupId = null)
             } else {
@@ -490,10 +685,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 _activeGroupId.value = remaining.first().tabGroupId
             }
         } else {
+            val toDelete = _tabs.value
             viewModelScope.launch {
-                repository.clearTabs()
+                toDelete.forEach { repository.deleteTab(it.id) }
             }
             _tabs.value = emptyList()
+            _allTabs.value = _allTabs.value.filter { it.environmentId != currentEnvId }
             createNewTab(isPrivate = false, groupId = null)
         }
         persistTabsAndActiveState()
@@ -504,11 +701,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun createTabGroup(name: String, colorHex: String? = null, initialTabIds: List<String> = emptyList()): String {
         val cleanName = name.trim().ifBlank { "New Folder" }
         val newGroupId = UUID.randomUUID().toString()
+        val currentEnvId = environmentManager.activeEnvironmentId.value
         val newGroup = TabGroup(
             id = newGroupId,
             name = cleanName,
             order = _tabGroups.value.size,
-            colorHex = colorHex ?: "#3B82F6"
+            colorHex = colorHex ?: "#3B82F6",
+            environmentId = currentEnvId
         )
         val updatedGroups = _tabGroups.value + newGroup
         _tabGroups.value = updatedGroups
@@ -536,6 +735,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteTabGroup(groupId: String, closeTabs: Boolean) {
         _tabGroups.value = _tabGroups.value.filter { it.id != groupId }
+        _allTabGroups.value = _allTabGroups.value.filter { it.id != groupId }
         viewModelScope.launch {
             repository.deleteGroup(groupId)
         }
@@ -547,6 +747,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             }
             val remainingTabs = _tabs.value.filter { it.tabGroupId != groupId }
             _tabs.value = remainingTabs
+            _allTabs.value = _allTabs.value.filter { it.tabGroupId != groupId }
             if (remainingTabs.isEmpty()) {
                 createNewTab(isPrivate = _isPrivateMode.value, groupId = null)
             } else if (_currentTabId.value in tabsToClose.map { it.id }) {
@@ -565,6 +766,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         if (_activeGroupId.value == groupId) {
             _activeGroupId.value = null
         }
+        persistGroups()
         persistTabsAndActiveState()
     }
 
@@ -599,6 +801,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
         val remaining = _tabs.value.filter { it.tabGroupId != groupId }
         _tabs.value = remaining
+        _allTabs.value = _allTabs.value.filter { it.tabGroupId != groupId }
         if (remaining.isEmpty()) {
             createNewTab(isPrivate = _isPrivateMode.value, groupId = groupId)
         } else if (_currentTabId.value in tabsInGroup.map { it.id }) {
@@ -616,6 +819,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             id = UUID.randomUUID().toString(),
             title = tab.title,
             url = tab.url,
+            environmentId = tab.environmentId,
             createdAt = System.currentTimeMillis(),
             lastAccessedAt = System.currentTimeMillis()
         )
