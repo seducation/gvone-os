@@ -201,15 +201,21 @@ fun FloatingAddressBar(
     )
 
     val pillHeight by animateDpAsState(
-        targetValue = if (effectivelyCompact) 42.dp else 52.dp,
+        targetValue = if (effectivelyCompact) 34.dp else 52.dp,
         animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
         label = "pill_height"
     )
 
     val pillCornerRadius by animateDpAsState(
-        targetValue = if (effectivelyCompact) 21.dp else 26.dp,
+        targetValue = if (effectivelyCompact) 17.dp else 26.dp,
         animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
         label = "pill_corner_radius"
+    )
+
+    val verticalBarPadding by animateDpAsState(
+        targetValue = if (effectivelyCompact) 8.dp else 12.dp,
+        animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+        label = "vertical_bar_padding"
     )
 
     val configuration = LocalConfiguration.current
@@ -226,7 +232,7 @@ fun FloatingAddressBar(
             .imePadding()
             .padding(
                 horizontal = if (isLandscape) 24.dp else 14.dp,
-                vertical = if (isLandscape) 8.dp else 12.dp
+                vertical = if (isLandscape) 6.dp else verticalBarPadding
             ),
         contentAlignment = if (isBottom) Alignment.BottomCenter else Alignment.TopCenter
     ) {
@@ -238,7 +244,7 @@ fun FloatingAddressBar(
         ) {
             val maxAvailableWidth = maxWidth
             val fullPillWidth = (maxAvailableWidth - 124.dp).coerceAtLeast(140.dp)
-            val compactPillWidth = 190.dp.coerceAtMost(maxAvailableWidth - 32.dp)
+            val compactPillWidth = 138.dp.coerceAtMost(maxAvailableWidth - 32.dp)
             val targetPillWidth = if (effectivelyCompact) compactPillWidth else fullPillWidth
 
             val animatedPillWidth by animateDpAsState(
@@ -313,7 +319,7 @@ fun FloatingAddressBar(
                         .width(animatedPillWidth)
                         .height(pillHeight)
                         .shadow(
-                            elevation = if (effectivelyCompact) 12.dp else 16.dp,
+                            elevation = if (effectivelyCompact) 8.dp else 16.dp,
                             shape = RoundedCornerShape(pillCornerRadius),
                             spotColor = if (isPrivate) GVONESecondary.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.6f)
                         )
@@ -389,7 +395,7 @@ fun FloatingAddressBar(
                             Row(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(horizontal = 14.dp),
+                                    .padding(horizontal = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center
                             ) {
@@ -402,14 +408,14 @@ fun FloatingAddressBar(
                                     tint = if (isPrivate) GVONESecondary
                                         else if (isTorActive) GVONETertiary
                                         else Color(0xFF8E9BAE),
-                                    modifier = Modifier.size(13.dp)
+                                    modifier = Modifier.size(11.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(5.dp))
                                 Text(
                                     text = if (displayHost.isNotBlank()) displayHost
                                         else (currentTab?.title?.takeIf { it.isNotBlank() } ?: if (isPrivate) "Private Tab" else "Search or URL"),
                                     color = Color(0xFFE6EDF6),
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
