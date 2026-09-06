@@ -6,6 +6,7 @@ import com.example.data.model.BrowserTab
 import com.example.data.model.DownloadItem
 import com.example.data.model.HistoryEntry
 import com.example.data.model.SitePermission
+import com.example.data.model.TabGroup
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -110,15 +111,37 @@ interface TabSessionDao {
     suspend fun clearAllTabs()
 }
 
+@Dao
+interface TabGroupDao {
+    @Query("SELECT * FROM tab_groups ORDER BY `order` ASC, createdAt ASC")
+    fun getAllGroups(): Flow<List<TabGroup>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateGroup(group: TabGroup)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateGroups(groups: List<TabGroup>)
+
+    @Delete
+    suspend fun deleteGroup(group: TabGroup)
+
+    @Query("DELETE FROM tab_groups WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM tab_groups")
+    suspend fun clearAllGroups()
+}
+
 @Database(
     entities = [
         HistoryEntry::class,
         BookmarkEntry::class,
         DownloadItem::class,
         SitePermission::class,
-        BrowserTab::class
+        BrowserTab::class,
+        TabGroup::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class GVONEDatabase : RoomDatabase() {
@@ -127,4 +150,5 @@ abstract class GVONEDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun sitePermissionDao(): SitePermissionDao
     abstract fun tabSessionDao(): TabSessionDao
+    abstract fun tabGroupDao(): TabGroupDao
 }

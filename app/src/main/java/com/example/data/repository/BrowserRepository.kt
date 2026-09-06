@@ -8,6 +8,7 @@ import com.example.data.model.BrowserTab
 import com.example.data.model.DownloadItem
 import com.example.data.model.HistoryEntry
 import com.example.data.model.SitePermission
+import com.example.data.model.TabGroup
 import kotlinx.coroutines.flow.Flow
 
 class BrowserRepository(context: Context) {
@@ -22,6 +23,7 @@ class BrowserRepository(context: Context) {
     private val downloadDao = db.downloadDao()
     private val sitePermissionDao = db.sitePermissionDao()
     private val tabSessionDao = db.tabSessionDao()
+    private val tabGroupDao = db.tabGroupDao()
 
     // History
     val history: Flow<List<HistoryEntry>> = historyDao.getAllHistory()
@@ -57,4 +59,11 @@ class BrowserRepository(context: Context) {
     suspend fun saveTabs(tabs: List<BrowserTab>) = tabSessionDao.insertOrUpdateTabs(tabs)
     suspend fun deleteTab(id: String) = tabSessionDao.deleteById(id)
     suspend fun clearTabs() = tabSessionDao.clearAllTabs()
+
+    // Tab Groups
+    val tabGroups: Flow<List<TabGroup>> = tabGroupDao.getAllGroups()
+    suspend fun saveGroup(group: TabGroup) = tabGroupDao.insertOrUpdateGroup(group)
+    suspend fun saveGroups(groups: List<TabGroup>) = tabGroupDao.insertOrUpdateGroups(groups)
+    suspend fun deleteGroup(id: String) = tabGroupDao.deleteById(id)
+    suspend fun clearGroups() = tabGroupDao.clearAllGroups()
 }

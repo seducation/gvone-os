@@ -19,6 +19,15 @@ enum class TabSortOption {
     BY_WEBSITE
 }
 
+@Entity(tableName = "tab_groups")
+data class TabGroup(
+    @PrimaryKey val id: String,
+    val name: String,
+    val order: Int = 0,
+    val colorHex: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "browser_tabs")
 data class BrowserTab(
     @PrimaryKey val id: String,

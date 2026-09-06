@@ -55,7 +55,9 @@ fun BrowserApp(
 ) {
     val currentTab by viewModel.currentTab.collectAsStateWithLifecycle()
     val tabs by viewModel.tabs.collectAsStateWithLifecycle()
+    val tabGroups by viewModel.tabGroups.collectAsStateWithLifecycle()
     val currentTabId by viewModel.currentTabId.collectAsStateWithLifecycle()
+    val activeGroupId by viewModel.activeGroupId.collectAsStateWithLifecycle()
     val isPrivateMode by viewModel.isPrivateMode.collectAsStateWithLifecycle()
     val activeSheet by viewModel.activeSheet.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -211,13 +213,24 @@ fun BrowserApp(
         ) {
             TabOverviewScreen(
                 tabs = tabs,
+                tabGroups = tabGroups,
                 currentTabId = currentTabId,
+                activeGroupId = activeGroupId,
                 isPrivateMode = isPrivateMode,
                 onTabSelected = { tabId -> viewModel.selectTab(tabId) },
                 onTabClose = { tabId -> viewModel.closeTab(tabId) },
-                onNewTab = { viewModel.createNewTab() },
+                onNewTab = { groupId -> viewModel.createNewTab(groupId = groupId) },
                 onTogglePrivate = { isPrivate -> viewModel.setPrivateMode(isPrivate) },
                 onSortTabs = { sortOption -> viewModel.sortTabs(sortOption) },
+                onCreateGroup = { name, colorHex, tabIds -> viewModel.createTabGroup(name, colorHex, tabIds) },
+                onRenameGroup = { groupId, newName -> viewModel.renameTabGroup(groupId, newName) },
+                onDeleteGroup = { groupId, closeTabs -> viewModel.deleteTabGroup(groupId, closeTabs) },
+                onMoveTabToGroup = { tabId, targetGroupId -> viewModel.moveTabToGroup(tabId, targetGroupId) },
+                onMoveTabsToGroup = { tabIds, targetGroupId -> viewModel.moveTabsToGroup(tabIds, targetGroupId) },
+                onCloseTabsInGroup = { groupId -> viewModel.closeTabsInGroup(groupId) },
+                onDuplicateTab = { tabId -> viewModel.duplicateTab(tabId) },
+                onCloseOtherTabs = { tabId -> viewModel.closeOtherTabs(tabId) },
+                onCloseTabsToRight = { tabId -> viewModel.closeTabsToRight(tabId) },
                 onCloseOverview = { viewModel.closeSheet() }
             )
         }

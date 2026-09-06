@@ -83,6 +83,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _tabSortOption = MutableStateFlow(TabSortOption.DEFAULT)
     val tabSortOption: StateFlow<TabSortOption> = _tabSortOption.asStateFlow()
 
+    // Tab Groups State
+    private val _tabGroups = MutableStateFlow<List<TabGroup>>(emptyList())
+    val tabGroups: StateFlow<List<TabGroup>> = _tabGroups.asStateFlow()
+
+    private val _activeGroupId = MutableStateFlow<String?>(null)
+    val activeGroupId: StateFlow<String?> = _activeGroupId.asStateFlow()
+
     // Navigation and Active Sheet State
     private val _activeSheet = MutableStateFlow<ActiveSheet>(ActiveSheet.None)
     val activeSheet: StateFlow<ActiveSheet> = _activeSheet.asStateFlow()
@@ -124,40 +131,87 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
-        // Initialize default home tab running the integrated web app (URL hidden from UI)
+        val initialWorkGroupId = UUID.randomUUID().toString()
+        val defaultWorkGroup = TabGroup(
+            id = initialWorkGroupId,
+            name = "Work",
+            order = 0,
+            colorHex = "#3B82F6"
+        )
+        val defaultStudyGroup = TabGroup(
+            id = UUID.randomUUID().toString(),
+            name = "Study",
+            order = 1,
+            colorHex = "#10B981"
+        )
+
+        // Initialize default tabs running the integrated web app
         val initialTabs = listOf(
             BrowserTab(
                 id = UUID.randomUUID().toString(),
                 title = "Home",
                 url = HOME_WEB_APP_URL,
                 faviconUrl = null,
-                isPrivate = false
+                isPrivate = false,
+                tabGroupId = null // Ungrouped
             ),
             BrowserTab(
                 id = UUID.randomUUID().toString(),
                 title = "Physicists Reveal a Quantum Geometry",
                 url = "https://www.quantamagazine.org",
                 faviconUrl = "https://www.quantamagazine.org/favicon.ico",
-                isPrivate = false
-            ),
-            BrowserTab(
-                id = UUID.randomUUID().toString(),
-                title = "DuckDuckGo — Privacy, Simplified.",
-                url = "https://duckduckgo.com",
-                faviconUrl = "https://duckduckgo.com/favicon.ico",
-                isPrivate = false
+                isPrivate = false,
+                tabGroupId = initialWorkGroupId // Work group
             ),
             BrowserTab(
                 id = UUID.randomUUID().toString(),
                 title = "Apple",
                 url = "https://www.apple.com",
                 faviconUrl = "https://www.apple.com/favicon.ico",
-                isPrivate = false
+                isPrivate = false,
+                tabGroupId = initialWorkGroupId // Work group
+            ),
+            BrowserTab(
+                id = UUID.randomUUID().toString(),
+                title = "DuckDuckGo — Privacy, Simplified.",
+                url = "https://duckduckgo.com",
+                faviconUrl = "https://duckduckgo.com/favicon.ico",
+                isPrivate = false,
+                tabGroupId = null // Ungrouped
             )
         )
+        _tabGroups.value = listOf(defaultWorkGroup, defaultStudyGroup)
         _tabs.value = initialTabs
         _currentTabId.value = initialTabs[0].id
+        _activeGroupId.value = null
         _addressBarInput.value = ""
+
+        // Restore tab groups and tabs from Room database asynchronously
+        viewModelScope.launch {
+            repository.tabGroups.take(1).collect { savedGroups ->
+                if (savedGroups.isNotEmpty()) {
+                    _tabGroups.value = savedGroups
+                } else {
+                    repository.saveGroups(listOf(defaultWorkGroup, defaultStudyGroup))
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.savedTabs.take(1).collect { savedTabsList ->
+                if (savedTabsList.isNotEmpty()) {
+                    _tabs.value = savedTabsList
+                    val lastTabId = prefs.getString("last_active_tab_id", null)
+                    val targetTab = savedTabsList.find { it.id == lastTabId } ?: savedTabsList.first()
+                    _currentTabId.value = targetTab.id
+                    _isPrivateMode.value = targetTab.isPrivate
+                    _activeGroupId.value = targetTab.tabGroupId
+                    _addressBarInput.value = if (isInternalHomeUrl(targetTab.url)) "" else targetTab.url
+                } else {
+                    repository.saveTabs(initialTabs)
+                }
+            }
+        }
 
         // If Tor was persistent and enabled across restarts, connect immediately
         if (_settings.value.torEnabled) {
@@ -240,26 +294,51 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun persistTabsAndActiveState() {
+        viewModelScope.launch {
+            repository.saveTabs(_tabs.value)
+            prefs.edit()
+                .putString("last_active_tab_id", _currentTabId.value)
+                .putString("last_active_group_id", _activeGroupId.value)
+                .apply()
+        }
+    }
+
+    private fun persistGroups() {
+        viewModelScope.launch {
+            repository.saveGroups(_tabGroups.value)
+        }
+    }
+
     fun selectTab(tabId: String) {
         val tab = _tabs.value.find { it.id == tabId }
         if (tab != null) {
             _currentTabId.value = tab.id
             _isPrivateMode.value = tab.isPrivate
-            _addressBarInput.value = tab.url
+            _activeGroupId.value = tab.tabGroupId
+            _addressBarInput.value = if (isInternalHomeUrl(tab.url)) "" else tab.url
+            persistTabsAndActiveState()
             closeSheet()
         }
     }
 
-    fun createNewTab(url: String = HOME_WEB_APP_URL, isPrivate: Boolean = _isPrivateMode.value) {
+    fun createNewTab(
+        url: String = HOME_WEB_APP_URL,
+        isPrivate: Boolean = _isPrivateMode.value,
+        groupId: String? = _activeGroupId.value
+    ) {
         val newTab = BrowserTab(
             id = UUID.randomUUID().toString(),
             title = if (isInternalHomeUrl(url)) "Home" else "New Tab",
             url = url,
-            isPrivate = isPrivate
+            isPrivate = isPrivate,
+            tabGroupId = groupId
         )
         _tabs.value = _tabs.value + newTab
         _currentTabId.value = newTab.id
+        _activeGroupId.value = groupId
         _addressBarInput.value = if (isInternalHomeUrl(url)) "" else url
+        persistTabsAndActiveState()
         closeSheet()
     }
 
@@ -268,33 +347,223 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val index = currentList.indexOfFirst { it.id == tabId }
         if (index == -1) return
 
+        val targetTab = currentList[index]
         val newList = currentList.filter { it.id != tabId }
         _tabs.value = newList
+        viewModelScope.launch {
+            repository.deleteTab(tabId)
+        }
 
         if (newList.isEmpty()) {
-            createNewTab(isPrivate = _isPrivateMode.value)
+            createNewTab(isPrivate = _isPrivateMode.value, groupId = targetTab.tabGroupId)
         } else if (_currentTabId.value == tabId) {
             val nextIndex = (index - 1).coerceAtLeast(0)
             val nextTab = newList.getOrNull(nextIndex) ?: newList.first()
             _currentTabId.value = nextTab.id
             _isPrivateMode.value = nextTab.isPrivate
+            _activeGroupId.value = nextTab.tabGroupId
         }
+        persistTabsAndActiveState()
     }
 
     fun closeAllTabs(isPrivateOnly: Boolean = false) {
         if (isPrivateOnly) {
+            val toDelete = _tabs.value.filter { it.isPrivate }
+            viewModelScope.launch {
+                toDelete.forEach { repository.deleteTab(it.id) }
+            }
             val remaining = _tabs.value.filter { !it.isPrivate }
             _tabs.value = remaining
             if (remaining.isEmpty()) {
-                createNewTab(isPrivate = false)
+                createNewTab(isPrivate = false, groupId = null)
             } else {
                 _currentTabId.value = remaining.first().id
                 _isPrivateMode.value = false
+                _activeGroupId.value = remaining.first().tabGroupId
             }
         } else {
+            viewModelScope.launch {
+                repository.clearTabs()
+            }
             _tabs.value = emptyList()
-            createNewTab(isPrivate = false)
+            createNewTab(isPrivate = false, groupId = null)
         }
+        persistTabsAndActiveState()
+    }
+
+    // --- Tab Groups Operations ---
+
+    fun createTabGroup(name: String, colorHex: String? = null, initialTabIds: List<String> = emptyList()): String {
+        val cleanName = name.trim().ifBlank { "New Folder" }
+        val newGroupId = UUID.randomUUID().toString()
+        val newGroup = TabGroup(
+            id = newGroupId,
+            name = cleanName,
+            order = _tabGroups.value.size,
+            colorHex = colorHex ?: "#3B82F6"
+        )
+        val updatedGroups = _tabGroups.value + newGroup
+        _tabGroups.value = updatedGroups
+
+        if (initialTabIds.isNotEmpty()) {
+            _tabs.value = _tabs.value.map { tab ->
+                if (initialTabIds.contains(tab.id)) {
+                    tab.copy(tabGroupId = newGroupId)
+                } else tab
+            }
+        }
+        _activeGroupId.value = newGroupId
+        persistGroups()
+        persistTabsAndActiveState()
+        return newGroupId
+    }
+
+    fun renameTabGroup(groupId: String, newName: String) {
+        val cleanName = newName.trim().ifBlank { "Folder" }
+        _tabGroups.value = _tabGroups.value.map {
+            if (it.id == groupId) it.copy(name = cleanName) else it
+        }
+        persistGroups()
+    }
+
+    fun deleteTabGroup(groupId: String, closeTabs: Boolean) {
+        _tabGroups.value = _tabGroups.value.filter { it.id != groupId }
+        viewModelScope.launch {
+            repository.deleteGroup(groupId)
+        }
+
+        if (closeTabs) {
+            val tabsToClose = _tabs.value.filter { it.tabGroupId == groupId }
+            viewModelScope.launch {
+                tabsToClose.forEach { repository.deleteTab(it.id) }
+            }
+            val remainingTabs = _tabs.value.filter { it.tabGroupId != groupId }
+            _tabs.value = remainingTabs
+            if (remainingTabs.isEmpty()) {
+                createNewTab(isPrivate = _isPrivateMode.value, groupId = null)
+            } else if (_currentTabId.value in tabsToClose.map { it.id }) {
+                val nextTab = remainingTabs.first()
+                _currentTabId.value = nextTab.id
+                _isPrivateMode.value = nextTab.isPrivate
+                _activeGroupId.value = nextTab.tabGroupId
+            }
+        } else {
+            // Keep tabs, move them to Ungrouped
+            _tabs.value = _tabs.value.map {
+                if (it.tabGroupId == groupId) it.copy(tabGroupId = null) else it
+            }
+        }
+
+        if (_activeGroupId.value == groupId) {
+            _activeGroupId.value = null
+        }
+        persistTabsAndActiveState()
+    }
+
+    fun moveTabToGroup(tabId: String, targetGroupId: String?) {
+        _tabs.value = _tabs.value.map {
+            if (it.id == tabId) it.copy(tabGroupId = targetGroupId) else it
+        }
+        if (_currentTabId.value == tabId) {
+            _activeGroupId.value = targetGroupId
+        }
+        persistTabsAndActiveState()
+    }
+
+    fun moveTabsToGroup(tabIds: List<String>, targetGroupId: String?) {
+        _tabs.value = _tabs.value.map {
+            if (it.id in tabIds) it.copy(tabGroupId = targetGroupId) else it
+        }
+        if (_currentTabId.value in tabIds) {
+            _activeGroupId.value = targetGroupId
+        }
+        persistTabsAndActiveState()
+    }
+
+    fun removeTabFromGroup(tabId: String) {
+        moveTabToGroup(tabId, null)
+    }
+
+    fun closeTabsInGroup(groupId: String) {
+        val tabsInGroup = _tabs.value.filter { it.tabGroupId == groupId }
+        viewModelScope.launch {
+            tabsInGroup.forEach { repository.deleteTab(it.id) }
+        }
+        val remaining = _tabs.value.filter { it.tabGroupId != groupId }
+        _tabs.value = remaining
+        if (remaining.isEmpty()) {
+            createNewTab(isPrivate = _isPrivateMode.value, groupId = groupId)
+        } else if (_currentTabId.value in tabsInGroup.map { it.id }) {
+            val nextTab = remaining.first()
+            _currentTabId.value = nextTab.id
+            _isPrivateMode.value = nextTab.isPrivate
+            _activeGroupId.value = nextTab.tabGroupId
+        }
+        persistTabsAndActiveState()
+    }
+
+    fun duplicateTab(tabId: String) {
+        val tab = _tabs.value.find { it.id == tabId } ?: return
+        val newTab = tab.copy(
+            id = UUID.randomUUID().toString(),
+            title = tab.title,
+            url = tab.url,
+            createdAt = System.currentTimeMillis(),
+            lastAccessedAt = System.currentTimeMillis()
+        )
+        _tabs.value = _tabs.value + newTab
+        persistTabsAndActiveState()
+    }
+
+    fun closeOtherTabs(tabId: String) {
+        val targetTab = _tabs.value.find { it.id == tabId } ?: return
+        val tabsToKeep = _tabs.value.filter { it.id == tabId || it.isPrivate != targetTab.isPrivate }
+        val tabsToRemove = _tabs.value.filter { it !in tabsToKeep }
+        viewModelScope.launch {
+            tabsToRemove.forEach { repository.deleteTab(it.id) }
+        }
+        _tabs.value = tabsToKeep
+        _currentTabId.value = targetTab.id
+        _activeGroupId.value = targetTab.tabGroupId
+        persistTabsAndActiveState()
+    }
+
+    fun closeTabsToRight(tabId: String) {
+        val currentList = _tabs.value.filter { it.isPrivate == _isPrivateMode.value }
+        val index = currentList.indexOfFirst { it.id == tabId }
+        if (index == -1 || index >= currentList.size - 1) return
+
+        val toRemove = currentList.subList(index + 1, currentList.size).map { it.id }.toSet()
+        viewModelScope.launch {
+            toRemove.forEach { repository.deleteTab(it) }
+        }
+        _tabs.value = _tabs.value.filter { it.id !in toRemove }
+        if (_currentTabId.value in toRemove) {
+            _currentTabId.value = tabId
+        }
+        persistTabsAndActiveState()
+    }
+
+    fun reorderGroups(reordered: List<TabGroup>) {
+        val updated = reordered.mapIndexed { idx, group -> group.copy(order = idx) }
+        _tabGroups.value = updated
+        persistGroups()
+    }
+
+    fun reorderTabsInGroup(groupId: String?, fromIndex: Int, toIndex: Int) {
+        val groupTabs = _tabs.value.filter { it.tabGroupId == groupId }.toMutableList()
+        if (fromIndex in groupTabs.indices && toIndex in groupTabs.indices) {
+            val moved = groupTabs.removeAt(fromIndex)
+            groupTabs.add(toIndex, moved)
+            val otherTabs = _tabs.value.filter { it.tabGroupId != groupId }
+            _tabs.value = groupTabs + otherTabs
+            persistTabsAndActiveState()
+        }
+    }
+
+    fun setActiveGroup(groupId: String?) {
+        _activeGroupId.value = groupId
+        prefs.edit().putString("last_active_group_id", groupId).apply()
     }
 
     fun switchToNextTab() {
@@ -358,6 +627,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             } else {
                 tab
             }
+        }
+        if (isLoading == false || url != null || title != null) {
+            persistTabsAndActiveState()
         }
     }
 
