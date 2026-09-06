@@ -3,9 +3,11 @@ package com.example.ui.components
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -43,8 +45,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import android.content.res.Configuration
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +73,7 @@ import com.example.ui.theme.*
  *    live progress line, and quick target selector.
  * 3. Right Circular Button: Safari three-dot "More" action menu.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FloatingAddressBar(
     currentTab: BrowserTab?,
@@ -85,8 +90,11 @@ fun FloatingAddressBar(
     onSwipePrevTab: () -> Unit,
     isCompact: Boolean = false,
     onExpand: () -> Unit = {},
+    onContract: () -> Unit = {},
+    onToggleCompact: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val haptic = LocalHapticFeedback.current
     var isFocused by remember { mutableStateOf(false) }
     var showTargetControlDialog by remember { mutableStateOf(false) }
     val autoLoadEnabled = settings?.autoLoadTargetOnFocus ?: true
@@ -254,7 +262,25 @@ fun FloatingAddressBar(
             )
 
             Row(
-                modifier = Modifier.wrapContentSize(),
+                modifier = Modifier
+                    .wrapContentSize()
+                    .combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {
+                            if (effectivelyCompact) {
+                                onExpand()
+                            }
+                        },
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (effectivelyCompact) {
+                                onExpand()
+                            } else {
+                                onContract()
+                            }
+                        }
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(rowSpacing)
             ) {
@@ -295,13 +321,22 @@ fun FloatingAddressBar(
                                     ),
                                     shape = CircleShape
                                 )
-                                .clickable(
+                                .combinedClickable(
                                     interactionSource = leftButtonSource,
                                     indication = null,
-                                    enabled = !effectivelyCompact
-                                ) {
-                                    onTabOverviewClick()
-                                }
+                                    enabled = !effectivelyCompact,
+                                    onClick = {
+                                        onTabOverviewClick()
+                                    },
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        if (effectivelyCompact) {
+                                            onExpand()
+                                        } else {
+                                            onContract()
+                                        }
+                                    }
+                                )
                                 .testTag("safari_tab_switcher_button"),
                             contentAlignment = Alignment.Center
                         ) {
@@ -360,28 +395,43 @@ fun FloatingAddressBar(
                                 }
                             )
                         }
-                        .clickable {
-                            if (effectivelyCompact) {
-                                onExpand()
-                            }
-                            val currentUrl = currentTab?.url.orEmpty()
-                            if (autoLoadEnabled && targetUrl.isNotBlank()) {
-                                val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
-                                val isAlreadyOnTarget = currentUrl.contains(cleanTarget)
-                                if (!isAlreadyOnTarget) {
-                                    onNavigate(targetUrl)
+                        .combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                if (effectivelyCompact) {
+                                    onExpand()
+                                    return@combinedClickable
+                                }
+                                val currentUrl = currentTab?.url.orEmpty()
+                                if (autoLoadEnabled && targetUrl.isNotBlank()) {
+                                    val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
+                                    val isAlreadyOnTarget = currentUrl.contains(cleanTarget)
+                                    if (!isAlreadyOnTarget) {
+                                        onNavigate(targetUrl)
+                                    }
+                                }
+                                isFocused = true
+                                if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
+                                    inputText = ""
+                                } else {
+                                    inputText = currentUrl
+                                }
+                                try {
+                                    focusRequester.requestFocus()
+                                } catch (_: Exception) {}
+                            },
+                            onLongClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (effectivelyCompact) {
+                                    onExpand()
+                                } else {
+                                    isFocused = false
+                                    focusManager.clearFocus()
+                                    onContract()
                                 }
                             }
-                            isFocused = true
-                            if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
-                                inputText = ""
-                            } else {
-                                inputText = currentUrl
-                            }
-                            try {
-                                focusRequester.requestFocus()
-                            } catch (_: Exception) {}
-                        }
+                        )
                         .testTag("safari_address_pill"),
                     contentAlignment = Alignment.Center
                 ) {
@@ -560,6 +610,48 @@ fun FloatingAddressBar(
                                             innerTextField()
                                         }
                                     )
+
+                                    // Touch interceptor overlay when not focused to ensure long press contracts the pill and tap expands/focuses
+                                    if (!isFocused) {
+                                        Box(
+                                            modifier = Modifier
+                                                .matchParentSize()
+                                                .combinedClickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null,
+                                                    onClick = {
+                                                        onExpand()
+                                                        isFocused = true
+                                                        val currentUrl = currentTab?.url.orEmpty()
+                                                        if (autoLoadEnabled && targetUrl.isNotBlank()) {
+                                                            val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
+                                                            val isAlreadyOnTarget = currentUrl.contains(cleanTarget)
+                                                            if (!isAlreadyOnTarget) {
+                                                                onNavigate(targetUrl)
+                                                            }
+                                                        }
+                                                        if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
+                                                            inputText = ""
+                                                        } else {
+                                                            inputText = currentUrl
+                                                        }
+                                                        try {
+                                                            focusRequester.requestFocus()
+                                                        } catch (_: Exception) {}
+                                                    },
+                                                    onLongClick = {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        if (effectivelyCompact) {
+                                                            onExpand()
+                                                        } else {
+                                                            isFocused = false
+                                                            focusManager.clearFocus()
+                                                            onContract()
+                                                        }
+                                                    }
+                                                )
+                                        )
+                                    }
                                 }
 
                                 IconButton(
@@ -642,13 +734,22 @@ fun FloatingAddressBar(
                                     ),
                                     shape = CircleShape
                                 )
-                                .clickable(
+                                .combinedClickable(
                                     interactionSource = rightButtonSource,
                                     indication = null,
-                                    enabled = !effectivelyCompact
-                                ) {
-                                    onActionsMenuClick()
-                                }
+                                    enabled = !effectivelyCompact,
+                                    onClick = {
+                                        onActionsMenuClick()
+                                    },
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        if (effectivelyCompact) {
+                                            onExpand()
+                                        } else {
+                                            onContract()
+                                        }
+                                    }
+                                )
                                 .testTag("safari_more_actions_button"),
                             contentAlignment = Alignment.Center
                         ) {

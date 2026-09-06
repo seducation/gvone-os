@@ -205,6 +205,8 @@ fun BrowserApp(
                 onSwipePrevTab = { viewModel.switchToPreviousTab() },
                 isCompact = isAddressBarCompact,
                 onExpand = { isAddressBarCompact = false },
+                onContract = { isAddressBarCompact = true },
+                onToggleCompact = { isAddressBarCompact = !isAddressBarCompact },
                 modifier = Modifier.align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
             )
         }
