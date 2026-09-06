@@ -3,12 +3,13 @@ package com.example.data.model
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+const val START_PAGE_URL = "gvone://newtab"
 const val HOME_WEB_APP_URL = "https://rssgroupfeed-jaelvwfd.manus.space"
 const val ADDRESS_BAR_TARGET_URL = "https://charassist-c4uzg7hb.manus.space"
 
 fun isInternalHomeUrl(url: String?): Boolean {
     if (url.isNullOrBlank()) return true
-    if (url == "gvone://newtab") return true
+    if (url == START_PAGE_URL || url == "about:blank" || url == "chrome://newtab" || url == "gvone://newtab") return true
     val lower = url.lowercase()
     return lower.contains("rssgroupfeed-jaelvwfd.manus.space")
 }

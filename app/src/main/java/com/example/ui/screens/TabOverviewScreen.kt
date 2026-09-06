@@ -38,10 +38,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.BrowserTab
+import com.example.data.model.Environment
 import com.example.data.model.TabGroup
 import com.example.data.model.TabSortOption
 import com.example.data.model.isInternalHomeUrl
 import com.example.ui.components.*
+import com.example.ui.screens.canvas.CreateEnvironmentDialog
+import com.example.ui.screens.canvas.EnvironmentSwitchSheet
+import com.example.ui.screens.canvas.getIconForName
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,6 +56,12 @@ fun TabOverviewScreen(
     currentTabId: String,
     activeGroupId: String?,
     isPrivateMode: Boolean,
+    environments: List<Environment> = emptyList(),
+    currentEnvironment: Environment? = null,
+    onSelectEnvironment: (String) -> Unit = {},
+    onCreateEnvironment: (name: String, icon: String, theme: String, preset: String, initialLinkUrl: String?, initialLinkTitle: String?) -> Unit = { _, _, _, _, _, _ -> },
+    onDuplicateEnvironment: (String) -> Unit = {},
+    onDeleteEnvironment: (String) -> Unit = {},
     onTabSelected: (String) -> Unit,
     onTabClose: (String) -> Unit,
     onNewTab: (groupId: String?) -> Unit,
@@ -88,6 +98,8 @@ fun TabOverviewScreen(
     var tabToMove by remember { mutableStateOf<BrowserTab?>(null) }
     var isMovingBatchToGroup by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
+    var showEnvironmentSheet by remember { mutableStateOf(false) }
+    var showCreateEnvironmentDialog by remember { mutableStateOf(false) }
 
     // Drag and Drop tracking
     var draggingTabId by remember { mutableStateOf<String?>(null) }
@@ -190,6 +202,9 @@ fun TabOverviewScreen(
                     showSortMenu = showSortMenu,
                     onToggleSortMenu = { showSortMenu = !showSortMenu },
                     onSortTabs = onSortTabs,
+                    currentEnvironment = currentEnvironment,
+                    onManageEnvironmentClick = { showEnvironmentSheet = true },
+                    onCreateEnvironmentClick = { showCreateEnvironmentDialog = true },
                     onCreateFolderClick = {
                         initialTabsForNewGroup = emptyList()
                         showCreateGroupDialog = true
@@ -618,19 +633,57 @@ fun TabOverviewScreen(
                 }
             }
         } else {
-            // NORMAL BOTTOM BAR: [Private] [Tabs Count] and [+] Add New Tab Button
+            // NORMAL BOTTOM BAR: [Bottom-Left Environment Pill] [Private/Tabs Switch] and [+] FAB
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Switch between Private and Regular Tabs
+                    // BOTTOM LEFT: Environment pill & management
+                    Surface(
+                        onClick = { showEnvironmentSheet = true },
+                        shape = RoundedCornerShape(24.dp),
+                        color = Color(0xFF161F2E).copy(alpha = 0.95f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2C384D)),
+                        modifier = Modifier
+                            .shadow(12.dp, RoundedCornerShape(24.dp))
+                            .testTag("bottom_left_environment_pill")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = getIconForName(currentEnvironment?.iconName ?: "Person"),
+                                contentDescription = null,
+                                tint = parseSafeColor(currentEnvironment?.background?.accentColorHex),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = currentEnvironment?.name ?: "Personal",
+                                color = GVONETextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Icon(
+                                imageVector = Icons.Rounded.UnfoldMore,
+                                contentDescription = "Environments",
+                                tint = GVONETextSecondary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+
+                    // BOTTOM CENTER: Switch between Private and Regular Tabs
                     Surface(
                         shape = RoundedCornerShape(24.dp),
                         color = Color(0xFF161F2E).copy(alpha = 0.95f),
@@ -638,7 +691,7 @@ fun TabOverviewScreen(
                         modifier = Modifier.shadow(12.dp, RoundedCornerShape(24.dp))
                     ) {
                         Row(
-                            modifier = Modifier.padding(4.dp),
+                            modifier = Modifier.padding(3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             // Private mode toggle
@@ -647,12 +700,12 @@ fun TabOverviewScreen(
                                     .clip(RoundedCornerShape(20.dp))
                                     .background(if (isPrivateMode) GVONESecondary.copy(alpha = 0.25f) else Color.Transparent)
                                     .clickable { onTogglePrivate(true) }
-                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
                             ) {
                                 Text(
                                     text = "Private",
                                     color = if (isPrivateMode) GVONESecondary else GVONETextSecondary,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = if (isPrivateMode) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
@@ -663,37 +716,67 @@ fun TabOverviewScreen(
                                     .clip(RoundedCornerShape(20.dp))
                                     .background(if (!isPrivateMode) GVONEPrimary.copy(alpha = 0.25f) else Color.Transparent)
                                     .clickable { onTogglePrivate(false) }
-                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
                             ) {
                                 Text(
                                     text = "${tabs.count { !it.isPrivate }} Tabs",
                                     color = if (!isPrivateMode) Color.White else GVONETextSecondary,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = if (!isPrivateMode) FontWeight.Bold else FontWeight.Normal
                                 )
                             }
                         }
                     }
 
-                    // New Tab Button
+                    // BOTTOM RIGHT: New Tab FAB
                     FloatingActionButton(
                         onClick = { onNewTab(currentFolderId) },
                         containerColor = if (isPrivateMode) GVONESecondary else GVONEPrimary,
                         contentColor = Color.White,
                         shape = CircleShape,
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(44.dp)
                             .testTag("new_tab_fab")
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Add,
                             contentDescription = "New Tab",
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
             }
         }
+    }
+
+    // --- ENVIRONMENT MANAGEMENT SHEETS & DIALOGS ---
+
+    if (showEnvironmentSheet) {
+        EnvironmentSwitchSheet(
+            environments = environments,
+            activeEnvironmentId = currentEnvironment?.id ?: "personal",
+            onSelectEnvironment = { envId ->
+                onSelectEnvironment(envId)
+                showEnvironmentSheet = false
+            },
+            onCreateEnvironment = { name, icon, theme, preset, initialLinkUrl, initialLinkTitle ->
+                onCreateEnvironment(name, icon, theme, preset, initialLinkUrl, initialLinkTitle)
+                showEnvironmentSheet = false
+            },
+            onDuplicateEnvironment = onDuplicateEnvironment,
+            onDeleteEnvironment = onDeleteEnvironment,
+            onDismiss = { showEnvironmentSheet = false }
+        )
+    }
+
+    if (showCreateEnvironmentDialog) {
+        CreateEnvironmentDialog(
+            onDismiss = { showCreateEnvironmentDialog = false },
+            onConfirm = { name, icon, theme, preset, initialLinkUrl, initialLinkTitle ->
+                onCreateEnvironment(name, icon, theme, preset, initialLinkUrl, initialLinkTitle)
+                showCreateEnvironmentDialog = false
+            }
+        )
     }
 
     // --- DIALOGS ---
@@ -779,6 +862,34 @@ fun TabOverviewScreen(
             }
         )
     }
+
+    if (showEnvironmentSheet) {
+        EnvironmentSwitchSheet(
+            environments = environments,
+            activeEnvironmentId = currentEnvironment?.id ?: (environments.firstOrNull()?.id ?: "personal"),
+            onSelectEnvironment = { envId ->
+                onSelectEnvironment(envId)
+                showEnvironmentSheet = false
+            },
+            onCreateEnvironment = { name, icon, theme, preset, linkUrl, linkTitle ->
+                onCreateEnvironment(name, icon, theme, preset, linkUrl, linkTitle)
+                showEnvironmentSheet = false
+            },
+            onDuplicateEnvironment = onDuplicateEnvironment,
+            onDeleteEnvironment = onDeleteEnvironment,
+            onDismiss = { showEnvironmentSheet = false }
+        )
+    }
+
+    if (showCreateEnvironmentDialog) {
+        CreateEnvironmentDialog(
+            onDismiss = { showCreateEnvironmentDialog = false },
+            onConfirm = { name, icon, theme, preset, linkUrl, linkTitle ->
+                onCreateEnvironment(name, icon, theme, preset, linkUrl, linkTitle)
+                showCreateEnvironmentDialog = false
+            }
+        )
+    }
 }
 
 // --- SUB-COMPONENTS: HEADERS & CARDS ---
@@ -795,6 +906,9 @@ private fun RootAllTabsHeader(
     showSortMenu: Boolean,
     onToggleSortMenu: () -> Unit,
     onSortTabs: (TabSortOption) -> Unit,
+    currentEnvironment: Environment? = null,
+    onManageEnvironmentClick: () -> Unit = {},
+    onCreateEnvironmentClick: () -> Unit = {},
     onCreateFolderClick: () -> Unit,
     onCloseOverview: () -> Unit
 ) {
@@ -884,14 +998,67 @@ private fun RootAllTabsHeader(
                             onToggleSortMenu()
                         }
                     )
+                    HorizontalDivider(color = Color(0xFF303A4E), modifier = Modifier.padding(vertical = 4.dp))
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = getIconForName(currentEnvironment?.iconName ?: "Person"),
+                                    contentDescription = null,
+                                    tint = parseSafeColor(currentEnvironment?.background?.accentColorHex),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Environment: ${currentEnvironment?.name ?: "Personal"}", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Switch or manage environments", color = GVONETextSecondary, fontSize = 10.sp)
+                                }
+                            }
+                        },
+                        onClick = {
+                            onToggleSortMenu()
+                            onManageEnvironmentClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.AddCircleOutline, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("New Environment with Link...", color = Color(0xFF38BDF8), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            }
+                        },
+                        onClick = {
+                            onToggleSortMenu()
+                            onCreateEnvironmentClick()
+                        }
+                    )
                 }
             }
 
-            // Right action pills: Search toggle, Select mode toggle, New Folder, and Done
+            // Right action pills: Search toggle, Select mode toggle, Environment, New Folder, and Done
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Environment Switcher Button
+                IconButton(
+                    onClick = onManageEnvironmentClick,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF1E2430))
+                        .border(1.dp, Color(0xFF333E52), CircleShape)
+                        .testTag("header_environment_button")
+                ) {
+                    Icon(
+                        imageVector = getIconForName(currentEnvironment?.iconName ?: "Person"),
+                        contentDescription = "Environments",
+                        tint = parseSafeColor(currentEnvironment?.background?.accentColorHex),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
                 // Search Toggle
                 IconButton(
                     onClick = onToggleSearch,
@@ -939,6 +1106,24 @@ private fun RootAllTabsHeader(
                         imageVector = Icons.Rounded.CreateNewFolder,
                         contentDescription = "New Folder",
                         tint = GVONEPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                // Environment Switcher / Management Button
+                IconButton(
+                    onClick = onManageEnvironmentClick,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF1E2430))
+                        .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f), CircleShape)
+                        .testTag("all_tabs_environment_header_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.DashboardCustomize,
+                        contentDescription = "Environments",
+                        tint = Color(0xFF38BDF8),
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -1411,5 +1596,14 @@ fun TabCard(
                 )
             }
         }
+    }
+}
+
+private fun parseSafeColor(hex: String?, defaultColor: Color = Color(0xFF38BDF8)): Color {
+    if (hex.isNullOrBlank()) return defaultColor
+    return try {
+        Color(android.graphics.Color.parseColor(hex))
+    } catch (_: Exception) {
+        defaultColor
     }
 }

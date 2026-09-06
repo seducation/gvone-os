@@ -3,10 +3,12 @@ package com.example
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -26,19 +28,21 @@ import com.example.ui.contextmenu.LinkContextMenuBottomSheet
 import com.example.ui.contextmenu.PagePreviewSheet
 import com.example.ui.contextmenu.TabGroupPickerSheet
 import com.example.ui.screens.*
+import com.example.ui.screens.canvas.EnvironmentStartPageCanvas
 import com.example.ui.theme.GVONEBrowserTheme
 import com.example.ui.viewmodel.ActiveSheet
 import com.example.ui.viewmodel.BrowserViewModel
 
 class MainActivity : ComponentActivity() {
+    private val browserViewModel: BrowserViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             GVONEBrowserTheme {
-                val viewModel: BrowserViewModel = viewModel()
                 BrowserApp(
-                    viewModel = viewModel,
+                    viewModel = browserViewModel,
                     onShareUrl = { url ->
                         val sendIntent = Intent().apply {
                             action = Intent.ACTION_SEND
@@ -50,6 +54,21 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val isCtrlOrMeta = event.isCtrlPressed || event.isMetaPressed
+            if (isCtrlOrMeta && event.keyCode == KeyEvent.KEYCODE_T) {
+                browserViewModel.createNewTab()
+                return true
+            }
+            if (isCtrlOrMeta && event.keyCode == KeyEvent.KEYCODE_W) {
+                browserViewModel.closeCurrentTab()
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 }
 
@@ -85,6 +104,10 @@ fun BrowserApp(
     val contextMenuData by viewModel.contextMenuData.collectAsStateWithLifecycle()
     val pagePreviewData by viewModel.pagePreviewData.collectAsStateWithLifecycle()
     val groupPickerUrl by viewModel.groupPickerUrl.collectAsStateWithLifecycle()
+
+    val environments by viewModel.environments.collectAsStateWithLifecycle()
+    val currentEnvironment by viewModel.currentEnvironment.collectAsStateWithLifecycle()
+    val isCanvasEditMode by viewModel.isCanvasEditMode.collectAsStateWithLifecycle()
 
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
@@ -138,58 +161,85 @@ fun BrowserApp(
                                 translationX = if (isCurrent) 0f else 999999f
                             }
                     ) {
-                        GVONEWebView(
-                            tab = tab,
-                            isTorActive = settings.torEnabled,
-                            torConnectionState = torStatus.state,
-                            torLastError = torStatus.lastError,
-                            webAppBridge = viewModel.webAppBridge,
-                            bridgeEnabled = settings.bidirectionalBridgeEnabled,
-                            bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
-                            shortsAudioMode = settings.shortsAudioMode,
-                            backgroundPlayEnabled = settings.backgroundPlayEnabled,
-                            onRegisterWebView = { tabId, wv ->
-                                viewModel.registerWebView(tabId, wv)
-                            },
-                            onRetryTor = { viewModel.retryTorConnection() },
-                            onDisableTor = { viewModel.disableTorAndReload() },
-                            onLaunchOrbot = launchOrbot,
-                            onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
-                            onOpenDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
-                            onTitleChanged = { title ->
-                                viewModel.updateTabState(tabId = tab.id, title = title)
-                            },
-                            onUrlChanged = { url ->
-                                viewModel.updateTabState(tabId = tab.id, url = url)
-                            },
-                            onFaviconChanged = { favicon ->
-                                viewModel.updateTabState(tabId = tab.id, faviconUrl = favicon)
-                            },
-                            onProgressChanged = { progress ->
-                                viewModel.updateTabState(tabId = tab.id, progress = progress, isLoading = progress < 100)
-                            },
-                            onContextMenuDetected = { data ->
-                                viewModel.triggerContextMenu(data)
-                            },
-                            onPageScroll = { scrollY, dy ->
-                                if (isCurrent) {
-                                    if (scrollY <= 24) {
-                                        // Top of page: always restore full address bar
-                                        isAddressBarCompact = false
-                                    } else if (dy > 14) {
-                                        // Scrolling down into content: smoothly transform into compact pill
-                                        isAddressBarCompact = true
-                                    } else if (dy < -14) {
-                                        // Scrolling up toward top: smoothly expand back to full address bar
-                                        isAddressBarCompact = false
+                        if (viewModel.isStartPage(tab.url)) {
+                            EnvironmentStartPageCanvas(
+                                environment = currentEnvironment,
+                                allEnvironments = environments,
+                                isPrivate = tab.isPrivate,
+                                isTorActive = settings.torEnabled,
+                                isEditMode = isCanvasEditMode,
+                                onToggleEditMode = { viewModel.toggleCanvasEditMode() },
+                                onSelectEnvironment = { viewModel.switchEnvironment(it) },
+                                onCreateEnvironment = { name, icon, theme, preset, initialLinkUrl, initialLinkTitle ->
+                                    viewModel.createEnvironment(name, icon, theme, preset, initialLinkUrl, initialLinkTitle)
+                                },
+                                onDuplicateEnvironment = { viewModel.duplicateEnvironment(it) },
+                                onDeleteEnvironment = { viewModel.deleteEnvironment(it) },
+                                onNavigate = { url ->
+                                    viewModel.loadUrlInCurrentTab(url)
+                                },
+                                onAddObject = { viewModel.addCanvasObject(it) },
+                                onUpdateObject = { viewModel.updateCanvasObject(it) },
+                                onDeleteObject = { viewModel.deleteCanvasObject(it) },
+                                onReorderObjects = { viewModel.reorderCanvasObjects(it) },
+                                onUpdateBackground = { viewModel.updateCanvasBackground(it) },
+                                onUpdateLayoutMode = { viewModel.updateCanvasLayoutMode(it) },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            GVONEWebView(
+                                tab = tab,
+                                isTorActive = settings.torEnabled,
+                                torConnectionState = torStatus.state,
+                                torLastError = torStatus.lastError,
+                                webAppBridge = viewModel.webAppBridge,
+                                bridgeEnabled = settings.bidirectionalBridgeEnabled,
+                                bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
+                                shortsAudioMode = settings.shortsAudioMode,
+                                backgroundPlayEnabled = settings.backgroundPlayEnabled,
+                                onRegisterWebView = { tabId, wv ->
+                                    viewModel.registerWebView(tabId, wv)
+                                },
+                                onRetryTor = { viewModel.retryTorConnection() },
+                                onDisableTor = { viewModel.disableTorAndReload() },
+                                onLaunchOrbot = launchOrbot,
+                                onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
+                                onOpenDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
+                                onTitleChanged = { title ->
+                                    viewModel.updateTabState(tabId = tab.id, title = title)
+                                },
+                                onUrlChanged = { url ->
+                                    viewModel.updateTabState(tabId = tab.id, url = url)
+                                },
+                                onFaviconChanged = { favicon ->
+                                    viewModel.updateTabState(tabId = tab.id, faviconUrl = favicon)
+                                },
+                                onProgressChanged = { progress ->
+                                    viewModel.updateTabState(tabId = tab.id, progress = progress, isLoading = progress < 100)
+                                },
+                                onContextMenuDetected = { data ->
+                                    viewModel.triggerContextMenu(data)
+                                },
+                                onPageScroll = { scrollY, dy ->
+                                    if (isCurrent) {
+                                        if (scrollY <= 24) {
+                                            // Top of page: always restore full address bar
+                                            isAddressBarCompact = false
+                                        } else if (dy > 14) {
+                                            // Scrolling down into content: smoothly transform into compact pill
+                                            isAddressBarCompact = true
+                                        } else if (dy < -14) {
+                                            // Scrolling up toward top: smoothly expand back to full address bar
+                                            isAddressBarCompact = false
+                                        }
                                     }
-                                }
-                            },
-                            onStartDownload = { url, userAgent, contentDisposition, mimeType ->
-                                viewModel.downloadResource(url, mimeType, context)
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
+                                },
+                                onStartDownload = { url, userAgent, contentDisposition, mimeType ->
+                                    viewModel.downloadResource(url, mimeType, context)
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
             }
@@ -249,6 +299,14 @@ fun BrowserApp(
                 currentTabId = currentTabId,
                 activeGroupId = activeGroupId,
                 isPrivateMode = isPrivateMode,
+                environments = environments,
+                currentEnvironment = currentEnvironment,
+                onSelectEnvironment = { viewModel.switchEnvironment(it) },
+                onCreateEnvironment = { name, icon, theme, preset, initialLinkUrl, initialLinkTitle ->
+                    viewModel.createEnvironment(name, icon, theme, preset, initialLinkUrl, initialLinkTitle)
+                },
+                onDuplicateEnvironment = { viewModel.duplicateEnvironment(it) },
+                onDeleteEnvironment = { viewModel.deleteEnvironment(it) },
                 onTabSelected = { tabId -> viewModel.selectTab(tabId) },
                 onTabClose = { tabId -> viewModel.closeTab(tabId) },
                 onNewTab = { groupId -> viewModel.createNewTab(groupId = groupId) },

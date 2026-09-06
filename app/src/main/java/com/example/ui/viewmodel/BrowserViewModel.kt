@@ -12,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.MainActivity
 import com.example.data.ai.GVONEAIService
 import com.example.data.download.BrowserDownloadManager
+import com.example.data.environment.EnvironmentManager
 import com.example.data.model.*
 import com.example.data.repository.BrowserRepository
 import com.example.data.sync.*
@@ -128,6 +129,75 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _findCurrentIndex = MutableStateFlow(0)
     val findCurrentIndex: StateFlow<Int> = _findCurrentIndex.asStateFlow()
 
+    // Custom Environment Start Page System
+    val environmentManager = EnvironmentManager(application.applicationContext)
+    val environments: StateFlow<List<Environment>> = environmentManager.environments
+    val currentEnvironment: StateFlow<Environment> = environmentManager.currentEnvironment
+    private val _isCanvasEditMode = MutableStateFlow(false)
+    val isCanvasEditMode: StateFlow<Boolean> = _isCanvasEditMode.asStateFlow()
+
+    fun toggleCanvasEditMode() {
+        _isCanvasEditMode.value = !_isCanvasEditMode.value
+    }
+
+    fun setCanvasEditMode(enabled: Boolean) {
+        _isCanvasEditMode.value = enabled
+    }
+
+    fun switchEnvironment(id: String) {
+        environmentManager.switchEnvironment(id)
+    }
+
+    fun createEnvironment(
+        name: String,
+        icon: String,
+        theme: String = "dark",
+        preset: String = "aurora",
+        initialLinkUrl: String? = null,
+        initialLinkTitle: String? = null
+    ): Environment {
+        return environmentManager.createEnvironment(name, icon, theme, preset, initialLinkUrl, initialLinkTitle)
+    }
+
+    fun updateEnvironment(env: Environment) {
+        environmentManager.updateEnvironment(env)
+    }
+
+    fun duplicateEnvironment(id: String) {
+        environmentManager.duplicateEnvironment(id)
+    }
+
+    fun deleteEnvironment(id: String) {
+        environmentManager.deleteEnvironment(id)
+    }
+
+    fun addCanvasObject(obj: CanvasObject) {
+        environmentManager.addObject(obj)
+    }
+
+    fun updateCanvasObject(obj: CanvasObject) {
+        environmentManager.updateObject(obj)
+    }
+
+    fun deleteCanvasObject(id: String) {
+        environmentManager.removeObject(id)
+    }
+
+    fun reorderCanvasObjects(newObjects: List<CanvasObject>) {
+        val current = environmentManager.currentEnvironment.value
+        environmentManager.updateEnvironment(current.copy(objects = newObjects))
+    }
+
+    fun updateCanvasBackground(bg: EnvironmentBackground) {
+        environmentManager.updateBackground(bg)
+    }
+
+    fun updateCanvasLayoutMode(mode: EnvironmentLayoutMode) {
+        environmentManager.updateLayoutMode(mode)
+    }
+
+    fun isStartPage(url: String?): Boolean = isInternalHomeUrl(url)
+
     // Settings
     private val _settings = MutableStateFlow(loadPersistedSettings())
     val settings: StateFlow<BrowserSettings> = _settings.asStateFlow()
@@ -165,8 +235,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val initialTabs = listOf(
             BrowserTab(
                 id = UUID.randomUUID().toString(),
-                title = "Home",
-                url = HOME_WEB_APP_URL,
+                title = "Start Page",
+                url = START_PAGE_URL,
                 faviconUrl = null,
                 isPrivate = false,
                 tabGroupId = null // Ungrouped
@@ -351,14 +421,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun createNewTab(
-        url: String = HOME_WEB_APP_URL,
+        url: String = START_PAGE_URL,
         isPrivate: Boolean = _isPrivateMode.value,
         groupId: String? = _activeGroupId.value,
         inBackground: Boolean = false
     ) {
         val newTab = BrowserTab(
             id = UUID.randomUUID().toString(),
-            title = if (isInternalHomeUrl(url)) "Home" else "New Tab",
+            title = if (isInternalHomeUrl(url)) "Start Page" else "New Tab",
             url = url,
             isPrivate = isPrivate,
             tabGroupId = groupId
@@ -371,6 +441,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             closeSheet()
         }
         persistTabsAndActiveState()
+    }
+
+    fun closeCurrentTab() {
+        val currentId = _currentTabId.value
+        if (currentId.isNotBlank()) {
+            closeTab(currentId)
+        }
     }
 
     fun closeTab(tabId: String) {
