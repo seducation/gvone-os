@@ -104,6 +104,18 @@ object PageContextDetector {
         }
     }
 
+    fun isYouTubeShorts(url: String?): Boolean {
+        if (!isYouTubeOrigin(url)) return false
+        return try {
+            val uri = URI(url!!.trim())
+            val path = uri.path ?: ""
+            path.startsWith("/shorts") || path.contains("/shorts/")
+        } catch (_: Exception) {
+            val lower = url!!.trim().lowercase(Locale.ROOT)
+            lower.contains("/shorts")
+        }
+    }
+
     fun getCleanOrigin(url: String?): String? {
         if (url.isNullOrBlank()) return null
         return try {
@@ -205,13 +217,20 @@ object InputRouter {
     }
 }
 
+data class ShortsAudioStatus(
+    val isShorts: Boolean,
+    val isMuted: Boolean,
+    val mode: String
+)
+
 /**
  * GVONE Web App Communication Bridge:
  * Handles secure bidirectional messaging between the GVONE Browser and the GVONE Web App.
  */
 class GVONEWebAppBridge(
     private val onStateChanged: (WebAppConnectionState) -> Unit = {},
-    private val onInputDelivered: (text: String, success: Boolean) -> Unit = { _, _ -> }
+    private val onInputDelivered: (text: String, success: Boolean) -> Unit = { _, _ -> },
+    private val onShortsAudioStateChanged: (isShorts: Boolean, isMuted: Boolean, mode: String) -> Unit = { _, _, _ -> }
 ) {
     companion object {
         const val JAVASCRIPT_INTERFACE_NAME = "GVONEBrowserBridge"
@@ -225,6 +244,9 @@ class GVONEWebAppBridge(
 
     private val _lastDeliveredText = MutableStateFlow<String?>(null)
     val lastDeliveredText: StateFlow<String?> = _lastDeliveredText.asStateFlow()
+
+    private val _shortsAudioState = MutableStateFlow<ShortsAudioStatus?>(null)
+    val shortsAudioState: StateFlow<ShortsAudioStatus?> = _shortsAudioState.asStateFlow()
 
     private var lastSubmissionTimestamp = 0L
 
@@ -255,6 +277,14 @@ class GVONEWebAppBridge(
                         val success = json.optBoolean("success", true)
                         onInputDelivered(text, success)
                         updateState(WebAppConnectionState.PROCESSING)
+                    }
+                    "shorts_audio_status" -> {
+                        val isShorts = json.optBoolean("isShorts", false)
+                        val isMuted = json.optBoolean("isMuted", false)
+                        val mode = json.optString("mode", "ALWAYS_UNMUTED")
+                        val newStatus = ShortsAudioStatus(isShorts, isMuted, mode)
+                        _shortsAudioState.value = newStatus
+                        onShortsAudioStateChanged(isShorts, isMuted, mode)
                     }
                 }
             }
@@ -298,11 +328,18 @@ class GVONEWebAppBridge(
         webView: WebView,
         currentUrl: String?,
         enabled: Boolean = true,
-        applyToAll: Boolean = true
+        applyToAll: Boolean = true,
+        shortsAudioMode: com.example.data.model.ShortsAudioMode = com.example.data.model.ShortsAudioMode.ALWAYS_UNMUTED
     ) {
+        val isYouTubeOrigin = PageContextDetector.isYouTubeOrigin(currentUrl)
+
+        // Always ensure YouTube Shorts Smart Audio Engine is active on YouTube origins
+        if (isYouTubeOrigin) {
+            injectYouTubeShortsAudioScript(webView, shortsAudioMode)
+        }
+
         if (!enabled) return
         val isTrustedOrigin = PageContextDetector.isTrustedGVONEOrigin(currentUrl)
-        val isYouTubeOrigin = PageContextDetector.isYouTubeOrigin(currentUrl)
         if (!applyToAll && !isTrustedOrigin && !isYouTubeOrigin) {
             return
         }
@@ -958,5 +995,211 @@ class GVONEWebAppBridge(
         }
 
         return true
+    }
+
+    /**
+     * Injects the dedicated YouTube Shorts Smart Audio Engine.
+     * Ensures that video sound behavior on YouTube Shorts (scrolling, swiping, SPA navigation)
+     * strictly adheres to user intent (ALWAYS_UNMUTED, ALWAYS_MUTED, or REMEMBER_STATE).
+     */
+    fun injectYouTubeShortsAudioScript(
+        webView: WebView,
+        shortsAudioMode: com.example.data.model.ShortsAudioMode
+    ) {
+        val script = """
+            (function() {
+                var targetMode = '${shortsAudioMode.name}';
+                if (window.__GVONE_SET_SHORTS_AUDIO_MODE__) {
+                    window.__GVONE_SET_SHORTS_AUDIO_MODE__(targetMode);
+                    return;
+                }
+                if (window.__GVONE_SHORTS_AUDIO_INSTALLED__) return;
+                window.__GVONE_SHORTS_AUDIO_INSTALLED__ = true;
+
+                var currentMode = targetMode;
+                var userManualMuted = (currentMode === 'ALWAYS_MUTED');
+                var isUserInteracting = false;
+                var lastInteractionTime = 0;
+
+                function isShortsUrl() {
+                    try {
+                        var path = (window.location && window.location.pathname) ? window.location.pathname.toLowerCase() : '';
+                        if (path.indexOf('/shorts') !== -1) return true;
+                        if (document.querySelector('ytm-shorts-carousel, ytd-shorts, [is-active], [class*="shorts"]')) return true;
+                    } catch(e) {}
+                    return false;
+                }
+
+                function notifyShortsStatus(isMuted) {
+                    try {
+                        if (window.GVONEBrowserBridge && window.GVONEBrowserBridge.postMessageToBrowser) {
+                            window.GVONEBrowserBridge.postMessageToBrowser(JSON.stringify({
+                                type: 'shorts_audio_status',
+                                isShorts: isShortsUrl(),
+                                isMuted: !!isMuted,
+                                mode: currentMode
+                            }));
+                        }
+                    } catch(e) {}
+                }
+
+                function getTargetMutedState() {
+                    if (currentMode === 'ALWAYS_UNMUTED') return false;
+                    if (currentMode === 'ALWAYS_MUTED') return true;
+                    return !!userManualMuted;
+                }
+
+                function applyAudioToVideo(video, source) {
+                    if (!video || !isShortsUrl()) return;
+                    var targetMuted = getTargetMutedState();
+
+                    try {
+                        if (targetMuted) {
+                            if (!video.muted) {
+                                video.muted = true;
+                            }
+                        } else {
+                            if (video.muted) {
+                                video.muted = false;
+                                video.volume = 1.0;
+                                video.removeAttribute('muted');
+                            }
+                            // Also trigger native YouTube unmute button click if visible
+                            var unmuteBtn = document.querySelector('button[aria-label*="Unmute" i], .ytm-shorts-player-controls-sound-button[aria-label*="Unmute" i], ytm-shorts-player-controls-overlay button[aria-label*="Unmute" i], [aria-label*="unmute" i]');
+                            if (unmuteBtn) {
+                                unmuteBtn.click();
+                            }
+                            var tapOverlay = document.querySelector('.ytm-shorts-tap-to-unmute, [aria-label*="tap to unmute" i]');
+                            if (tapOverlay) {
+                                tapOverlay.click();
+                            }
+                        }
+                        notifyShortsStatus(targetMuted);
+                    } catch(e) {
+                        console.warn('[GVONE Shorts Audio] apply error:', e);
+                    }
+                }
+
+                function checkAndApplyAllVideos(reason) {
+                    if (!isShortsUrl()) return;
+                    var videos = document.querySelectorAll('video');
+                    for (var i = 0; i < videos.length; i++) {
+                        var v = videos[i];
+                        var rect = v.getBoundingClientRect();
+                        var isVisible = rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < (window.innerHeight || document.documentElement.clientHeight);
+                        if (isVisible || !v.paused || videos.length === 1) {
+                            applyAudioToVideo(v, reason);
+                        }
+                    }
+                }
+
+                // Listen to video lifecycle events
+                ['play', 'playing', 'loadeddata', 'loadstart', 'canplay'].forEach(function(evt) {
+                    document.addEventListener(evt, function(e) {
+                        if (e.target && e.target.tagName === 'VIDEO') {
+                            applyAudioToVideo(e.target, evt);
+                            setTimeout(function() { applyAudioToVideo(e.target, evt + '-delayed1'); }, 40);
+                            setTimeout(function() { applyAudioToVideo(e.target, evt + '-delayed2'); }, 180);
+                            setTimeout(function() { applyAudioToVideo(e.target, evt + '-delayed3'); }, 400);
+                        }
+                    }, true);
+                });
+
+                // Detect user manual mute/unmute action
+                document.addEventListener('click', function(e) {
+                    var target = e.target;
+                    var btn = target ? target.closest('button') : null;
+                    if (btn) {
+                        var label = (btn.getAttribute('aria-label') || '') + ' ' + (btn.className || '');
+                        if (/mute/i.test(label)) {
+                            isUserInteracting = true;
+                            lastInteractionTime = Date.now();
+                            setTimeout(function() {
+                                var v = document.querySelector('video');
+                                if (v) {
+                                    userManualMuted = v.muted;
+                                    notifyShortsStatus(userManualMuted);
+                                }
+                                isUserInteracting = false;
+                            }, 100);
+                        }
+                    }
+                }, true);
+
+                // Watch DOM mutations for active short slide switch
+                var shortsObserver = new MutationObserver(function(mutations) {
+                    if (!isShortsUrl()) return;
+                    for (var i = 0; i < mutations.length; i++) {
+                        var m = mutations[i];
+                        if (m.type === 'childList' && m.addedNodes.length > 0) {
+                            checkAndApplyAllVideos('mutation-child');
+                            break;
+                        } else if (m.type === 'attributes' && (m.attributeName === 'is-active' || m.attributeName === 'aria-hidden' || m.attributeName === 'src')) {
+                            checkAndApplyAllVideos('mutation-attr');
+                            break;
+                        }
+                    }
+                });
+                shortsObserver.observe(document.documentElement || document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['is-active', 'aria-hidden', 'src', 'class']
+                });
+
+                // Watch scroll and touch end
+                var scrollTimeout = null;
+                function onScrollDetected() {
+                    if (scrollTimeout) clearTimeout(scrollTimeout);
+                    scrollTimeout = setTimeout(function() {
+                        checkAndApplyAllVideos('scroll');
+                    }, 80);
+                }
+                window.addEventListener('scroll', onScrollDetected, { passive: true });
+                window.addEventListener('touchend', function() {
+                    setTimeout(function() { checkAndApplyAllVideos('touchend'); }, 120);
+                }, { passive: true });
+
+                // Watch SPA navigation
+                window.addEventListener('yt-navigate-finish', function() {
+                    setTimeout(function() { checkAndApplyAllVideos('yt-navigate'); }, 150);
+                });
+                window.addEventListener('popstate', function() {
+                    setTimeout(function() { checkAndApplyAllVideos('popstate'); }, 150);
+                });
+
+                window.__GVONE_SET_SHORTS_AUDIO_MODE__ = function(mode) {
+                    currentMode = mode || 'ALWAYS_UNMUTED';
+                    if (currentMode === 'ALWAYS_MUTED') userManualMuted = true;
+                    else if (currentMode === 'ALWAYS_UNMUTED') userManualMuted = false;
+                    checkAndApplyAllVideos('mode-change');
+                };
+
+                window.__GVONE_TOGGLE_SHORTS_AUDIO__ = function() {
+                    var videos = document.querySelectorAll('video');
+                    var currentlyMuted = true;
+                    for (var i = 0; i < videos.length; i++) {
+                        if (!videos[i].muted) {
+                            currentlyMuted = false;
+                            break;
+                        }
+                    }
+                    var newMuted = !currentlyMuted;
+                    userManualMuted = newMuted;
+                    for (var j = 0; j < videos.length; j++) {
+                        videos[j].muted = newMuted;
+                        if (!newMuted) videos[j].volume = 1.0;
+                    }
+                    notifyShortsStatus(newMuted);
+                    return !newMuted;
+                };
+
+                setTimeout(function() { checkAndApplyAllVideos('initial'); }, 300);
+            })();
+        """.trimIndent()
+
+        mainHandler.post {
+            webView.evaluateJavascript(script, null)
+        }
     }
 }

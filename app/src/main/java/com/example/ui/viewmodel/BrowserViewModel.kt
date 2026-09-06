@@ -236,6 +236,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val autoTargetUrl = prefs.getString("auto_load_target_url", ADDRESS_BAR_TARGET_URL) ?: ADDRESS_BAR_TARGET_URL
         val bridgeEnabled = prefs.getBoolean("bidirectional_bridge_enabled", true)
         val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", false)
+        val shortsModeName = prefs.getString("shorts_audio_mode", ShortsAudioMode.ALWAYS_UNMUTED.name) ?: ShortsAudioMode.ALWAYS_UNMUTED.name
+        val shortsMode = try { ShortsAudioMode.valueOf(shortsModeName) } catch (_: Exception) { ShortsAudioMode.ALWAYS_UNMUTED }
 
         return BrowserSettings(
             searchEngine = engine,
@@ -250,7 +252,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             autoLoadTargetOnFocus = autoLoad,
             autoLoadTargetUrl = autoTargetUrl,
             bidirectionalBridgeEnabled = bridgeEnabled,
-            bridgeApplyToAllWebsites = bridgeApplyAll
+            bridgeApplyToAllWebsites = bridgeApplyAll,
+            shortsAudioMode = shortsMode
         )
     }
 
@@ -269,6 +272,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             .putString("auto_load_target_url", s.autoLoadTargetUrl)
             .putBoolean("bidirectional_bridge_enabled", s.bidirectionalBridgeEnabled)
             .putBoolean("bridge_apply_all_websites", s.bridgeApplyToAllWebsites)
+            .putString("shorts_audio_mode", s.shortsAudioMode.name)
             .apply()
     }
 
@@ -880,5 +884,38 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun updateFindResults(activeMatchIndex: Int, numberOfMatches: Int) {
         _findCurrentIndex.value = activeMatchIndex
         _findMatchCount.value = numberOfMatches
+    }
+
+    // YouTube Shorts Audio Integration
+    val shortsAudioStatus: StateFlow<ShortsAudioStatus?> = webAppBridge.shortsAudioState
+
+    val isCurrentTabShorts: StateFlow<Boolean> = combine(
+        currentTab,
+        shortsAudioStatus
+    ) { tab, status ->
+        (status?.isShorts == true) || PageContextDetector.isYouTubeShorts(tab?.url)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val isShortsMuted: StateFlow<Boolean> = combine(
+        settings,
+        shortsAudioStatus
+    ) { s, status ->
+        status?.isMuted ?: (s.shortsAudioMode == ShortsAudioMode.ALWAYS_MUTED)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setShortsAudioMode(mode: ShortsAudioMode) {
+        val updated = _settings.value.copy(shortsAudioMode = mode)
+        updateSettings(updated)
+        getActiveWebView()?.evaluateJavascript(
+            "if (window.__GVONE_SET_SHORTS_AUDIO_MODE__) window.__GVONE_SET_SHORTS_AUDIO_MODE__('${mode.name}');",
+            null
+        )
+    }
+
+    fun toggleShortsAudio() {
+        getActiveWebView()?.evaluateJavascript(
+            "if (window.__GVONE_TOGGLE_SHORTS_AUDIO__) window.__GVONE_TOGGLE_SHORTS_AUDIO__();",
+            null
+        )
     }
 }
