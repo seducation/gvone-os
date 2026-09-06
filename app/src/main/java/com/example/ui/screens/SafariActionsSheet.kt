@@ -89,7 +89,8 @@ fun SafariActionsSheet(
     onAddFavorite: () -> Unit,
     onAddToReadingList: () -> Unit,
     onOpenReaderMode: () -> Unit,
-    onOpenPasswords: () -> Unit,
+    onOpenSiteInfo: () -> Unit,
+    onOpenPasswords: () -> Unit = onOpenSiteInfo,
     onOpenAddToHomeScreen: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenHistory: () -> Unit,
@@ -746,12 +747,12 @@ fun SafariActionsSheet(
                                     ) {
                                         Column {
                                             SafariActionRow(
-                                                icon = Icons.Rounded.VpnKey,
-                                                label = "Passwords & Autofill",
-                                                trailingText = "iCloud Keychain",
+                                                icon = Icons.Rounded.Info,
+                                                label = "Site Information",
+                                                trailingText = if (tab?.url?.startsWith("https://") == true) "Secure" else "Page Info",
                                                 onClick = {
                                                     onClose()
-                                                    onOpenPasswords()
+                                                    onOpenSiteInfo()
                                                 }
                                             )
                                             HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
@@ -824,11 +825,11 @@ fun SafariActionsSheet(
                             modifier = Modifier.weight(1f)
                         )
                         GridShortcutItem(
-                            icon = Icons.Rounded.VpnKey,
-                            label = "Passwords",
+                            icon = Icons.Rounded.Info,
+                            label = "Site Info",
                             onClick = {
                                 onClose()
-                                onOpenPasswords()
+                                onOpenSiteInfo()
                             },
                             modifier = Modifier.weight(1f)
                         )

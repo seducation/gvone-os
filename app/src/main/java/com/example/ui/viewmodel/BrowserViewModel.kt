@@ -1231,4 +1231,47 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             Toast.makeText(context, "Failed to share link", Toast.LENGTH_SHORT).show()
         }
     }
+
+    suspend fun getSitePermission(domain: String): SitePermission? {
+        return repository.getSitePermission(domain)
+    }
+
+    fun saveSitePermission(permission: SitePermission) {
+        viewModelScope.launch {
+            repository.saveSitePermission(permission)
+        }
+    }
+
+    fun clearSiteDataForDomain(domain: String, url: String, context: Context) {
+        viewModelScope.launch {
+            try {
+                val cookieManager = CookieManager.getInstance()
+                val cookies = cookieManager.getCookie(url)
+                if (!cookies.isNullOrBlank()) {
+                    val parts = cookies.split(";")
+                    for (part in parts) {
+                        val cookieName = part.substringBefore("=").trim()
+                        if (cookieName.isNotEmpty()) {
+                            cookieManager.setCookie(url, "$cookieName=; Expires=Thu, 01 Jan 1970 00:00:00 GMT")
+                            cookieManager.setCookie(domain, "$cookieName=; Expires=Thu, 01 Jan 1970 00:00:00 GMT")
+                        }
+                    }
+                    cookieManager.flush()
+                }
+                try {
+                    android.webkit.WebStorage.getInstance().deleteOrigin(url)
+                } catch (_: Exception) {}
+                Toast.makeText(context, "Cookies and site data cleared for $domain", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error clearing site data", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun deleteHistoryForDomain(domain: String, context: Context) {
+        viewModelScope.launch {
+            repository.deleteHistoryByDomain(domain)
+            Toast.makeText(context, "History cleared for $domain", Toast.LENGTH_SHORT).show()
+        }
+    }
 }

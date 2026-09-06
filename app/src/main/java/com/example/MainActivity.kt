@@ -387,7 +387,7 @@ fun BrowserApp(
                 onAddFavorite = { viewModel.addToFavorites() },
                 onAddToReadingList = { viewModel.addToReadingList() },
                 onOpenReaderMode = { viewModel.openSheet(ActiveSheet.ReaderMode) },
-                onOpenPasswords = { viewModel.openSheet(ActiveSheet.SavedPasswords) },
+                onOpenSiteInfo = { viewModel.openSheet(ActiveSheet.SiteInfo) },
                 onOpenAddToHomeScreen = { viewModel.openSheet(ActiveSheet.AddToHomeScreen) },
                 onOpenDownloads = { viewModel.openSheet(ActiveSheet.Downloads) },
                 onOpenHistory = { viewModel.openSheet(ActiveSheet.History) },
@@ -425,11 +425,25 @@ fun BrowserApp(
             )
         }
 
-        // Site Security & SSL Info Dialog
+        // Chrome-style Site Information Bottom Sheet
         if (activeSheet == ActiveSheet.SiteInfo) {
-            SiteInfoDialog(
+            SiteInfoBottomSheet(
                 tab = currentTab,
                 isTorActive = isTorActive,
+                history = historyList,
+                settings = settings,
+                onSavePermission = { permission ->
+                    viewModel.saveSitePermission(permission)
+                },
+                onGetPermission = { domain ->
+                    viewModel.getSitePermission(domain)
+                },
+                onClearSiteData = { domain, url ->
+                    viewModel.clearSiteDataForDomain(domain, url, context)
+                },
+                onClearDomainHistory = { domain ->
+                    viewModel.deleteHistoryForDomain(domain, context)
+                },
                 onDismiss = { viewModel.closeSheet() }
             )
         }
@@ -453,14 +467,18 @@ fun BrowserApp(
             )
         }
 
-        // Lightweight Page Preview Bottom Sheet
+        // Lightweight Page Preview Bottom Sheet with Share & Saved Bookmarks Browser
         pagePreviewData?.let { preview ->
             PagePreviewSheet(
                 data = preview,
+                savedBookmarks = bookmarksList,
                 onClose = { viewModel.dismissPagePreview() },
                 onOpenInTab = { url ->
                     viewModel.dismissPagePreview()
                     viewModel.createNewTab(url = url, inBackground = false)
+                },
+                onShare = { url, title ->
+                    viewModel.shareLink(url, title, context = context)
                 }
             )
         }
