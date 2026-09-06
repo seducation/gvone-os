@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.BrowserTab
+import com.example.data.model.ShortsAudioMode
 import com.example.data.model.isInternalHomeUrl
 import com.example.ui.theme.*
 
@@ -65,6 +66,11 @@ fun SafariActionsSheet(
     tab: BrowserTab?,
     isTorActive: Boolean,
     isPrivateMode: Boolean,
+    isShortsTab: Boolean = false,
+    isShortsMuted: Boolean = false,
+    shortsAudioMode: ShortsAudioMode = ShortsAudioMode.ALWAYS_UNMUTED,
+    onToggleShortsAudio: () -> Unit = {},
+    onSelectShortsAudioMode: (ShortsAudioMode) -> Unit = {},
     onNewTab: () -> Unit,
     onNewPrivateTab: () -> Unit,
     onToggleDesktop: () -> Unit,
@@ -93,6 +99,7 @@ fun SafariActionsSheet(
     var isMoreExpanded by remember { mutableStateOf(false) }
     var isExtensionsExpanded by remember { mutableStateOf(false) }
     var isShortcutsExpanded by remember { mutableStateOf(false) }
+    var isShortsAudioExpanded by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
     var zoomPercentage by remember { mutableIntStateOf(100) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
@@ -243,6 +250,22 @@ fun SafariActionsSheet(
                                 )
                             }
                         }
+                    }
+                }
+
+                // YouTube Shorts Sound Control Card (Prominent when on Shorts)
+                if (isShortsTab) {
+                    item {
+                        ShortsAudioMenuCard(
+                            isShortsTab = true,
+                            isShortsMuted = isShortsMuted,
+                            shortsAudioMode = shortsAudioMode,
+                            isExpanded = isShortsAudioExpanded,
+                            onToggleExpanded = { isShortsAudioExpanded = !isShortsAudioExpanded },
+                            onToggleAudio = onToggleShortsAudio,
+                            onSelectMode = onSelectShortsAudioMode,
+                            onShowToast = { toastMessage = it }
+                        )
                     }
                 }
 
@@ -430,6 +453,22 @@ fun SafariActionsSheet(
                                 }
                             }
                         }
+                    }
+                }
+
+                // YouTube Shorts Sound Control Card (Accessible when not currently on Shorts)
+                if (!isShortsTab) {
+                    item {
+                        ShortsAudioMenuCard(
+                            isShortsTab = false,
+                            isShortsMuted = isShortsMuted,
+                            shortsAudioMode = shortsAudioMode,
+                            isExpanded = isShortsAudioExpanded,
+                            onToggleExpanded = { isShortsAudioExpanded = !isShortsAudioExpanded },
+                            onToggleAudio = onToggleShortsAudio,
+                            onSelectMode = onSelectShortsAudioMode,
+                            onShowToast = { toastMessage = it }
+                        )
                     }
                 }
 
@@ -1315,6 +1354,256 @@ fun SafariActionRow(
                 color = if (isActive) GVONESecondary else Color(0xFF94A3B8),
                 fontSize = 12.sp
             )
+        }
+    }
+}
+
+/**
+ * YouTube Shorts Audio Control Card inside the Three-Dot Action Menu Sheet.
+ * Displays current mute status, direct one-tap Mute/Unmute toggle, and sound mode choices.
+ */
+@Composable
+private fun ShortsAudioMenuCard(
+    isShortsTab: Boolean,
+    isShortsMuted: Boolean,
+    shortsAudioMode: ShortsAudioMode,
+    isExpanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onToggleAudio: () -> Unit,
+    onSelectMode: (ShortsAudioMode) -> Unit,
+    onShowToast: (String) -> Unit
+) {
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else 0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "shorts_audio_chevron"
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .testTag("menu_shorts_audio_card"),
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF161C26),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isShortsTab && !isShortsMuted) GVONEPrimary.copy(alpha = 0.5f) else Color(0xFF243042)
+        )
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onToggleExpanded() }
+                ) {
+                    // Volume Icon Badge
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isShortsTab && !isShortsMuted) {
+                                    Brush.linearGradient(listOf(GVONEPrimary, GVONESecondary))
+                                } else if (!isShortsTab && shortsAudioMode != ShortsAudioMode.ALWAYS_MUTED) {
+                                    Brush.linearGradient(listOf(GVONEPrimary.copy(alpha = 0.7f), GVONESecondary.copy(alpha = 0.7f)))
+                                } else {
+                                    Brush.linearGradient(listOf(Color(0xFF334155), Color(0xFF1E293B)))
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (!isShortsMuted) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
+                            contentDescription = "Shorts Audio",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "YouTube Shorts Sound",
+                                color = Color.White,
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (isShortsTab) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (!isShortsMuted) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFEF4444).copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = if (!isShortsMuted) "UNMUTED" else "MUTED",
+                                        color = if (!isShortsMuted) Color(0xFF34D399) else Color(0xFFF87171),
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = when (shortsAudioMode) {
+                                ShortsAudioMode.ALWAYS_UNMUTED -> "Auto-unmutes on scroll"
+                                ShortsAudioMode.ALWAYS_MUTED -> "Always muted"
+                                ShortsAudioMode.REMEMBER_STATE -> "Remembers last choice"
+                            },
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.5.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Quick Toggle Button (Instant Mute / Unmute)
+                    Button(
+                        onClick = {
+                            onToggleAudio()
+                            onShowToast(if (isShortsMuted) "Shorts audio unmuted" else "Shorts audio muted")
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isShortsMuted) GVONEPrimary else Color(0xFF263345),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(18.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .height(32.dp)
+                            .testTag("menu_shorts_audio_toggle_btn")
+                    ) {
+                        Icon(
+                            imageVector = if (isShortsMuted) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isShortsMuted) "Unmute" else "Mute",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    // Chevron trigger to expand sound modes
+                    IconButton(
+                        onClick = onToggleExpanded,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("menu_shorts_audio_expand_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = "Expand sound modes",
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier
+                                .size(20.dp)
+                                .rotate(chevronRotation)
+                        )
+                    }
+                }
+            }
+
+            // Expandable Mode Selector Options
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF10151E))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Behavior when scrolling Shorts:",
+                        fontSize = 11.sp,
+                        color = Color(0xFF64748B),
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    )
+
+                    ShortsAudioMode.values().forEach { mode ->
+                        val isSelected = shortsAudioMode == mode
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    onSelectMode(mode)
+                                    onShowToast("Mode set to ${mode.displayName}")
+                                }
+                                .testTag("menu_shorts_mode_${mode.name}"),
+                            color = if (isSelected) GVONEPrimary.copy(alpha = 0.15f) else Color.Transparent,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = when (mode) {
+                                            ShortsAudioMode.ALWAYS_UNMUTED -> Icons.Rounded.VolumeUp
+                                            ShortsAudioMode.ALWAYS_MUTED -> Icons.Rounded.VolumeOff
+                                            ShortsAudioMode.REMEMBER_STATE -> Icons.Rounded.Sync
+                                        },
+                                        contentDescription = null,
+                                        tint = if (isSelected) GVONESecondary else Color(0xFF94A3B8),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = mode.displayName,
+                                            color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                            fontSize = 12.5.sp,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                        )
+                                        Text(
+                                            text = mode.description,
+                                            color = Color(0xFF64748B),
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = "Selected",
+                                        tint = GVONESecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

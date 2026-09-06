@@ -115,6 +115,12 @@ enum class SearchEngineType(val displayName: String, val searchUrl: String) {
     CUSTOM("Custom", "")
 }
 
+enum class ShortsAudioMode(val displayName: String, val description: String) {
+    ALWAYS_UNMUTED("Always Unmuted", "Automatically unmutes audio on every Short when scrolling"),
+    ALWAYS_MUTED("Always Muted", "Keeps audio muted on every Short when scrolling until manually unmuted"),
+    REMEMBER_STATE("Remember Last Choice", "Preserves whether you last muted or unmuted Shorts")
+}
+
 data class BrowserSettings(
     val searchEngine: SearchEngineType = SearchEngineType.GVONE,
     val customSearchUrl: String = "",
@@ -133,7 +139,8 @@ data class BrowserSettings(
     val autoLoadTargetOnFocus: Boolean = false,
     val autoLoadTargetUrl: String = ADDRESS_BAR_TARGET_URL,
     val bidirectionalBridgeEnabled: Boolean = true,
-    val bridgeApplyToAllWebsites: Boolean = false
+    val bridgeApplyToAllWebsites: Boolean = false,
+    val shortsAudioMode: ShortsAudioMode = ShortsAudioMode.ALWAYS_UNMUTED
 )
 
 data class SourceCard(
