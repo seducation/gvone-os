@@ -223,6 +223,13 @@ data class ShortsAudioStatus(
     val mode: String
 )
 
+data class MediaPlayerStatus(
+    val isPlaying: Boolean = false,
+    val isMuted: Boolean = false,
+    val title: String = "",
+    val isShorts: Boolean = false
+)
+
 /**
  * GVONE Web App Communication Bridge:
  * Handles secure bidirectional messaging between the GVONE Browser and the GVONE Web App.
@@ -230,7 +237,8 @@ data class ShortsAudioStatus(
 class GVONEWebAppBridge(
     private val onStateChanged: (WebAppConnectionState) -> Unit = {},
     private val onInputDelivered: (text: String, success: Boolean) -> Unit = { _, _ -> },
-    private val onShortsAudioStateChanged: (isShorts: Boolean, isMuted: Boolean, mode: String) -> Unit = { _, _, _ -> }
+    private val onShortsAudioStateChanged: (isShorts: Boolean, isMuted: Boolean, mode: String) -> Unit = { _, _, _ -> },
+    private val onMediaPlayerStateChanged: (isPlaying: Boolean, isMuted: Boolean, title: String, isShorts: Boolean) -> Unit = { _, _, _, _ -> }
 ) {
     companion object {
         const val JAVASCRIPT_INTERFACE_NAME = "GVONEBrowserBridge"
@@ -247,6 +255,9 @@ class GVONEWebAppBridge(
 
     private val _shortsAudioState = MutableStateFlow<ShortsAudioStatus?>(null)
     val shortsAudioState: StateFlow<ShortsAudioStatus?> = _shortsAudioState.asStateFlow()
+
+    private val _mediaPlayerState = MutableStateFlow<MediaPlayerStatus?>(null)
+    val mediaPlayerState: StateFlow<MediaPlayerStatus?> = _mediaPlayerState.asStateFlow()
 
     private var lastSubmissionTimestamp = 0L
 
@@ -285,6 +296,15 @@ class GVONEWebAppBridge(
                         val newStatus = ShortsAudioStatus(isShorts, isMuted, mode)
                         _shortsAudioState.value = newStatus
                         onShortsAudioStateChanged(isShorts, isMuted, mode)
+                    }
+                    "media_player_status" -> {
+                        val isPlaying = json.optBoolean("isPlaying", false)
+                        val isMuted = json.optBoolean("isMuted", false)
+                        val title = json.optString("title", "")
+                        val isShorts = json.optBoolean("isShorts", false)
+                        val newStatus = MediaPlayerStatus(isPlaying, isMuted, title, isShorts)
+                        _mediaPlayerState.value = newStatus
+                        onMediaPlayerStateChanged(isPlaying, isMuted, title, isShorts)
                     }
                 }
             }
@@ -1191,13 +1211,155 @@ class GVONEWebAppBridge(
                         if (!newMuted) videos[j].volume = 1.0;
                     }
                     notifyShortsStatus(newMuted);
+                    notifyMediaStatus(!newMuted);
                     return !newMuted;
+                };
+
+                function notifyMediaStatus(isPlaying) {
+                    try {
+                        if (window.GVONEBrowserBridge && window.GVONEBrowserBridge.postMessageToBrowser) {
+                            var videos = document.querySelectorAll('video, audio');
+                            var isMuted = false;
+                            if (videos.length > 0) isMuted = videos[0].muted;
+                            var pageTitle = document.title || '';
+                            window.GVONEBrowserBridge.postMessageToBrowser(JSON.stringify({
+                                type: 'media_player_status',
+                                isPlaying: !!isPlaying,
+                                isMuted: isMuted,
+                                title: pageTitle,
+                                isShorts: isShortsUrl()
+                            }));
+                        }
+                    } catch(e) {}
+                }
+
+                function attachMediaListeners(media) {
+                    if (!media || media.__gvone_tracked__) return;
+                    media.__gvone_tracked__ = true;
+                    media.addEventListener('play', function() { notifyMediaStatus(true); });
+                    media.addEventListener('pause', function() { notifyMediaStatus(false); });
+                    media.addEventListener('volumechange', function() { notifyMediaStatus(!media.paused); });
+                }
+
+                var allMedia = document.querySelectorAll('video, audio');
+                for (var m = 0; m < allMedia.length; m++) {
+                    attachMediaListeners(allMedia[m]);
+                }
+
+                window.__GVONE_MEDIA_TOGGLE_PLAY__ = function() {
+                    var mediaElements = document.querySelectorAll('video, audio');
+                    if (!mediaElements || mediaElements.length === 0) return false;
+                    var anyPlaying = false;
+                    for (var i = 0; i < mediaElements.length; i++) {
+                        if (!mediaElements[i].paused && !mediaElements[i].ended && mediaElements[i].currentTime > 0) {
+                            anyPlaying = true;
+                            break;
+                        }
+                    }
+                    if (anyPlaying) {
+                        for (var i = 0; i < mediaElements.length; i++) {
+                            try { mediaElements[i].pause(); } catch(e) {}
+                        }
+                        notifyMediaStatus(false);
+                        return false;
+                    } else {
+                        var target = mediaElements[0];
+                        for (var j = 0; j < mediaElements.length; j++) {
+                            if (mediaElements[j].offsetWidth > 0 || mediaElements[j].offsetHeight > 0) {
+                                target = mediaElements[j];
+                                break;
+                            }
+                        }
+                        if (target) {
+                            try { target.play(); } catch(e) {}
+                        }
+                        notifyMediaStatus(true);
+                        return true;
+                    }
+                };
+
+                window.__GVONE_MEDIA_PREV__ = function() {
+                    try {
+                        var prevShortBtn = document.querySelector('button[aria-label*="Previous short" i], button[aria-label*="Previous" i], .ytm-shorts-player-controls-prev-button');
+                        if (prevShortBtn) {
+                            prevShortBtn.click();
+                            return;
+                        }
+                        var mediaElements = document.querySelectorAll('video, audio');
+                        for (var i = 0; i < mediaElements.length; i++) {
+                            mediaElements[i].currentTime = Math.max(0, mediaElements[i].currentTime - 10);
+                        }
+                    } catch(e) {}
+                };
+
+                window.__GVONE_MEDIA_NEXT__ = function() {
+                    try {
+                        var nextShortBtn = document.querySelector('button[aria-label*="Next short" i], button[aria-label*="Next video" i], button[aria-label*="Next" i], .ytm-shorts-player-controls-next-button');
+                        if (nextShortBtn) {
+                            nextShortBtn.click();
+                            return;
+                        }
+                        var mediaElements = document.querySelectorAll('video, audio');
+                        for (var i = 0; i < mediaElements.length; i++) {
+                            var dur = mediaElements[i].duration || (mediaElements[i].currentTime + 10);
+                            mediaElements[i].currentTime = Math.min(dur, mediaElements[i].currentTime + 10);
+                        }
+                    } catch(e) {}
                 };
 
                 setTimeout(function() { checkAndApplyAllVideos('initial'); }, 300);
             })();
         """.trimIndent()
 
+        mainHandler.post {
+            webView.evaluateJavascript(script, null)
+        }
+    }
+
+    /**
+     * Injects the Background Player engine.
+     * Prevents video/audio from pausing when screen is locked, minimized, or tab is switched.
+     */
+    fun injectBackgroundPlayerScript(webView: WebView, enabled: Boolean) {
+        val script = """
+            (function() {
+                window.__GVONE_BACKGROUND_PLAYER_ENABLED__ = ${if (enabled) "true" else "false"};
+                if (window.__GVONE_BG_PLAYER_INSTALLED__) return;
+                window.__GVONE_BG_PLAYER_INSTALLED__ = true;
+                try {
+                    var nativeHidden = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden') || { get: function() { return false; } };
+                    var nativeVisibility = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState') || { get: function() { return 'visible'; } };
+                    Object.defineProperty(document, 'hidden', {
+                        get: function() {
+                            if (window.__GVONE_BACKGROUND_PLAYER_ENABLED__) return false;
+                            return nativeHidden.get ? nativeHidden.get.call(document) : false;
+                        },
+                        configurable: true
+                    });
+                    Object.defineProperty(document, 'visibilityState', {
+                        get: function() {
+                            if (window.__GVONE_BACKGROUND_PLAYER_ENABLED__) return 'visible';
+                            return nativeVisibility.get ? nativeVisibility.get.call(document) : 'visible';
+                        },
+                        configurable: true
+                    });
+                    var origAddEventListener = EventTarget.prototype.addEventListener;
+                    EventTarget.prototype.addEventListener = function(type, listener, options) {
+                        if (type === 'visibilitychange' || type === 'pagehide') {
+                            var wrapped = function(e) {
+                                if (window.__GVONE_BACKGROUND_PLAYER_ENABLED__) return;
+                                if (typeof listener === 'function') return listener.apply(this, arguments);
+                                else if (listener && listener.handleEvent) return listener.handleEvent(e);
+                            };
+                            return origAddEventListener.call(this, type, wrapped, options);
+                        }
+                        return origAddEventListener.call(this, type, listener, options);
+                    };
+                } catch(e) {
+                    console.warn('[GVONE Background Player] setup error:', e);
+                }
+            })();
+        """.trimIndent()
         mainHandler.post {
             webView.evaluateJavascript(script, null)
         }

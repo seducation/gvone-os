@@ -238,6 +238,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", false)
         val shortsModeName = prefs.getString("shorts_audio_mode", ShortsAudioMode.ALWAYS_UNMUTED.name) ?: ShortsAudioMode.ALWAYS_UNMUTED.name
         val shortsMode = try { ShortsAudioMode.valueOf(shortsModeName) } catch (_: Exception) { ShortsAudioMode.ALWAYS_UNMUTED }
+        val bgPlay = prefs.getBoolean("background_play_enabled", true)
 
         return BrowserSettings(
             searchEngine = engine,
@@ -253,7 +254,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             autoLoadTargetUrl = autoTargetUrl,
             bidirectionalBridgeEnabled = bridgeEnabled,
             bridgeApplyToAllWebsites = bridgeApplyAll,
-            shortsAudioMode = shortsMode
+            shortsAudioMode = shortsMode,
+            backgroundPlayEnabled = bgPlay
         )
     }
 
@@ -273,6 +275,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             .putBoolean("bidirectional_bridge_enabled", s.bidirectionalBridgeEnabled)
             .putBoolean("bridge_apply_all_websites", s.bridgeApplyToAllWebsites)
             .putString("shorts_audio_mode", s.shortsAudioMode.name)
+            .putBoolean("background_play_enabled", s.backgroundPlayEnabled)
             .apply()
     }
 
@@ -915,6 +918,53 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun toggleShortsAudio() {
         getActiveWebView()?.evaluateJavascript(
             "if (window.__GVONE_TOGGLE_SHORTS_AUDIO__) window.__GVONE_TOGGLE_SHORTS_AUDIO__();",
+            null
+        )
+    }
+
+    val mediaPlayerStatus: StateFlow<com.example.data.sync.MediaPlayerStatus?> = webAppBridge.mediaPlayerState
+
+    private val _isMediaPlaying = MutableStateFlow(true)
+    val isMediaPlaying: StateFlow<Boolean> = _isMediaPlaying.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            mediaPlayerStatus.collect { status ->
+                if (status != null) {
+                    _isMediaPlaying.value = status.isPlaying
+                }
+            }
+        }
+    }
+
+    fun toggleBackgroundPlay() {
+        val current = _settings.value.backgroundPlayEnabled
+        val updated = _settings.value.copy(backgroundPlayEnabled = !current)
+        updateSettings(updated)
+        getActiveWebView()?.let { wv ->
+            webAppBridge.injectBackgroundPlayerScript(wv, !current)
+        }
+    }
+
+    fun toggleMediaPlay() {
+        val current = _isMediaPlaying.value
+        _isMediaPlaying.value = !current
+        getActiveWebView()?.evaluateJavascript(
+            "if (window.__GVONE_MEDIA_TOGGLE_PLAY__) window.__GVONE_MEDIA_TOGGLE_PLAY__();",
+            null
+        )
+    }
+
+    fun mediaPrevious() {
+        getActiveWebView()?.evaluateJavascript(
+            "if (window.__GVONE_MEDIA_PREV__) window.__GVONE_MEDIA_PREV__();",
+            null
+        )
+    }
+
+    fun mediaNext() {
+        getActiveWebView()?.evaluateJavascript(
+            "if (window.__GVONE_MEDIA_NEXT__) window.__GVONE_MEDIA_NEXT__();",
             null
         )
     }

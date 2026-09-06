@@ -77,6 +77,7 @@ fun BrowserApp(
     val isDiagnosing by viewModel.isDiagnosing.collectAsStateWithLifecycle()
     val isCurrentTabShorts by viewModel.isCurrentTabShorts.collectAsStateWithLifecycle()
     val isShortsMuted by viewModel.isShortsMuted.collectAsStateWithLifecycle()
+    val mediaPlayerStatus by viewModel.mediaPlayerStatus.collectAsStateWithLifecycle()
 
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
@@ -129,6 +130,7 @@ fun BrowserApp(
                     bridgeEnabled = settings.bidirectionalBridgeEnabled,
                     bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
                     shortsAudioMode = settings.shortsAudioMode,
+                    backgroundPlayEnabled = settings.backgroundPlayEnabled,
                     onRegisterWebView = { tabId, wv ->
                         viewModel.registerWebView(tabId, wv)
                     },
@@ -342,8 +344,14 @@ fun BrowserApp(
                 isShortsTab = isCurrentTabShorts,
                 isShortsMuted = isShortsMuted,
                 shortsAudioMode = settings.shortsAudioMode,
+                backgroundPlayEnabled = settings.backgroundPlayEnabled,
+                isMediaPlaying = mediaPlayerStatus?.isPlaying ?: (isCurrentTabShorts && !isShortsMuted),
                 onToggleShortsAudio = { viewModel.toggleShortsAudio() },
                 onSelectShortsAudioMode = { mode -> viewModel.setShortsAudioMode(mode) },
+                onToggleBackgroundPlay = { viewModel.toggleBackgroundPlay() },
+                onToggleMediaPlay = { viewModel.toggleMediaPlay() },
+                onMediaPrevious = { viewModel.mediaPrevious() },
+                onMediaNext = { viewModel.mediaNext() },
                 onNewTab = { viewModel.createNewTab() },
                 onNewPrivateTab = { viewModel.createNewTab(isPrivate = true) },
                 onToggleDesktop = { viewModel.toggleDesktopMode() },

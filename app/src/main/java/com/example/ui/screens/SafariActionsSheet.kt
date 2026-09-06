@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,8 +70,14 @@ fun SafariActionsSheet(
     isShortsTab: Boolean = false,
     isShortsMuted: Boolean = false,
     shortsAudioMode: ShortsAudioMode = ShortsAudioMode.ALWAYS_UNMUTED,
+    backgroundPlayEnabled: Boolean = true,
+    isMediaPlaying: Boolean = true,
     onToggleShortsAudio: () -> Unit = {},
     onSelectShortsAudioMode: (ShortsAudioMode) -> Unit = {},
+    onToggleBackgroundPlay: () -> Unit = {},
+    onToggleMediaPlay: () -> Unit = {},
+    onMediaPrevious: () -> Unit = {},
+    onMediaNext: () -> Unit = {},
     onNewTab: () -> Unit,
     onNewPrivateTab: () -> Unit,
     onToggleDesktop: () -> Unit,
@@ -99,7 +106,7 @@ fun SafariActionsSheet(
     var isMoreExpanded by remember { mutableStateOf(false) }
     var isExtensionsExpanded by remember { mutableStateOf(false) }
     var isShortcutsExpanded by remember { mutableStateOf(false) }
-    var isShortsAudioExpanded by remember { mutableStateOf(false) }
+    var isMediaPlayerExpanded by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
     var zoomPercentage by remember { mutableIntStateOf(100) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
@@ -253,16 +260,23 @@ fun SafariActionsSheet(
                     }
                 }
 
-                // YouTube Shorts Sound Control Card (Prominent when on Shorts)
+                // Media Player Card (Prominent when on Shorts / YouTube Media)
                 if (isShortsTab) {
                     item {
-                        ShortsAudioMenuCard(
+                        MediaPlayerMenuCard(
+                            tab = tab,
                             isShortsTab = true,
                             isShortsMuted = isShortsMuted,
                             shortsAudioMode = shortsAudioMode,
-                            isExpanded = isShortsAudioExpanded,
-                            onToggleExpanded = { isShortsAudioExpanded = !isShortsAudioExpanded },
+                            backgroundPlayEnabled = backgroundPlayEnabled,
+                            isMediaPlaying = isMediaPlaying,
+                            isExpanded = isMediaPlayerExpanded,
+                            onToggleExpanded = { isMediaPlayerExpanded = !isMediaPlayerExpanded },
                             onToggleAudio = onToggleShortsAudio,
+                            onToggleMediaPlay = onToggleMediaPlay,
+                            onMediaPrevious = onMediaPrevious,
+                            onMediaNext = onMediaNext,
+                            onToggleBackgroundPlay = onToggleBackgroundPlay,
                             onSelectMode = onSelectShortsAudioMode,
                             onShowToast = { toastMessage = it }
                         )
@@ -456,16 +470,23 @@ fun SafariActionsSheet(
                     }
                 }
 
-                // YouTube Shorts Sound Control Card (Accessible when not currently on Shorts)
+                // Media Player Card (Accessible across all tabs with media & YouTube)
                 if (!isShortsTab) {
                     item {
-                        ShortsAudioMenuCard(
+                        MediaPlayerMenuCard(
+                            tab = tab,
                             isShortsTab = false,
                             isShortsMuted = isShortsMuted,
                             shortsAudioMode = shortsAudioMode,
-                            isExpanded = isShortsAudioExpanded,
-                            onToggleExpanded = { isShortsAudioExpanded = !isShortsAudioExpanded },
+                            backgroundPlayEnabled = backgroundPlayEnabled,
+                            isMediaPlaying = isMediaPlaying,
+                            isExpanded = isMediaPlayerExpanded,
+                            onToggleExpanded = { isMediaPlayerExpanded = !isMediaPlayerExpanded },
                             onToggleAudio = onToggleShortsAudio,
+                            onToggleMediaPlay = onToggleMediaPlay,
+                            onMediaPrevious = onMediaPrevious,
+                            onMediaNext = onMediaNext,
+                            onToggleBackgroundPlay = onToggleBackgroundPlay,
                             onSelectMode = onSelectShortsAudioMode,
                             onShowToast = { toastMessage = it }
                         )
@@ -1359,39 +1380,77 @@ fun SafariActionRow(
 }
 
 /**
- * YouTube Shorts Audio Control Card inside the Three-Dot Action Menu Sheet.
- * Displays current mute status, direct one-tap Mute/Unmute toggle, and sound mode choices.
+ * Media Player Control Card inside the Three-Dot Action Menu Sheet.
+ * Displays full media player controls, animated equalizer, play/pause, seek,
+ * Background Player toggle, and audio behavior configuration.
  */
 @Composable
-private fun ShortsAudioMenuCard(
+private fun MediaPlayerMenuCard(
+    tab: BrowserTab?,
     isShortsTab: Boolean,
     isShortsMuted: Boolean,
     shortsAudioMode: ShortsAudioMode,
+    backgroundPlayEnabled: Boolean,
+    isMediaPlaying: Boolean,
     isExpanded: Boolean,
     onToggleExpanded: () -> Unit,
     onToggleAudio: () -> Unit,
+    onToggleMediaPlay: () -> Unit,
+    onMediaPrevious: () -> Unit,
+    onMediaNext: () -> Unit,
+    onToggleBackgroundPlay: () -> Unit,
     onSelectMode: (ShortsAudioMode) -> Unit,
     onShowToast: (String) -> Unit
 ) {
     val chevronRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
-        label = "shorts_audio_chevron"
+        label = "media_player_chevron"
+    )
+
+    val infiniteTransition = rememberInfiniteTransition(label = "media_player_equalizer")
+    val bar1 by infiniteTransition.animateFloat(
+        initialValue = 4f,
+        targetValue = 16f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(420, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar1"
+    )
+    val bar2 by infiniteTransition.animateFloat(
+        initialValue = 15f,
+        targetValue = 5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(320, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar2"
+    )
+    val bar3 by infiniteTransition.animateFloat(
+        initialValue = 7f,
+        targetValue = 18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(480, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar3"
     )
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .testTag("menu_shorts_audio_card"),
-        shape = RoundedCornerShape(14.dp),
+            .clip(RoundedCornerShape(16.dp))
+            .testTag("menu_media_player_card"),
+        shape = RoundedCornerShape(16.dp),
         color = Color(0xFF161C26),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (isShortsTab && !isShortsMuted) GVONEPrimary.copy(alpha = 0.5f) else Color(0xFF243042)
+            if (isMediaPlaying) GVONEPrimary.copy(alpha = 0.6f) else Color(0xFF243042)
         )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
+            // Header: Title, Animated Visualizer, Badges & Expand Trigger
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1406,60 +1465,101 @@ private fun ShortsAudioMenuCard(
                         .weight(1f)
                         .clickable { onToggleExpanded() }
                 ) {
-                    // Volume Icon Badge
+                    // Media / Equalizer Icon Badge
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
+                            .size(40.dp)
                             .clip(CircleShape)
                             .background(
-                                if (isShortsTab && !isShortsMuted) {
+                                if (isMediaPlaying) {
                                     Brush.linearGradient(listOf(GVONEPrimary, GVONESecondary))
-                                } else if (!isShortsTab && shortsAudioMode != ShortsAudioMode.ALWAYS_MUTED) {
-                                    Brush.linearGradient(listOf(GVONEPrimary.copy(alpha = 0.7f), GVONESecondary.copy(alpha = 0.7f)))
                                 } else {
                                     Brush.linearGradient(listOf(Color(0xFF334155), Color(0xFF1E293B)))
                                 }
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = if (!isShortsMuted) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
-                            contentDescription = "Shorts Audio",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        if (isMediaPlaying) {
+                            // Animated equalizer wave bars
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.height(18.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(3.dp)
+                                        .height(bar1.dp)
+                                        .clip(RoundedCornerShape(1.5.dp))
+                                        .background(Color.White)
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .width(3.dp)
+                                        .height(bar2.dp)
+                                        .clip(RoundedCornerShape(1.5.dp))
+                                        .background(Color.White)
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .width(3.dp)
+                                        .height(bar3.dp)
+                                        .clip(RoundedCornerShape(1.5.dp))
+                                        .background(Color.White)
+                                )
+                            }
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = "Media Player",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
 
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             Text(
-                                text = "YouTube Shorts Sound",
+                                text = "Media Player",
                                 color = Color.White,
-                                fontSize = 14.5.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                            if (isShortsTab) {
-                                Spacer(modifier = Modifier.width(6.dp))
+                            // Playing status badge
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = if (isMediaPlaying) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFF64748B).copy(alpha = 0.2f)
+                            ) {
+                                Text(
+                                    text = if (isMediaPlaying) "PLAYING" else "PAUSED",
+                                    color = if (isMediaPlaying) Color(0xFF34D399) else Color(0xFF94A3B8),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                                )
+                            }
+                            if (backgroundPlayEnabled) {
                                 Surface(
                                     shape = RoundedCornerShape(4.dp),
-                                    color = if (!isShortsMuted) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFEF4444).copy(alpha = 0.2f)
+                                    color = GVONESecondary.copy(alpha = 0.2f)
                                 ) {
                                     Text(
-                                        text = if (!isShortsMuted) "UNMUTED" else "MUTED",
-                                        color = if (!isShortsMuted) Color(0xFF34D399) else Color(0xFFF87171),
-                                        fontSize = 9.5.sp,
+                                        text = "BG PLAY",
+                                        color = GVONESecondary,
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
                                     )
                                 }
                             }
                         }
                         Text(
-                            text = when (shortsAudioMode) {
-                                ShortsAudioMode.ALWAYS_UNMUTED -> "Auto-unmutes on scroll"
-                                ShortsAudioMode.ALWAYS_MUTED -> "Always muted"
-                                ShortsAudioMode.REMEMBER_STATE -> "Remembers last choice"
-                            },
+                            text = tab?.title?.takeIf { it.isNotBlank() }
+                                ?: if (isShortsTab) "YouTube Shorts" else "Web Video & Audio",
                             color = Color(0xFF94A3B8),
                             fontSize = 11.5.sp,
                             maxLines = 1,
@@ -1468,57 +1568,216 @@ private fun ShortsAudioMenuCard(
                     }
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                // Expand chevron
+                IconButton(
+                    onClick = onToggleExpanded,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("menu_media_expand_btn")
                 ) {
-                    // Quick Toggle Button (Instant Mute / Unmute)
-                    Button(
-                        onClick = {
-                            onToggleAudio()
-                            onShowToast(if (isShortsMuted) "Shorts audio unmuted" else "Shorts audio muted")
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isShortsMuted) GVONEPrimary else Color(0xFF263345),
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(18.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    Icon(
+                        imageVector = Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = "Expand media player options",
+                        tint = Color(0xFF94A3B8),
                         modifier = Modifier
-                            .height(32.dp)
-                            .testTag("menu_shorts_audio_toggle_btn")
+                            .size(22.dp)
+                            .rotate(chevronRotation)
+                    )
+                }
+            }
+
+            // Media Controls Bar (Rewind 10s, Play/Pause, Forward 10s, Mute/Unmute)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF0F1520),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Rewind 10s / Previous
+                    IconButton(
+                        onClick = {
+                            onMediaPrevious()
+                            onShowToast("Rewound 10s")
+                        },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .testTag("menu_media_player_prev_btn")
                     ) {
                         Icon(
-                            imageVector = if (isShortsMuted) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isShortsMuted) "Unmute" else "Mute",
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold
+                            imageVector = Icons.Rounded.Replay10,
+                            contentDescription = "Rewind 10 seconds",
+                            tint = Color(0xFFCBD5E1),
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
-                    // Chevron trigger to expand sound modes
-                    IconButton(
-                        onClick = onToggleExpanded,
+                    // Play / Pause Action Button
+                    Box(
                         modifier = Modifier
-                            .size(28.dp)
-                            .testTag("menu_shorts_audio_expand_btn")
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(Brush.linearGradient(listOf(GVONEPrimary, GVONESecondary)))
+                            .clickable {
+                                onToggleMediaPlay()
+                                onShowToast(if (isMediaPlaying) "Media paused" else "Media playing")
+                            }
+                            .testTag("menu_media_player_play_pause_btn"),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = "Expand sound modes",
-                            tint = Color(0xFF94A3B8),
-                            modifier = Modifier
-                                .size(20.dp)
-                                .rotate(chevronRotation)
+                            imageVector = if (isMediaPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (isMediaPlaying) "Pause" else "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    // Forward 10s / Next
+                    IconButton(
+                        onClick = {
+                            onMediaNext()
+                            onShowToast("Skipped 10s")
+                        },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .testTag("menu_media_player_next_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Forward10,
+                            contentDescription = "Forward 10 seconds",
+                            tint = Color(0xFFCBD5E1),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    // Quick Mute / Unmute
+                    IconButton(
+                        onClick = {
+                            onToggleAudio()
+                            onShowToast(if (isShortsMuted) "Audio unmuted" else "Audio muted")
+                        },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .testTag("menu_media_player_mute_btn")
+                    ) {
+                        Icon(
+                            imageVector = if (isShortsMuted) Icons.Rounded.VolumeOff else Icons.Rounded.VolumeUp,
+                            contentDescription = if (isShortsMuted) "Unmute" else "Mute",
+                            tint = if (isShortsMuted) Color(0xFFEF4444) else GVONESecondary,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Background Player Section
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable {
+                        onToggleBackgroundPlay()
+                        onShowToast(if (!backgroundPlayEnabled) "Background Player enabled" else "Background Player disabled")
+                    }
+                    .testTag("menu_media_bg_player_row"),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF0F1520),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (backgroundPlayEnabled) GVONESecondary.copy(alpha = 0.35f) else Color(0xFF1E293B)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (backgroundPlayEnabled) GVONESecondary.copy(alpha = 0.15f) else Color(0xFF1E293B)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Headphones,
+                                contentDescription = "Background Player",
+                                tint = if (backgroundPlayEnabled) GVONESecondary else Color(0xFF94A3B8),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Background Player",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (backgroundPlayEnabled) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFF64748B).copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = if (backgroundPlayEnabled) "ENABLED" else "OFF",
+                                        color = if (backgroundPlayEnabled) Color(0xFF34D399) else Color(0xFF94A3B8),
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Plays audio when minimized or screen is locked",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 10.5.sp
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = backgroundPlayEnabled,
+                        onCheckedChange = {
+                            onToggleBackgroundPlay()
+                            onShowToast(if (it) "Background Player enabled" else "Background Player disabled")
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = GVONESecondary,
+                            uncheckedThumbColor = Color(0xFF94A3B8),
+                            uncheckedTrackColor = Color(0xFF1E293B)
+                        ),
+                        modifier = Modifier
+                            .scale(0.8f)
+                            .testTag("menu_media_bg_player_switch")
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Expandable Mode Selector Options
             AnimatedVisibility(
@@ -1534,7 +1793,7 @@ private fun ShortsAudioMenuCard(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "Behavior when scrolling Shorts:",
+                        text = "Shorts & Web Sound Behavior:",
                         fontSize = 11.sp,
                         color = Color(0xFF64748B),
                         fontWeight = FontWeight.Medium,

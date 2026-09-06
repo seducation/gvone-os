@@ -51,6 +51,7 @@ fun GVONEWebView(
     bridgeEnabled: Boolean = true,
     bridgeApplyToAll: Boolean = true,
     shortsAudioMode: com.example.data.model.ShortsAudioMode = com.example.data.model.ShortsAudioMode.ALWAYS_UNMUTED,
+    backgroundPlayEnabled: Boolean = true,
     onRegisterWebView: ((tabId: String, webView: WebView) -> Unit)? = null,
     onRetryTor: () -> Unit = {},
     onDisableTor: () -> Unit = {},
@@ -241,7 +242,10 @@ fun GVONEWebView(
                                     lastLoadedUrl = it
                                     onUrlChanged(it)
                                     (view as? GVONEActionWebView)?.isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(it)
-                                    view?.let { wv -> webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode) }
+                                    view?.let { wv ->
+                                        webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode)
+                                        webAppBridge?.injectBackgroundPlayerScript(wv, backgroundPlayEnabled)
+                                    }
                                 }
                             }
 
@@ -251,7 +255,10 @@ fun GVONEWebView(
                                     lastLoadedUrl = it
                                     onUrlChanged(it)
                                     (view as? GVONEActionWebView)?.isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(it)
-                                    view?.let { wv -> webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode) }
+                                    view?.let { wv ->
+                                        webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode)
+                                        webAppBridge?.injectBackgroundPlayerScript(wv, backgroundPlayEnabled)
+                                    }
                                 }
                                 view?.title?.let {
                                     if (it.isNotBlank()) onTitleChanged(it)
@@ -312,6 +319,7 @@ fun GVONEWebView(
                             null
                         )
                     }
+                    webAppBridge?.injectBackgroundPlayerScript(webView, backgroundPlayEnabled)
                 }
             )
 
