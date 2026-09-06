@@ -178,10 +178,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val https = prefs.getBoolean("force_https", true)
         val addressBottom = prefs.getBoolean("address_bar_bottom", true)
         val aiAuto = prefs.getBoolean("ai_search_auto_trigger", true)
-        val autoLoad = prefs.getBoolean("auto_load_target_on_focus", true)
+        val autoLoad = prefs.getBoolean("auto_load_target_on_focus", false)
         val autoTargetUrl = prefs.getString("auto_load_target_url", ADDRESS_BAR_TARGET_URL) ?: ADDRESS_BAR_TARGET_URL
         val bridgeEnabled = prefs.getBoolean("bidirectional_bridge_enabled", true)
-        val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", true)
+        val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", false)
 
         return BrowserSettings(
             searchEngine = engine,

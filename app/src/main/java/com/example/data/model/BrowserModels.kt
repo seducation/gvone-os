@@ -121,10 +121,10 @@ data class BrowserSettings(
     val addressBarBottom: Boolean = true,
     val showQuickShortcuts: Boolean = true,
     val aiSearchAutoTrigger: Boolean = true,
-    val autoLoadTargetOnFocus: Boolean = true,
+    val autoLoadTargetOnFocus: Boolean = false,
     val autoLoadTargetUrl: String = ADDRESS_BAR_TARGET_URL,
     val bidirectionalBridgeEnabled: Boolean = true,
-    val bridgeApplyToAllWebsites: Boolean = true
+    val bridgeApplyToAllWebsites: Boolean = false
 )
 
 data class SourceCard(
