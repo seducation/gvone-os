@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.tor.TorConnectionState
@@ -118,56 +119,70 @@ fun BrowserApp(
             .fillMaxSize()
             .background(Color(0xFF0B0E14))
     ) {
-        // Main Browser View Area
-        if (currentTab != null) {
-            key(currentTab!!.id) {
-                GVONEWebView(
-                    tab = currentTab!!,
-                    isTorActive = settings.torEnabled,
-                    torConnectionState = torStatus.state,
-                    torLastError = torStatus.lastError,
-                    webAppBridge = viewModel.webAppBridge,
-                    bridgeEnabled = settings.bidirectionalBridgeEnabled,
-                    bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
-                    shortsAudioMode = settings.shortsAudioMode,
-                    backgroundPlayEnabled = settings.backgroundPlayEnabled,
-                    onRegisterWebView = { tabId, wv ->
-                        viewModel.registerWebView(tabId, wv)
-                    },
-                    onRetryTor = { viewModel.retryTorConnection() },
-                    onDisableTor = { viewModel.disableTorAndReload() },
-                    onLaunchOrbot = launchOrbot,
-                    onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
-                    onOpenDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
-                    onTitleChanged = { title ->
-                        viewModel.updateCurrentTabState(title = title)
-                    },
-                    onUrlChanged = { url ->
-                        viewModel.updateCurrentTabState(url = url)
-                    },
-                    onFaviconChanged = { favicon ->
-                        viewModel.updateCurrentTabState(faviconUrl = favicon)
-                    },
-                    onProgressChanged = { progress ->
-                        viewModel.updateCurrentTabState(progress = progress, isLoading = progress < 100)
-                    },
-                    onPageScroll = { scrollY, dy ->
-                        if (scrollY <= 24) {
-                            // Top of page: always restore full address bar
-                            isAddressBarCompact = false
-                        } else if (dy > 14) {
-                            // Scrolling down into content: smoothly transform into compact pill
-                            isAddressBarCompact = true
-                        } else if (dy < -14) {
-                            // Scrolling up toward top: smoothly expand back to full address bar
-                            isAddressBarCompact = false
-                        }
-                    },
-                    onStartDownload = { url, userAgent, contentDisposition, mimeType ->
-                        // Trigger download via DownloadManager
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+        // Main Browser View Area (All tabs kept alive for seamless background playback & instant tab switching)
+        Box(modifier = Modifier.fillMaxSize()) {
+            tabs.forEach { tab ->
+                val isCurrent = (tab.id == currentTabId)
+                key(tab.id) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = if (isCurrent) 1f else 0f
+                                translationX = if (isCurrent) 0f else 999999f
+                            }
+                    ) {
+                        GVONEWebView(
+                            tab = tab,
+                            isTorActive = settings.torEnabled,
+                            torConnectionState = torStatus.state,
+                            torLastError = torStatus.lastError,
+                            webAppBridge = viewModel.webAppBridge,
+                            bridgeEnabled = settings.bidirectionalBridgeEnabled,
+                            bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
+                            shortsAudioMode = settings.shortsAudioMode,
+                            backgroundPlayEnabled = settings.backgroundPlayEnabled,
+                            onRegisterWebView = { tabId, wv ->
+                                viewModel.registerWebView(tabId, wv)
+                            },
+                            onRetryTor = { viewModel.retryTorConnection() },
+                            onDisableTor = { viewModel.disableTorAndReload() },
+                            onLaunchOrbot = launchOrbot,
+                            onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
+                            onOpenDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
+                            onTitleChanged = { title ->
+                                viewModel.updateTabState(tabId = tab.id, title = title)
+                            },
+                            onUrlChanged = { url ->
+                                viewModel.updateTabState(tabId = tab.id, url = url)
+                            },
+                            onFaviconChanged = { favicon ->
+                                viewModel.updateTabState(tabId = tab.id, faviconUrl = favicon)
+                            },
+                            onProgressChanged = { progress ->
+                                viewModel.updateTabState(tabId = tab.id, progress = progress, isLoading = progress < 100)
+                            },
+                            onPageScroll = { scrollY, dy ->
+                                if (isCurrent) {
+                                    if (scrollY <= 24) {
+                                        // Top of page: always restore full address bar
+                                        isAddressBarCompact = false
+                                    } else if (dy > 14) {
+                                        // Scrolling down into content: smoothly transform into compact pill
+                                        isAddressBarCompact = true
+                                    } else if (dy < -14) {
+                                        // Scrolling up toward top: smoothly expand back to full address bar
+                                        isAddressBarCompact = false
+                                    }
+                                }
+                            },
+                            onStartDownload = { url, userAgent, contentDisposition, mimeType ->
+                                // Trigger download via DownloadManager
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
             }
         }
 

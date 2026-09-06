@@ -10,6 +10,7 @@ import android.os.Message
 import android.os.SystemClock
 import android.text.InputType
 import android.view.KeyEvent
+import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -100,6 +101,7 @@ fun GVONEWebView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
                     GVONEActionWebView(context).apply {
+                        isBackgroundPlayEnabled = backgroundPlayEnabled
                         onScrollChangeCallback = onPageScroll
                         isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url)
                         layoutParams = ViewGroup.LayoutParams(
@@ -265,6 +267,13 @@ fun GVONEWebView(
                                 }
                             }
 
+                            override fun onPageCommitVisible(view: WebView?, url: String?) {
+                                super.onPageCommitVisible(view, url)
+                                view?.let { wv ->
+                                    webAppBridge?.injectBackgroundPlayerScript(wv, backgroundPlayEnabled)
+                                }
+                            }
+
                             override fun onReceivedError(
                                 view: WebView?,
                                 request: WebResourceRequest?,
@@ -294,6 +303,7 @@ fun GVONEWebView(
                 update = { webView ->
                     webViewInstance = webView
                     if (webView is GVONEActionWebView) {
+                        webView.isBackgroundPlayEnabled = backgroundPlayEnabled
                         webView.isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url)
                         webView.onScrollChangeCallback = onPageScroll
                     }
@@ -609,8 +619,41 @@ private fun TorConnectingScreen(
  * (Google, YouTube, Reddit, Wikipedia, login forms, textareas, search boxes, etc.).
  */
 class GVONEActionWebView(context: Context) : WebView(context) {
+    var isBackgroundPlayEnabled: Boolean = true
     var isBridgeActive: Boolean = false
     var onScrollChangeCallback: ((scrollY: Int, dy: Int) -> Unit)? = null
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        if (isBackgroundPlayEnabled && visibility != View.VISIBLE) {
+            super.onWindowVisibilityChanged(View.VISIBLE)
+            return
+        }
+        super.onWindowVisibilityChanged(visibility)
+    }
+
+    override fun dispatchWindowVisibilityChanged(visibility: Int) {
+        if (isBackgroundPlayEnabled && visibility != View.VISIBLE) {
+            super.dispatchWindowVisibilityChanged(View.VISIBLE)
+            return
+        }
+        super.dispatchWindowVisibilityChanged(visibility)
+    }
+
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        if (isBackgroundPlayEnabled && visibility != View.VISIBLE) {
+            super.onVisibilityChanged(changedView, View.VISIBLE)
+            return
+        }
+        super.onVisibilityChanged(changedView, visibility)
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        if (isBackgroundPlayEnabled && !hasWindowFocus) {
+            super.onWindowFocusChanged(true)
+            return
+        }
+        super.onWindowFocusChanged(hasWindowFocus)
+    }
 
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)

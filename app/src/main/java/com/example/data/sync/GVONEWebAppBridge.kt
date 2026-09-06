@@ -1257,12 +1257,14 @@ class GVONEWebAppBridge(
                         }
                     }
                     if (anyPlaying) {
+                        window.__GVONE_USER_INTENTIONAL_PAUSE__ = true;
                         for (var i = 0; i < mediaElements.length; i++) {
                             try { mediaElements[i].pause(); } catch(e) {}
                         }
                         notifyMediaStatus(false);
                         return false;
                     } else {
+                        window.__GVONE_USER_INTENTIONAL_PAUSE__ = false;
                         var target = mediaElements[0];
                         for (var j = 0; j < mediaElements.length; j++) {
                             if (mediaElements[j].offsetWidth > 0 || mediaElements[j].offsetHeight > 0) {
@@ -1319,6 +1321,7 @@ class GVONEWebAppBridge(
     /**
      * Injects the Background Player engine.
      * Prevents video/audio from pausing when screen is locked, minimized, or tab is switched.
+     * Comprehensive fix for YouTube, YouTube Music, and all HTML5 web media players.
      */
     fun injectBackgroundPlayerScript(webView: WebView, enabled: Boolean) {
         val script = """
@@ -1326,35 +1329,134 @@ class GVONEWebAppBridge(
                 window.__GVONE_BACKGROUND_PLAYER_ENABLED__ = ${if (enabled) "true" else "false"};
                 if (window.__GVONE_BG_PLAYER_INSTALLED__) return;
                 window.__GVONE_BG_PLAYER_INSTALLED__ = true;
+
                 try {
-                    var nativeHidden = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden') || { get: function() { return false; } };
-                    var nativeVisibility = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState') || { get: function() { return 'visible'; } };
-                    Object.defineProperty(document, 'hidden', {
-                        get: function() {
-                            if (window.__GVONE_BACKGROUND_PLAYER_ENABLED__) return false;
-                            return nativeHidden.get ? nativeHidden.get.call(document) : false;
-                        },
-                        configurable: true
-                    });
-                    Object.defineProperty(document, 'visibilityState', {
-                        get: function() {
-                            if (window.__GVONE_BACKGROUND_PLAYER_ENABLED__) return 'visible';
-                            return nativeVisibility.get ? nativeVisibility.get.call(document) : 'visible';
-                        },
-                        configurable: true
-                    });
-                    var origAddEventListener = EventTarget.prototype.addEventListener;
-                    EventTarget.prototype.addEventListener = function(type, listener, options) {
-                        if (type === 'visibilitychange' || type === 'pagehide') {
-                            var wrapped = function(e) {
-                                if (window.__GVONE_BACKGROUND_PLAYER_ENABLED__) return;
-                                if (typeof listener === 'function') return listener.apply(this, arguments);
-                                else if (listener && listener.handleEvent) return listener.handleEvent(e);
-                            };
-                            return origAddEventListener.call(this, type, wrapped, options);
+                    // 1. Page Visibility API overrides on both Document.prototype and document
+                    var returnFalse = function() { return false; };
+                    var returnVisible = function() { return 'visible'; };
+                    var returnTrue = function() { return true; };
+
+                    var visibilityProps = ['hidden', 'webkitHidden', 'mozHidden', 'msHidden'];
+                    for (var i = 0; i < visibilityProps.length; i++) {
+                        var prop = visibilityProps[i];
+                        try {
+                            Object.defineProperty(Document.prototype, prop, { get: returnFalse, configurable: true });
+                            Object.defineProperty(document, prop, { get: returnFalse, configurable: true });
+                        } catch(e) {}
+                    }
+
+                    var stateProps = ['visibilityState', 'webkitVisibilityState', 'mozVisibilityState', 'msVisibilityState'];
+                    for (var j = 0; j < stateProps.length; j++) {
+                        var sProp = stateProps[j];
+                        try {
+                            Object.defineProperty(Document.prototype, sProp, { get: returnVisible, configurable: true });
+                            Object.defineProperty(document, sProp, { get: returnVisible, configurable: true });
+                        } catch(e) {}
+                    }
+
+                    try {
+                        Document.prototype.hasFocus = returnTrue;
+                        document.hasFocus = returnTrue;
+                    } catch(e) {}
+
+                    try {
+                        Object.defineProperty(document, 'onvisibilitychange', {
+                            get: function() { return null; },
+                            set: function() {},
+                            configurable: true
+                        });
+                    } catch(e) {}
+
+                    // 2. Immediate capture and suppression of all visibility and pagehide events
+                    var blockedEvents = [
+                        'visibilitychange',
+                        'webkitvisibilitychange',
+                        'mozvisibilitychange',
+                        'msvisibilitychange',
+                        'pagehide',
+                        'freeze'
+                    ];
+
+                    var eventStopper = function(e) {
+                        if (window.__GVONE_BACKGROUND_PLAYER_ENABLED__) {
+                            e.stopImmediatePropagation();
+                            e.stopPropagation();
                         }
-                        return origAddEventListener.call(this, type, listener, options);
                     };
+
+                    for (var k = 0; k < blockedEvents.length; k++) {
+                        window.addEventListener(blockedEvents[k], eventStopper, true);
+                        document.addEventListener(blockedEvents[k], eventStopper, true);
+                    }
+
+                    var windowBlurStopper = function(e) {
+                        if (window.__GVONE_BACKGROUND_PLAYER_ENABLED__) {
+                            if (e.target === window || e.target === document) {
+                                e.stopImmediatePropagation();
+                                e.stopPropagation();
+                            }
+                        }
+                    };
+                    window.addEventListener('blur', windowBlurStopper, true);
+                    document.addEventListener('blur', windowBlurStopper, true);
+
+                    // 3. User intentional pause flag vs background auto-pause defense
+                    window.__GVONE_USER_INTENTIONAL_PAUSE__ = false;
+
+                    function attachMediaProtection(media) {
+                        if (!media || media.__gvone_bg_protected__) return;
+                        media.__gvone_bg_protected__ = true;
+
+                        var wasPlaying = false;
+                        media.addEventListener('playing', function() {
+                            wasPlaying = true;
+                        });
+
+                        media.addEventListener('pause', function() {
+                            // If paused not by user interaction, and background play is enabled, auto resume
+                            if (window.__GVONE_BACKGROUND_PLAYER_ENABLED__ && wasPlaying && !window.__GVONE_USER_INTENTIONAL_PAUSE__) {
+                                setTimeout(function() {
+                                    if (window.__GVONE_BACKGROUND_PLAYER_ENABLED__ && !window.__GVONE_USER_INTENTIONAL_PAUSE__ && media.paused && !media.ended) {
+                                        try {
+                                            var p = media.play();
+                                            if (p && p.catch) p.catch(function() {});
+                                        } catch(err) {}
+                                    }
+                                }, 80);
+                            }
+                            if (window.__GVONE_USER_INTENTIONAL_PAUSE__) {
+                                wasPlaying = false;
+                            }
+                        });
+                    }
+
+                    // Apply protection to all existing and future media elements
+                    var allMedia = document.querySelectorAll('video, audio');
+                    for (var m = 0; m < allMedia.length; m++) {
+                        attachMediaProtection(allMedia[m]);
+                    }
+
+                    var obs = new MutationObserver(function() {
+                        var elements = document.querySelectorAll('video, audio');
+                        for (var n = 0; n < elements.length; n++) {
+                            attachMediaProtection(elements[n]);
+                        }
+                    });
+                    try {
+                        obs.observe(document.documentElement || document.body, { childList: true, subtree: true });
+                    } catch(e) {}
+
+                    // YouTube specific dialog dismisser ("Video paused. Continue watching?")
+                    setInterval(function() {
+                        if (!window.__GVONE_BACKGROUND_PLAYER_ENABLED__) return;
+                        try {
+                            var btn = document.querySelector('yt-confirm-dialog-renderer button, ytd-popup-container button, [aria-label*="Yes"], [aria-label*="Continue"]');
+                            if (btn && btn.offsetParent !== null) {
+                                btn.click();
+                            }
+                        } catch(e) {}
+                    }, 2000);
+
                 } catch(e) {
                     console.warn('[GVONE Background Player] setup error:', e);
                 }

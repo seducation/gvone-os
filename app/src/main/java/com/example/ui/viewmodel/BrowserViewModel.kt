@@ -598,7 +598,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun updateCurrentTabState(
+    fun updateTabState(
+        tabId: String,
         title: String? = null,
         url: String? = null,
         faviconUrl: String? = null,
@@ -607,12 +608,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     ) {
         val currentId = _currentTabId.value
         _tabs.value = _tabs.value.map { tab ->
-            if (tab.id == currentId) {
+            if (tab.id == tabId) {
                 var updated = tab
                 title?.let { updated = updated.copy(title = it) }
                 url?.let {
                     updated = updated.copy(url = it)
-                    if (!isInternalHomeUrl(it)) {
+                    if (tab.id == currentId && !isInternalHomeUrl(it)) {
                         _addressBarInput.value = it
                     }
                     if (!tab.isPrivate && !isInternalHomeUrl(it) && !it.startsWith("about:") && !it.startsWith("chrome:")) {
@@ -638,6 +639,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         if (isLoading == false || url != null || title != null) {
             persistTabsAndActiveState()
         }
+    }
+
+    fun updateCurrentTabState(
+        title: String? = null,
+        url: String? = null,
+        faviconUrl: String? = null,
+        isLoading: Boolean? = null,
+        progress: Int? = null
+    ) {
+        updateTabState(_currentTabId.value, title, url, faviconUrl, isLoading, progress)
     }
 
     fun toggleDesktopMode() {
@@ -928,10 +939,30 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val isMediaPlaying: StateFlow<Boolean> = _isMediaPlaying.asStateFlow()
 
     init {
+        GVONEMediaPlaybackService.mediaActionListener = { action ->
+            when (action) {
+                MediaControlAction.TOGGLE_PLAY -> toggleMediaPlay()
+                MediaControlAction.PREVIOUS -> mediaPrevious()
+                MediaControlAction.NEXT -> mediaNext()
+                MediaControlAction.STOP -> {
+                    if (_isMediaPlaying.value) {
+                        toggleMediaPlay()
+                    }
+                }
+            }
+        }
+
         viewModelScope.launch {
             mediaPlayerStatus.collect { status ->
                 if (status != null) {
                     _isMediaPlaying.value = status.isPlaying
+                    if (_settings.value.backgroundPlayEnabled) {
+                        GVONEMediaPlaybackService.startOrUpdate(
+                            getApplication(),
+                            status.title.ifBlank { "Web Media Playback" },
+                            status.isPlaying
+                        )
+                    }
                 }
             }
         }
@@ -939,10 +970,27 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleBackgroundPlay() {
         val current = _settings.value.backgroundPlayEnabled
-        val updated = _settings.value.copy(backgroundPlayEnabled = !current)
+        val next = !current
+        val updated = _settings.value.copy(backgroundPlayEnabled = next)
         updateSettings(updated)
-        getActiveWebView()?.let { wv ->
-            webAppBridge.injectBackgroundPlayerScript(wv, !current)
+        activeWebViews.values.forEach { ref ->
+            ref.get()?.let { wv ->
+                (wv as? com.example.ui.components.GVONEActionWebView)?.isBackgroundPlayEnabled = next
+                webAppBridge.injectBackgroundPlayerScript(wv, next)
+            }
+        }
+        if (!next) {
+            GVONEMediaPlaybackService.stop(getApplication())
+        } else {
+            mediaPlayerStatus.value?.let { status ->
+                if (status.isPlaying) {
+                    GVONEMediaPlaybackService.startOrUpdate(
+                        getApplication(),
+                        status.title.ifBlank { "Web Media Playback" },
+                        true
+                    )
+                }
+            }
         }
     }
 
