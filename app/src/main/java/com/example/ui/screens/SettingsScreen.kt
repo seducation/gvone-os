@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.BrowserSettings
 import com.example.data.model.SearchEngineType
-import com.example.data.model.ShortsAudioMode
 import com.example.data.tor.TorConnectionState
 import com.example.data.tor.TorStatus
 import com.example.data.tor.TorTestResult
@@ -49,7 +48,6 @@ fun SettingsScreen(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var showSearchEngineDialog by remember { mutableStateOf(false) }
-    var showShortsAudioDialog by remember { mutableStateOf(false) }
     var showClearDataDialog by remember { mutableStateOf(false) }
     var showTargetSiteDialog by remember { mutableStateOf(false) }
 
@@ -225,30 +223,6 @@ fun SettingsScreen(
                 )
             }
 
-            // Section: Media & Video Playback
-            item {
-                Text(
-                    text = "Media & Video Playback",
-                    color = GVONEPrimary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp)
-                )
-            }
-
-            item {
-                SettingsRowItem(
-                    icon = when (settings.shortsAudioMode) {
-                        ShortsAudioMode.ALWAYS_UNMUTED -> Icons.Rounded.VolumeUp
-                        ShortsAudioMode.ALWAYS_MUTED -> Icons.Rounded.VolumeOff
-                        ShortsAudioMode.REMEMBER_STATE -> Icons.Rounded.Sync
-                    },
-                    title = "YouTube Shorts sound on scroll",
-                    subtitle = "${settings.shortsAudioMode.displayName} — ${settings.shortsAudioMode.description}",
-                    onClick = { showShortsAudioDialog = true }
-                )
-            }
-
             // Section: Privacy and security
             item {
                 Text(
@@ -357,80 +331,6 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showSearchEngineDialog = false }) {
-                    Text("Done", color = GVONEPrimary)
-                }
-            },
-            containerColor = Color(0xFF141923)
-        )
-    }
-
-    // YouTube Shorts Audio Mode Dialog
-    if (showShortsAudioDialog) {
-        AlertDialog(
-            onDismissRequest = { showShortsAudioDialog = false },
-            title = {
-                Text(
-                    text = "YouTube Shorts Sound Behavior",
-                    color = GVONETextPrimary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Controls whether audio is automatically enabled when scrolling through YouTube Shorts videos.",
-                        color = GVONETextSecondary,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
-
-                    ShortsAudioMode.values().forEach { mode ->
-                        val isSelected = settings.shortsAudioMode == mode
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable {
-                                    onSettingsChanged(settings.copy(shortsAudioMode = mode))
-                                    showShortsAudioDialog = false
-                                }
-                                .testTag("shorts_audio_setting_${mode.name}"),
-                            color = if (isSelected) GVONEPrimary.copy(alpha = 0.2f) else Color(0xFF161F2E),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                if (isSelected) GVONEPrimary.copy(alpha = 0.5f) else Color(0xFF263245)
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = null
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = mode.displayName,
-                                        color = if (isSelected) Color.White else GVONETextPrimary,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                                        fontSize = 14.sp
-                                    )
-                                    Text(
-                                        text = mode.description,
-                                        color = GVONETextSecondary,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showShortsAudioDialog = false }) {
                     Text("Done", color = GVONEPrimary)
                 }
             },

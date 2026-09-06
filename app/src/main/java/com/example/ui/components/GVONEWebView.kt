@@ -50,7 +50,6 @@ fun GVONEWebView(
     webAppBridge: GVONEWebAppBridge? = null,
     bridgeEnabled: Boolean = true,
     bridgeApplyToAll: Boolean = true,
-    shortsAudioMode: com.example.data.model.ShortsAudioMode = com.example.data.model.ShortsAudioMode.ALWAYS_UNMUTED,
     onRegisterWebView: ((tabId: String, webView: WebView) -> Unit)? = null,
     onRetryTor: () -> Unit = {},
     onDisableTor: () -> Unit = {},
@@ -146,8 +145,7 @@ fun GVONEWebView(
                                             wv,
                                             lastLoadedUrl ?: tab.url,
                                             enabled = bridgeEnabled,
-                                            applyToAll = bridgeApplyToAll,
-                                            shortsAudioMode = shortsAudioMode
+                                            applyToAll = bridgeApplyToAll
                                         )
                                     }
                                 }
@@ -241,7 +239,7 @@ fun GVONEWebView(
                                     lastLoadedUrl = it
                                     onUrlChanged(it)
                                     (view as? GVONEActionWebView)?.isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(it)
-                                    view?.let { wv -> webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode) }
+                                    view?.let { wv -> webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll) }
                                 }
                             }
 
@@ -251,7 +249,7 @@ fun GVONEWebView(
                                     lastLoadedUrl = it
                                     onUrlChanged(it)
                                     (view as? GVONEActionWebView)?.isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(it)
-                                    view?.let { wv -> webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode) }
+                                    view?.let { wv -> webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll) }
                                 }
                                 view?.title?.let {
                                     if (it.isNotBlank()) onTitleChanged(it)
@@ -303,14 +301,6 @@ fun GVONEWebView(
                     if (tab.url.isNotBlank() && tab.url != "gvone://newtab" && tab.url != lastLoadedUrl) {
                         lastLoadedUrl = tab.url
                         webView.loadUrl(tab.url)
-                    }
-
-                    // Dynamically update YouTube Shorts audio mode if on a YouTube origin
-                    if (com.example.data.sync.PageContextDetector.isYouTubeOrigin(lastLoadedUrl ?: tab.url)) {
-                        webView.evaluateJavascript(
-                            "if (window.__GVONE_SET_SHORTS_AUDIO_MODE__) window.__GVONE_SET_SHORTS_AUDIO_MODE__('${shortsAudioMode.name}');",
-                            null
-                        )
                     }
                 }
             )

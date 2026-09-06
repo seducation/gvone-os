@@ -20,7 +20,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.tor.TorConnectionState
 import com.example.ui.components.FloatingAddressBar
 import com.example.ui.components.GVONEWebView
-import com.example.ui.components.ShortsAudioPill
 import com.example.ui.screens.*
 import com.example.ui.theme.GVONEBrowserTheme
 import com.example.ui.viewmodel.ActiveSheet
@@ -75,8 +74,6 @@ fun BrowserApp(
     val findCount by viewModel.findMatchCount.collectAsStateWithLifecycle()
     val diagnosticReport by viewModel.diagnosticReport.collectAsStateWithLifecycle()
     val isDiagnosing by viewModel.isDiagnosing.collectAsStateWithLifecycle()
-    val isCurrentTabShorts by viewModel.isCurrentTabShorts.collectAsStateWithLifecycle()
-    val isShortsMuted by viewModel.isShortsMuted.collectAsStateWithLifecycle()
 
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
@@ -128,7 +125,6 @@ fun BrowserApp(
                     webAppBridge = viewModel.webAppBridge,
                     bridgeEnabled = settings.bidirectionalBridgeEnabled,
                     bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
-                    shortsAudioMode = settings.shortsAudioMode,
                     onRegisterWebView = { tabId, wv ->
                         viewModel.registerWebView(tabId, wv)
                     },
@@ -206,20 +202,6 @@ fun BrowserApp(
                 isCompact = isAddressBarCompact,
                 onExpand = { isAddressBarCompact = false },
                 modifier = Modifier.align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
-            )
-        }
-
-        // Floating YouTube Shorts Audio Pill
-        if (activeSheet == ActiveSheet.None && isCurrentTabShorts) {
-            ShortsAudioPill(
-                visible = true,
-                isMuted = isShortsMuted,
-                currentMode = settings.shortsAudioMode,
-                onToggleMute = { viewModel.toggleShortsAudio() },
-                onSelectMode = { mode -> viewModel.setShortsAudioMode(mode) },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
             )
         }
 
