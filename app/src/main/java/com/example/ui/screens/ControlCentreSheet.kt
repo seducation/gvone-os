@@ -60,6 +60,7 @@ fun ControlCentreSheet(
     ) {
         Column(
             modifier = Modifier
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp)
                 .padding(bottom = 28.dp)
@@ -196,43 +197,49 @@ fun ControlCentreSheet(
             Spacer(modifier = Modifier.height(18.dp))
 
             // Bottom Navigation utility row matching Screenshot 1: Back, Forward, Share, Refresh
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xFF0F141E))
-                    .border(1.dp, Color(0xFF252E3E), RoundedCornerShape(20.dp))
-                    .padding(vertical = 8.dp, horizontal = 12.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
             ) {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(
-                        imageVector = Icons.Rounded.ArrowBack,
-                        contentDescription = "Back",
-                        tint = GVONETextPrimary
-                    )
-                }
-                IconButton(onClick = onNavigateForward) {
-                    Icon(
-                        imageVector = Icons.Rounded.ArrowForward,
-                        contentDescription = "Forward",
-                        tint = GVONETextPrimary
-                    )
-                }
-                IconButton(onClick = onShare) {
-                    Icon(
-                        imageVector = Icons.Rounded.Share,
-                        contentDescription = "Share",
-                        tint = GVONETextPrimary
-                    )
-                }
-                IconButton(onClick = onRefresh) {
-                    Icon(
-                        imageVector = Icons.Rounded.Refresh,
-                        contentDescription = "Refresh",
-                        tint = GVONETextPrimary
-                    )
+                Row(
+                    modifier = Modifier
+                        .widthIn(max = 440.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xFF0F141E))
+                        .border(1.dp, Color(0xFF252E3E), RoundedCornerShape(20.dp))
+                        .padding(vertical = 8.dp, horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowBack,
+                            contentDescription = "Back",
+                            tint = GVONETextPrimary
+                        )
+                    }
+                    IconButton(onClick = onNavigateForward) {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowForward,
+                            contentDescription = "Forward",
+                            tint = GVONETextPrimary
+                        )
+                    }
+                    IconButton(onClick = onShare) {
+                        Icon(
+                            imageVector = Icons.Rounded.Share,
+                            contentDescription = "Share",
+                            tint = GVONETextPrimary
+                        )
+                    }
+                    IconButton(onClick = onRefresh) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = "Refresh",
+                            tint = GVONETextPrimary
+                        )
+                    }
                 }
             }
         }

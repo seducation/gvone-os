@@ -118,55 +118,61 @@ fun FindInPageBar(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = Color(0xFF151C2A),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF28374D))
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.TopCenter
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            modifier = Modifier
+                .widthIn(max = 480.dp)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xFF151C2A),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF28374D))
         ) {
-            Icon(Icons.Rounded.Search, contentDescription = null, tint = GVONETextSecondary, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            TextField(
-                value = query,
-                onValueChange = onQueryChange,
-                placeholder = { Text("Find in page", color = GVONETextSecondary, fontSize = 13.sp) },
-                modifier = Modifier.weight(1f),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedTextColor = GVONETextPrimary,
-                    unfocusedTextColor = GVONETextPrimary
-                ),
-                singleLine = true
-            )
-
-            if (matchCount > 0) {
-                Text(
-                    text = "${currentIndex + 1}/$matchCount",
-                    color = GVONESecondary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 6.dp)
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.Search, contentDescription = null, tint = GVONETextSecondary, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                TextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    placeholder = { Text("Find in page", color = GVONETextSecondary, fontSize = 13.sp) },
+                    modifier = Modifier.weight(1f),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = GVONETextPrimary,
+                        unfocusedTextColor = GVONETextPrimary
+                    ),
+                    singleLine = true
                 )
-            }
 
-            IconButton(onClick = onPrevious, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Previous", tint = GVONETextPrimary, modifier = Modifier.size(18.dp))
-            }
-            IconButton(onClick = onNext, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Next", tint = GVONETextPrimary, modifier = Modifier.size(18.dp))
-            }
-            IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Rounded.Close, contentDescription = "Close", tint = GVONETextSecondary, modifier = Modifier.size(18.dp))
+                if (matchCount > 0) {
+                    Text(
+                        text = "${currentIndex + 1}/$matchCount",
+                        color = GVONESecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp)
+                    )
+                }
+
+                IconButton(onClick = onPrevious, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "Previous", tint = GVONETextPrimary, modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onNext, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Next", tint = GVONETextPrimary, modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Close", tint = GVONETextSecondary, modifier = Modifier.size(18.dp))
+                }
             }
         }
     }

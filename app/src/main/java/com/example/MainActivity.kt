@@ -94,6 +94,14 @@ fun BrowserApp(
         }
     }
 
+    // Address bar compactness state driven by web page scrolling
+    var isAddressBarCompact by remember { mutableStateOf(false) }
+
+    // Reset address bar to full expanded state when switching tabs
+    LaunchedEffect(currentTabId) {
+        isAddressBarCompact = false
+    }
+
     // Handle back button presses gracefully
     BackHandler(enabled = activeSheet != ActiveSheet.None) {
         viewModel.closeSheet()
@@ -135,6 +143,18 @@ fun BrowserApp(
                     onProgressChanged = { progress ->
                         viewModel.updateCurrentTabState(progress = progress, isLoading = progress < 100)
                     },
+                    onPageScroll = { scrollY, dy ->
+                        if (scrollY <= 24) {
+                            // Top of page: always restore full address bar
+                            isAddressBarCompact = false
+                        } else if (dy > 14) {
+                            // Scrolling down into content: smoothly transform into compact pill
+                            isAddressBarCompact = true
+                        } else if (dy < -14) {
+                            // Scrolling up toward top: smoothly expand back to full address bar
+                            isAddressBarCompact = false
+                        }
+                    },
                     onStartDownload = { url, userAgent, contentDisposition, mimeType ->
                         // Trigger download via DownloadManager
                     },
@@ -168,13 +188,18 @@ fun BrowserApp(
                 onUpdateSettings = { viewModel.updateSettings(it) },
                 onTabOverviewClick = { viewModel.openSheet(ActiveSheet.TabOverview) },
                 onActionsMenuClick = { viewModel.openSheet(ActiveSheet.SafariActions) },
-                onNavigate = { input -> viewModel.navigateTo(input) },
+                onNavigate = { input ->
+                    isAddressBarCompact = false
+                    viewModel.navigateTo(input)
+                },
                 onReload = {
                     currentTab?.url?.let { viewModel.loadUrlInCurrentTab(it) }
                 },
                 onSwipeNextTab = { viewModel.switchToNextTab() },
                 onSwipePrevTab = { viewModel.switchToPreviousTab() },
-                modifier = Modifier.align(Alignment.BottomCenter)
+                isCompact = isAddressBarCompact,
+                onExpand = { isAddressBarCompact = false },
+                modifier = Modifier.align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
             )
         }
 

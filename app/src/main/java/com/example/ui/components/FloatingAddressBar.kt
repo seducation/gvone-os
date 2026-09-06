@@ -25,9 +25,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import kotlinx.coroutines.delay
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -40,6 +42,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
@@ -79,6 +83,8 @@ fun FloatingAddressBar(
     onReload: () -> Unit,
     onSwipeNextTab: () -> Unit,
     onSwipePrevTab: () -> Unit,
+    isCompact: Boolean = false,
+    onExpand: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -122,6 +128,7 @@ fun FloatingAddressBar(
 
     LaunchedEffect(isFocused) {
         if (isFocused) {
+            delay(50)
             try {
                 focusRequester.requestFocus()
             } catch (_: Exception) {
@@ -167,367 +174,485 @@ fun FloatingAddressBar(
         label = "right_scale"
     )
 
+    val effectivelyCompact = isCompact && !isFocused
+
+    val sideButtonsAlpha by animateFloatAsState(
+        targetValue = if (effectivelyCompact) 0f else 1f,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "side_buttons_alpha"
+    )
+
+    val sideButtonsScale by animateFloatAsState(
+        targetValue = if (effectivelyCompact) 0.5f else 1f,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "side_buttons_scale"
+    )
+
+    val sideButtonWidth by animateDpAsState(
+        targetValue = if (effectivelyCompact) 0.dp else 52.dp,
+        animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+        label = "side_button_width"
+    )
+
+    val rowSpacing by animateDpAsState(
+        targetValue = if (effectivelyCompact) 0.dp else 10.dp,
+        animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+        label = "row_spacing"
+    )
+
+    val pillHeight by animateDpAsState(
+        targetValue = if (effectivelyCompact) 42.dp else 52.dp,
+        animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+        label = "pill_height"
+    )
+
+    val pillCornerRadius by animateDpAsState(
+        targetValue = if (effectivelyCompact) 21.dp else 26.dp,
+        animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+        label = "pill_corner_radius"
+    )
+
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isBottom = settings?.addressBarBottom ?: true
+
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
+            .then(
+                if (isBottom) Modifier.navigationBarsPadding()
+                else Modifier.statusBarsPadding()
+            )
             .imePadding()
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        contentAlignment = Alignment.BottomCenter
+            .padding(
+                horizontal = if (isLandscape) 24.dp else 14.dp,
+                vertical = if (isLandscape) 8.dp else 12.dp
+            ),
+        contentAlignment = if (isBottom) Alignment.BottomCenter else Alignment.TopCenter
     ) {
-        // =========================================================================
-        // EXACT THREE-PART SAFARI BOTTOM TOOLBAR:
-        // [ 1. Left Circular Button ] --- [ 2. Center Elongated Pill ] --- [ 3. Right Circular Button ]
-        // =========================================================================
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        BoxWithConstraints(
+            modifier = Modifier
+                .widthIn(max = 440.dp)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.Center
         ) {
-            // -------------------------------------------------------------
-            // 1. LEFT CIRCULAR BUTTON: Safari Tabs Switcher (Overlapping Rectangles)
-            // -------------------------------------------------------------
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .scale(leftScale)
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = CircleShape,
-                        spotColor = Color.Black.copy(alpha = 0.6f)
-                    )
-                    .clip(CircleShape)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0xDD222B3A),
-                                Color(0xEE141A24)
-                            )
-                        )
-                    )
-                    .border(
-                        width = 1.dp,
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                Color(0x66FFFFFF),
-                                Color(0x11FFFFFF)
-                            )
-                        ),
-                        shape = CircleShape
-                    )
-                    .clickable(
-                        interactionSource = leftButtonSource,
-                        indication = null
-                    ) {
-                        onTabOverviewClick()
-                    }
-                    .testTag("safari_tab_switcher_button"),
-                contentAlignment = Alignment.Center
-            ) {
-                // Iconic Safari overlapping rectangles tab icon
-                SafariTabsIcon(
-                    color = if (isPrivate) GVONESecondary else Color(0xFFF0F3F8),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
+            val maxAvailableWidth = maxWidth
+            val fullPillWidth = (maxAvailableWidth - 124.dp).coerceAtLeast(140.dp)
+            val compactPillWidth = 190.dp.coerceAtMost(maxAvailableWidth - 32.dp)
+            val targetPillWidth = if (effectivelyCompact) compactPillWidth else fullPillWidth
 
-            // -------------------------------------------------------------
-            // 2. CENTER ELONGATED PILL: Search / URL Bar with Glassmorphic styling
-            // -------------------------------------------------------------
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(52.dp)
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = RoundedCornerShape(26.dp),
-                        spotColor = if (isPrivate) GVONESecondary.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.6f)
-                    )
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0xDD1C2330),
-                                Color(0xEE111620)
-                            )
-                        )
-                    )
-                    .border(
-                        width = 1.dp,
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                if (isPrivate) GVONESecondary.copy(alpha = 0.8f) else if (isTorActive) GVONETertiary.copy(alpha = 0.8f) else Color(0x55FFFFFF),
-                                Color(0x11FFFFFF)
-                            )
-                        ),
-                        shape = RoundedCornerShape(26.dp)
-                    )
-                    .pointerInput(Unit) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                if (dragOffset < -50) {
-                                    onSwipeNextTab()
-                                } else if (dragOffset > 50) {
-                                    onSwipePrevTab()
-                                }
-                                dragOffset = 0f
-                            },
-                            onHorizontalDrag = { _, dragAmount ->
-                                dragOffset += dragAmount
-                            }
-                        )
-                    }
-                    .clickable {
-                        val currentUrl = currentTab?.url.orEmpty()
-                        if (autoLoadEnabled && targetUrl.isNotBlank()) {
-                            val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
-                            val isAlreadyOnTarget = currentUrl.contains(cleanTarget)
-                            if (!isAlreadyOnTarget) {
-                                onNavigate(targetUrl)
-                            }
-                        }
-                        isFocused = true
-                        if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
-                            inputText = ""
-                        } else {
-                            inputText = currentUrl
-                        }
-                        try {
-                            focusRequester.requestFocus()
-                        } catch (_: Exception) {}
-                    }
-                    .testTag("safari_address_pill"),
-                contentAlignment = Alignment.Center
+            val animatedPillWidth by animateDpAsState(
+                targetValue = targetPillWidth,
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+                label = "pill_width"
+            )
+
+            Row(
+                modifier = Modifier.wrapContentSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(rowSpacing)
             ) {
-                Row(
+                // 1. LEFT CIRCULAR BUTTON: Safari Tabs Switcher (Overlapping Rectangles)
+                Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .width(sideButtonWidth)
+                        .height(52.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Control Toggle Button (Replaces Lock Icon)
-                    // Tapping opens the Quick Target Selection & Auto-load Settings dialog
-                    IconButton(
-                        onClick = { showTargetControlDialog = true },
-                        modifier = Modifier
-                            .size(32.dp)
-                            .testTag("address_bar_control_toggle_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Tune,
-                            contentDescription = "Control & Target Website Settings",
-                            tint = if (isBridgeActiveForCurrentPage) GVONEPrimary else if (autoLoadEnabled) GVONESecondary else Color(0xFF8E9BAE),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    // SF Pro style typography for URL / Search placeholder
-                    Box(
-                        modifier = Modifier
-                            .weight(1f),
-                        contentAlignment = Alignment.CenterStart
-                    ) {
-                        BasicTextField(
-                            value = if (isFocused) inputText else (if (isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage) "" else displayHost),
-                            onValueChange = { newText ->
-                                inputText = newText
-                            },
+                    if (sideButtonWidth > 4.dp) {
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(focusRequester)
-                                .onFocusChanged { state ->
-                                    if (state.isFocused != isFocused) {
-                                        isFocused = state.isFocused
-                                        if (state.isFocused) {
-                                            val currentUrl = currentTab?.url.orEmpty()
-                                            if (autoLoadEnabled && targetUrl.isNotBlank()) {
-                                                val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
-                                                val isAlreadyOnTarget = currentUrl.contains(cleanTarget)
-                                                if (!isAlreadyOnTarget) {
-                                                    onNavigate(targetUrl)
-                                                }
-                                            }
-                                            if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
-                                                inputText = ""
-                                            } else {
-                                                inputText = currentUrl
-                                            }
-                                        }
-                                    }
-                                }
-                                .testTag("address_bar_input"),
-                            textStyle = TextStyle(
-                                color = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage)) Color(0xFF8E9BAE) else Color(0xFFE6EDF6),
-                                fontSize = 14.sp,
-                                fontWeight = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage)) FontWeight.Normal else FontWeight.SemiBold
-                            ),
-                            singleLine = true,
-                            cursorBrush = SolidColor(if (isPrivate) GVONESecondary else GVONEPrimary),
-                            keyboardOptions = KeyboardOptions(
-                                imeAction = ImeAction.Search,
-                                keyboardType = if (isBridgeActiveForCurrentPage || isYouTubeActive) KeyboardType.Text else KeyboardType.Uri
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onSearch = {
-                                    val query = inputText.trim()
-                                    isFocused = false
-                                    focusManager.clearFocus()
-                                    if (query.isNotEmpty()) {
-                                        onNavigate(query)
-                                    }
-                                },
-                                onSend = {
-                                    val query = inputText.trim()
-                                    isFocused = false
-                                    focusManager.clearFocus()
-                                    if (query.isNotEmpty()) {
-                                        onNavigate(query)
-                                    }
-                                },
-                                onGo = {
-                                    val query = inputText.trim()
-                                    isFocused = false
-                                    focusManager.clearFocus()
-                                    if (query.isNotEmpty()) {
-                                        onNavigate(query)
-                                    }
-                                },
-                                onDone = {
-                                    val query = inputText.trim()
-                                    isFocused = false
-                                    focusManager.clearFocus()
-                                    if (query.isNotEmpty()) {
-                                        onNavigate(query)
-                                    }
-                                }
-                            ),
-                            decorationBox = { innerTextField ->
-                                if (!isFocused) {
-                                    if (isBridgeActiveForCurrentPage) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = if (isPrivate) "Type to write (Private)..." else "Type to write / search...",
-                                                color = Color(0xFF94A3B8),
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Normal,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                    } else if (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url)) {
-                                        Text(
-                                            text = displayHost,
-                                            color = Color(0xFF8E9BAE),
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Normal,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                .size(52.dp)
+                                .scale(leftScale * sideButtonsScale)
+                                .alpha(sideButtonsAlpha)
+                                .shadow(
+                                    elevation = 16.dp,
+                                    shape = CircleShape,
+                                    spotColor = Color.Black.copy(alpha = 0.6f)
+                                )
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color(0xDD222B3A),
+                                            Color(0xEE141A24)
                                         )
-                                    }
-                                } else if (isFocused && inputText.isEmpty()) {
-                                    Text(
-                                        text = if (isYouTubeActive) "Search YouTube" else if (isBridgeActiveForCurrentPage) "Type to write, prompt, or enter URL..." else if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name",
-                                        color = Color(0xFF8E9BAE),
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        )
-                    }
-
-                    // Close / Return to Home button inside the central pill
-                    IconButton(
-                        onClick = {
-                            isFocused = false
-                            focusManager.clearFocus()
-                            inputText = ""
-                            onNavigate(HOME_WEB_APP_URL)
-                        },
-                        modifier = Modifier
-                            .size(28.dp)
-                            .testTag("address_bar_home_close_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Return to Home",
-                            tint = Color(0xFF8E9BAE),
-                            modifier = Modifier.size(17.dp)
-                        )
-                    }
-                }
-
-                // Apple Safari slim progress bar line along the bottom rim of the pill
-                if (isLoading) {
-                    val progress = (currentTab?.progress ?: 30).coerceIn(10, 100) / 100f
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .fillMaxWidth(progress)
-                            .height(2.5.dp)
-                            .clip(RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp))
-                            .background(
-                                Brush.horizontalGradient(
-                                    listOf(
-                                        if (isPrivate) GVONESecondary else GVONEPrimary,
-                                        if (isPrivate) GVONEPrimary else GVONESecondary
                                     )
                                 )
+                                .border(
+                                    width = 1.dp,
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(
+                                            Color(0x66FFFFFF),
+                                            Color(0x11FFFFFF)
+                                        )
+                                    ),
+                                    shape = CircleShape
+                                )
+                                .clickable(
+                                    interactionSource = leftButtonSource,
+                                    indication = null,
+                                    enabled = !effectivelyCompact
+                                ) {
+                                    onTabOverviewClick()
+                                }
+                                .testTag("safari_tab_switcher_button"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            SafariTabsIcon(
+                                color = if (isPrivate) GVONESecondary else Color(0xFFF0F3F8),
+                                modifier = Modifier.size(22.dp)
                             )
-                    )
+                        }
+                    }
                 }
-            }
 
-            // -------------------------------------------------------------
-            // 3. RIGHT CIRCULAR BUTTON: Safari Three-Dot "More" Actions Menu
-            // -------------------------------------------------------------
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .scale(rightScale)
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = CircleShape,
-                        spotColor = Color.Black.copy(alpha = 0.6f)
-                    )
-                    .clip(CircleShape)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0xDD222B3A),
-                                Color(0xEE141A24)
+                // 2. CENTER PILL: Search / URL Bar with smooth Compact Pill Transformation
+                Box(
+                    modifier = Modifier
+                        .width(animatedPillWidth)
+                        .height(pillHeight)
+                        .shadow(
+                            elevation = if (effectivelyCompact) 12.dp else 16.dp,
+                            shape = RoundedCornerShape(pillCornerRadius),
+                            spotColor = if (isPrivate) GVONESecondary.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.6f)
+                        )
+                        .clip(RoundedCornerShape(pillCornerRadius))
+                        .background(
+                            Brush.verticalGradient(
+                                colors = if (effectivelyCompact) listOf(
+                                    Color(0xF01A212D),
+                                    Color(0xF80F141E)
+                                ) else listOf(
+                                    Color(0xDD1C2330),
+                                    Color(0xEE111620)
+                                )
                             )
                         )
-                    )
-                    .border(
-                        width = 1.dp,
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                Color(0x66FFFFFF),
-                                Color(0x11FFFFFF)
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    if (isPrivate) GVONESecondary.copy(alpha = 0.8f) else if (isTorActive) GVONETertiary.copy(alpha = 0.8f) else Color(0x55FFFFFF),
+                                    Color(0x11FFFFFF)
+                                )
+                            ),
+                            shape = RoundedCornerShape(pillCornerRadius)
+                        )
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures(
+                                onDragEnd = {
+                                    if (dragOffset < -50) {
+                                        onSwipeNextTab()
+                                    } else if (dragOffset > 50) {
+                                        onSwipePrevTab()
+                                    }
+                                    dragOffset = 0f
+                                },
+                                onHorizontalDrag = { _, dragAmount ->
+                                    dragOffset += dragAmount
+                                }
                             )
-                        ),
-                        shape = CircleShape
-                    )
-                    .clickable(
-                        interactionSource = rightButtonSource,
-                        indication = null
-                    ) {
-                        onActionsMenuClick()
+                        }
+                        .clickable {
+                            if (effectivelyCompact) {
+                                onExpand()
+                            }
+                            val currentUrl = currentTab?.url.orEmpty()
+                            if (autoLoadEnabled && targetUrl.isNotBlank()) {
+                                val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
+                                val isAlreadyOnTarget = currentUrl.contains(cleanTarget)
+                                if (!isAlreadyOnTarget) {
+                                    onNavigate(targetUrl)
+                                }
+                            }
+                            isFocused = true
+                            if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
+                                inputText = ""
+                            } else {
+                                inputText = currentUrl
+                            }
+                            try {
+                                focusRequester.requestFocus()
+                            } catch (_: Exception) {}
+                        }
+                        .testTag("safari_address_pill"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Crossfade(
+                        targetState = effectivelyCompact,
+                        animationSpec = tween(durationMillis = 200),
+                        label = "pill_content_crossfade"
+                    ) { compact ->
+                        if (compact) {
+                            // Compact Minimal Capsule View matching Image 2
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isPrivate) Icons.Rounded.VpnLock
+                                        else if (isTorActive) Icons.Rounded.Security
+                                        else if (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url)) Icons.Rounded.Search
+                                        else Icons.Rounded.Lock,
+                                    contentDescription = "Security Status",
+                                    tint = if (isPrivate) GVONESecondary
+                                        else if (isTorActive) GVONETertiary
+                                        else Color(0xFF8E9BAE),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (displayHost.isNotBlank()) displayHost
+                                        else (currentTab?.title?.takeIf { it.isNotBlank() } ?: if (isPrivate) "Private Tab" else "Search or URL"),
+                                    color = Color(0xFFE6EDF6),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        } else {
+                            // Full Normal Address Bar View matching Image 1
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = { showTargetControlDialog = true },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .testTag("address_bar_control_toggle_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Tune,
+                                        contentDescription = "Control & Target Website Settings",
+                                        tint = if (isBridgeActiveForCurrentPage) GVONEPrimary else if (autoLoadEnabled) GVONESecondary else Color(0xFF8E9BAE),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(4.dp))
+
+                                Box(
+                                    modifier = Modifier.weight(1f),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    BasicTextField(
+                                        value = if (isFocused) inputText else (if (isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage) "" else displayHost),
+                                        onValueChange = { newText ->
+                                            inputText = newText
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .focusRequester(focusRequester)
+                                            .onFocusChanged { state ->
+                                                if (state.isFocused != isFocused) {
+                                                    isFocused = state.isFocused
+                                                    if (state.isFocused) {
+                                                        onExpand()
+                                                        val currentUrl = currentTab?.url.orEmpty()
+                                                        if (autoLoadEnabled && targetUrl.isNotBlank()) {
+                                                            val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
+                                                            val isAlreadyOnTarget = currentUrl.contains(cleanTarget)
+                                                            if (!isAlreadyOnTarget) {
+                                                                onNavigate(targetUrl)
+                                                            }
+                                                        }
+                                                        if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
+                                                            inputText = ""
+                                                        } else {
+                                                            inputText = currentUrl
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            .testTag("address_bar_input"),
+                                        textStyle = TextStyle(
+                                            color = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage)) Color(0xFF8E9BAE) else Color(0xFFE6EDF6),
+                                            fontSize = 14.sp,
+                                            fontWeight = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage)) FontWeight.Normal else FontWeight.SemiBold
+                                        ),
+                                        singleLine = true,
+                                        cursorBrush = SolidColor(if (isPrivate) GVONESecondary else GVONEPrimary),
+                                        keyboardOptions = KeyboardOptions(
+                                            imeAction = ImeAction.Search,
+                                            keyboardType = if (isBridgeActiveForCurrentPage || isYouTubeActive) KeyboardType.Text else KeyboardType.Uri
+                                        ),
+                                        keyboardActions = KeyboardActions(
+                                            onSearch = {
+                                                val query = inputText.trim()
+                                                isFocused = false
+                                                focusManager.clearFocus()
+                                                if (query.isNotEmpty()) {
+                                                    onNavigate(query)
+                                                }
+                                            },
+                                            onSend = {
+                                                val query = inputText.trim()
+                                                isFocused = false
+                                                focusManager.clearFocus()
+                                                if (query.isNotEmpty()) {
+                                                    onNavigate(query)
+                                                }
+                                            },
+                                            onGo = {
+                                                val query = inputText.trim()
+                                                isFocused = false
+                                                focusManager.clearFocus()
+                                                if (query.isNotEmpty()) {
+                                                    onNavigate(query)
+                                                }
+                                            },
+                                            onDone = {
+                                                val query = inputText.trim()
+                                                isFocused = false
+                                                focusManager.clearFocus()
+                                                if (query.isNotEmpty()) {
+                                                    onNavigate(query)
+                                                }
+                                            }
+                                        ),
+                                        decorationBox = { innerTextField ->
+                                            if (!isFocused) {
+                                                if (isBridgeActiveForCurrentPage) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(
+                                                            text = if (isPrivate) "Type to write (Private)..." else "Type to write / search...",
+                                                            color = Color(0xFF94A3B8),
+                                                            fontSize = 14.sp,
+                                                            fontWeight = FontWeight.Normal,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                } else if (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url)) {
+                                                    Text(
+                                                        text = displayHost,
+                                                        color = Color(0xFF8E9BAE),
+                                                        fontSize = 14.sp,
+                                                        fontWeight = FontWeight.Normal,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            } else if (isFocused && inputText.isEmpty()) {
+                                                Text(
+                                                    text = if (isYouTubeActive) "Search YouTube" else if (isBridgeActiveForCurrentPage) "Type to write, prompt, or enter URL..." else if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name",
+                                                    color = Color(0xFF8E9BAE),
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Normal,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            innerTextField()
+                                        }
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        isFocused = false
+                                        focusManager.clearFocus()
+                                        inputText = ""
+                                        onNavigate(HOME_WEB_APP_URL)
+                                    },
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .testTag("address_bar_home_close_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Return to Home",
+                                        tint = Color(0xFF8E9BAE),
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
-                    .testTag("safari_more_actions_button"),
-                contentAlignment = Alignment.Center
-            ) {
-                // Horizontally aligned three dots in light gray/white
-                SafariThreeDotsIcon(
-                    color = Color(0xFFF0F3F8),
-                    modifier = Modifier.size(20.dp)
-                )
+
+                    // Apple Safari slim progress bar line along the bottom rim of the pill
+                    if (isLoading) {
+                        val progress = (currentTab?.progress ?: 30).coerceIn(10, 100) / 100f
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .fillMaxWidth(progress)
+                                .height(2.5.dp)
+                                .clip(RoundedCornerShape(bottomStart = pillCornerRadius, bottomEnd = pillCornerRadius))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            if (isPrivate) GVONESecondary else GVONEPrimary,
+                                            if (isPrivate) GVONEPrimary else GVONESecondary
+                                        )
+                                    )
+                                )
+                        )
+                    }
+                }
+
+                // 3. RIGHT CIRCULAR BUTTON: Safari Three-Dot "More" Actions Menu
+                Box(
+                    modifier = Modifier
+                        .width(sideButtonWidth)
+                        .height(52.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (sideButtonWidth > 4.dp) {
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .scale(rightScale * sideButtonsScale)
+                                .alpha(sideButtonsAlpha)
+                                .shadow(
+                                    elevation = 16.dp,
+                                    shape = CircleShape,
+                                    spotColor = Color.Black.copy(alpha = 0.6f)
+                                )
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color(0xDD222B3A),
+                                            Color(0xEE141A24)
+                                        )
+                                    )
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(
+                                            Color(0x66FFFFFF),
+                                            Color(0x11FFFFFF)
+                                        )
+                                    ),
+                                    shape = CircleShape
+                                )
+                                .clickable(
+                                    interactionSource = rightButtonSource,
+                                    indication = null,
+                                    enabled = !effectivelyCompact
+                                ) {
+                                    onActionsMenuClick()
+                                }
+                                .testTag("safari_more_actions_button"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            SafariThreeDotsIcon(
+                                color = Color(0xFFF0F3F8),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     }

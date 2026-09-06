@@ -61,6 +61,7 @@ fun GVONEWebView(
     onFaviconChanged: (String?) -> Unit,
     onProgressChanged: (Int) -> Unit,
     onStartDownload: (url: String, userAgent: String?, contentDisposition: String?, mimeType: String?) -> Unit,
+    onPageScroll: ((scrollY: Int, dy: Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var loadProgress by remember { mutableIntStateOf(0) }
@@ -97,6 +98,7 @@ fun GVONEWebView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
                     GVONEActionWebView(context).apply {
+                        onScrollChangeCallback = onPageScroll
                         isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url)
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -284,6 +286,7 @@ fun GVONEWebView(
                     webViewInstance = webView
                     if (webView is GVONEActionWebView) {
                         webView.isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url)
+                        webView.onScrollChangeCallback = onPageScroll
                     }
                     onRegisterWebView?.invoke(tab.id, webView)
 
@@ -589,6 +592,13 @@ private fun TorConnectingScreen(
  */
 class GVONEActionWebView(context: Context) : WebView(context) {
     var isBridgeActive: Boolean = false
+    var onScrollChangeCallback: ((scrollY: Int, dy: Int) -> Unit)? = null
+
+    override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
+        super.onScrollChanged(l, t, oldl, oldt)
+        val dy = t - oldt
+        onScrollChangeCallback?.invoke(t, dy)
+    }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         val originalConnection = super.onCreateInputConnection(outAttrs) ?: return null

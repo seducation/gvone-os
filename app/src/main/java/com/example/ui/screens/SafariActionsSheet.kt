@@ -203,11 +203,13 @@ fun SafariActionsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Main Scrollable Area inside the Bottom Sheet
             LazyColumn(
                 modifier = Modifier
+                    .widthIn(max = 560.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -884,49 +886,56 @@ fun SafariActionsSheet(
             HorizontalDivider(color = Color(0xFF1F2937), thickness = 0.5.dp)
 
             // 7. BOTTOM NAVIGATION TOOLBAR: Back | Forward | Share | Refresh
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF0F131A))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .background(Color(0xFF0F131A)),
+                contentAlignment = Alignment.Center
             ) {
-                BottomBarButton(
-                    icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                    label = "Back",
-                    onClick = {
-                        onClose()
-                        onNavigateBack()
-                    }
-                )
+                Row(
+                    modifier = Modifier
+                        .widthIn(max = 440.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    BottomBarButton(
+                        icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                        label = "Back",
+                        onClick = {
+                            onClose()
+                            onNavigateBack()
+                        }
+                    )
 
-                BottomBarButton(
-                    icon = Icons.AutoMirrored.Rounded.ArrowForward,
-                    label = "Forward",
-                    onClick = {
-                        onClose()
-                        onNavigateForward()
-                    }
-                )
+                    BottomBarButton(
+                        icon = Icons.AutoMirrored.Rounded.ArrowForward,
+                        label = "Forward",
+                        onClick = {
+                            onClose()
+                            onNavigateForward()
+                        }
+                    )
 
-                BottomBarButton(
-                    icon = Icons.Rounded.Share,
-                    label = "Share",
-                    onClick = {
-                        onClose()
-                        onShare()
-                    }
-                )
+                    BottomBarButton(
+                        icon = Icons.Rounded.Share,
+                        label = "Share",
+                        onClick = {
+                            onClose()
+                            onShare()
+                        }
+                    )
 
-                BottomBarButton(
-                    icon = Icons.Rounded.Refresh,
-                    label = "Refresh",
-                    onClick = {
-                        onClose()
-                        onReload()
-                    }
-                )
+                    BottomBarButton(
+                        icon = Icons.Rounded.Refresh,
+                        label = "Refresh",
+                        onClick = {
+                            onClose()
+                            onReload()
+                        }
+                    )
+                }
             }
         }
     }
