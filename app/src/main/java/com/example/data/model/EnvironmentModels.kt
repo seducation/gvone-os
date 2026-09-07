@@ -67,8 +67,32 @@ enum class CanvasObjectType {
     LINK,
     WIDGET,
     FOLDER,
-    NOTE
+    NOTE,
+    WEB_PORTION
 }
+
+enum class WebWidgetType(val displayName: String, val badgeColorHex: String) {
+    LIVE_DOM("Live DOM", "#10B981"),
+    LIVE_URL("Live Web Window", "#3B82F6"),
+    SNAPSHOT("Visual Snapshot", "#F59E0B")
+}
+
+enum class WebWidgetInteraction(val displayName: String) {
+    OPEN_ORIGINAL("Open Original Webpage"),
+    INTERACT_IN_WIDGET("Interact Inside Widget"),
+    OPEN_BACKGROUND("Open in Background Tab")
+}
+
+data class WebWidgetCropBounds(
+    val xPercent: Float = 0f,
+    val yPercent: Float = 0f,
+    val widthPercent: Float = 1f,
+    val heightPercent: Float = 1f,
+    val scrollXPx: Int = 0,
+    val scrollYPx: Int = 0,
+    val widthPx: Int = 320,
+    val heightPx: Int = 220
+)
 
 enum class LinkOpenBehavior(val displayName: String) {
     CURRENT_TAB("Open in Current Tab"),
@@ -156,6 +180,31 @@ sealed class CanvasObject {
         val title: String = "Scratchpad",
         val content: String = "",
         val colorHex: String = "#F59E0B"
+    ) : CanvasObject()
+
+    data class WebPortionWidgetObject(
+        override val id: String,
+        override val type: CanvasObjectType = CanvasObjectType.WEB_PORTION,
+        override val x: Float = 0f,
+        override val y: Float = 0f,
+        override val width: Float = 2f,
+        override val height: Float = 1.6f,
+        override val zIndex: Int = 0,
+        val title: String,
+        val sourceUrl: String,
+        val siteName: String = "",
+        val faviconUrl: String? = null,
+        val widgetType: WebWidgetType = WebWidgetType.LIVE_DOM,
+        val domSelector: String? = null,
+        val domTagName: String? = null,
+        val extractedHtml: String? = null,
+        val snapshotBase64: String? = null,
+        val cropBounds: WebWidgetCropBounds = WebWidgetCropBounds(),
+        val refreshIntervalMinutes: Int = 15,
+        val lastRefreshedAt: Long = System.currentTimeMillis(),
+        val interactionMode: WebWidgetInteraction = WebWidgetInteraction.OPEN_ORIGINAL,
+        val isLiveValid: Boolean = true,
+        val lastErrorMessage: String? = null
     ) : CanvasObject()
 }
 

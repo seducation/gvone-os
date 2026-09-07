@@ -29,6 +29,8 @@ import com.example.ui.contextmenu.PagePreviewSheet
 import com.example.ui.contextmenu.TabGroupPickerSheet
 import com.example.ui.screens.*
 import com.example.ui.screens.canvas.EnvironmentStartPageCanvas
+import com.example.ui.screens.webwidget.WebWidgetConfigSheet
+import com.example.ui.screens.webwidget.WebWidgetSelectionOverlay
 import com.example.ui.theme.GVONEBrowserTheme
 import com.example.ui.viewmodel.ActiveSheet
 import com.example.ui.viewmodel.BrowserViewModel
@@ -108,6 +110,7 @@ fun BrowserApp(
     val environments by viewModel.environments.collectAsStateWithLifecycle()
     val currentEnvironment by viewModel.currentEnvironment.collectAsStateWithLifecycle()
     val isCanvasEditMode by viewModel.isCanvasEditMode.collectAsStateWithLifecycle()
+    val webWidgetDraft by viewModel.webWidgetDraft.collectAsStateWithLifecycle()
 
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
@@ -447,6 +450,7 @@ fun BrowserApp(
                 onOpenReaderMode = { viewModel.openSheet(ActiveSheet.ReaderMode) },
                 onOpenSiteInfo = { viewModel.openSheet(ActiveSheet.SiteInfo) },
                 onOpenAddToHomeScreen = { viewModel.openSheet(ActiveSheet.AddToHomeScreen) },
+                onOpenWidgetSelection = { viewModel.openSheet(ActiveSheet.WebWidgetSelection) },
                 onOpenDownloads = { viewModel.openSheet(ActiveSheet.Downloads) },
                 onOpenHistory = { viewModel.openSheet(ActiveSheet.History) },
                 onOpenBookmarks = { viewModel.openSheet(ActiveSheet.Bookmarks) },
@@ -523,6 +527,40 @@ fun BrowserApp(
                 onToggleReadingList = { url, title, faviconUrl -> viewModel.toggleReadingListFromContextMenu(url, title, faviconUrl, context = context) },
                 onShareLink = { url, title -> viewModel.shareLink(url, title, context = context) }
             )
+        }
+
+        // Web Portion Widget Selection Overlay
+        if (activeSheet == ActiveSheet.WebWidgetSelection) {
+            WebWidgetSelectionOverlay(
+                currentTab = currentTab,
+                activeWebView = viewModel.getActiveWebView(),
+                currentEnvironmentId = currentEnvironment.id,
+                onConfirm = { draft ->
+                    viewModel.setWebWidgetDraft(draft)
+                },
+                onCancel = {
+                    viewModel.closeSheet()
+                }
+            )
+        }
+
+        // Web Portion Widget Configuration Sheet
+        if (activeSheet == ActiveSheet.WebWidgetConfig) {
+            webWidgetDraft?.let { draft ->
+                WebWidgetConfigSheet(
+                    draft = draft,
+                    environments = environments,
+                    onAddWidget = { widget, targetEnvId ->
+                        viewModel.addWebPortionWidget(widget, targetEnvId)
+                    },
+                    onBackToSelection = {
+                        viewModel.openSheet(ActiveSheet.WebWidgetSelection)
+                    },
+                    onDismiss = {
+                        viewModel.closeSheet()
+                    }
+                )
+            }
         }
 
         // Lightweight Page Preview Bottom Sheet with Share & Saved Bookmarks Browser

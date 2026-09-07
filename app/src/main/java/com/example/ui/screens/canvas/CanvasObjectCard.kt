@@ -108,6 +108,15 @@ fun CanvasObjectCard(
                     }
                 }
             }
+            is CanvasObject.WebPortionWidgetObject -> {
+                WebPortionCanvasWidget(
+                    widget = obj,
+                    isEditMode = isEditMode,
+                    onNavigate = onNavigate,
+                    onUpdateWidget = onUpdate,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         // Customization Overlay Controls (Visible only in Edit Mode)
@@ -207,6 +216,7 @@ fun CanvasObjectCard(
                             is CanvasObject.FolderObject -> obj.copy(width = nextWidth)
                             is CanvasObject.NoteObject -> obj.copy(width = nextWidth)
                             is CanvasObject.WidgetObject -> obj.copy(width = nextWidth)
+                            is CanvasObject.WebPortionWidgetObject -> obj.copy(width = nextWidth)
                         }
                         onUpdate(updated)
                     },

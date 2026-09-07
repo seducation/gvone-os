@@ -92,6 +92,7 @@ fun SafariActionsSheet(
     onOpenSiteInfo: () -> Unit,
     onOpenPasswords: () -> Unit = onOpenSiteInfo,
     onOpenAddToHomeScreen: () -> Unit,
+    onOpenWidgetSelection: () -> Unit = {},
     onOpenDownloads: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenBookmarks: () -> Unit,
@@ -733,6 +734,20 @@ fun SafariActionsSheet(
                                                 onClick = {
                                                     onClose()
                                                     onOpenAddToHomeScreen()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.CropFree,
+                                                label = "Crop Webpage to Widget",
+                                                trailingText = if (isInternalHomeUrl(tab?.url)) "Webpage only" else "Configure Widget",
+                                                onClick = {
+                                                    if (isInternalHomeUrl(tab?.url)) {
+                                                        toastMessage = "Open any webpage to crop into a widget"
+                                                    } else {
+                                                        onClose()
+                                                        onOpenWidgetSelection()
+                                                    }
                                                 }
                                             )
                                         }

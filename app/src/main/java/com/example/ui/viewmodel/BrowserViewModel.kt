@@ -19,6 +19,7 @@ import com.example.data.sync.*
 import com.example.data.tor.*
 import com.example.ui.contextmenu.LinkContextMenuData
 import com.example.ui.contextmenu.PagePreviewData
+import com.example.data.webwidget.WebWidgetSelectionDraft
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.lang.ref.WeakReference
@@ -41,6 +42,8 @@ sealed interface ActiveSheet {
     object FindInPage : ActiveSheet
     object AISearchResult : ActiveSheet
     object TorDiagnostics : ActiveSheet
+    object WebWidgetSelection : ActiveSheet
+    object WebWidgetConfig : ActiveSheet
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -137,6 +140,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val currentEnvironment: StateFlow<Environment> = environmentManager.currentEnvironment
     private val _isCanvasEditMode = MutableStateFlow(false)
     val isCanvasEditMode: StateFlow<Boolean> = _isCanvasEditMode.asStateFlow()
+
+    // Web Portion Widget State
+    private val _webWidgetDraft = MutableStateFlow<WebWidgetSelectionDraft?>(null)
+    val webWidgetDraft: StateFlow<WebWidgetSelectionDraft?> = _webWidgetDraft.asStateFlow()
+
+    fun setWebWidgetDraft(draft: WebWidgetSelectionDraft) {
+        _webWidgetDraft.value = draft
+        _activeSheet.value = ActiveSheet.WebWidgetConfig
+    }
+
+    fun addWebPortionWidget(widget: CanvasObject.WebPortionWidgetObject, targetEnvironmentId: String) {
+        environmentManager.addObjectToEnvironment(widget, targetEnvironmentId)
+        _webWidgetDraft.value = null
+        _activeSheet.value = ActiveSheet.None
+    }
 
     fun toggleCanvasEditMode() {
         _isCanvasEditMode.value = !_isCanvasEditMode.value
@@ -548,6 +566,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun closeSheet() {
         _activeSheet.value = ActiveSheet.None
+        _webWidgetDraft.value = null
     }
 
     fun setAddressBarInput(text: String) {

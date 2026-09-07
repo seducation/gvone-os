@@ -223,6 +223,13 @@ class EnvironmentManager(context: Context) {
         updateEnvironment(updatedEnv)
     }
 
+    fun addObjectToEnvironment(obj: CanvasObject, targetEnvironmentId: String) {
+        val targetEnv = _environments.value.find { it.id == targetEnvironmentId } ?: _currentEnvironment.value
+        val updatedObjects = targetEnv.objects + obj
+        val updatedEnv = targetEnv.copy(objects = updatedObjects)
+        updateEnvironment(updatedEnv)
+    }
+
     fun updateObject(obj: CanvasObject) {
         val current = _currentEnvironment.value
         val updatedObjects = current.objects.map {
@@ -326,6 +333,32 @@ class EnvironmentManager(context: Context) {
                         itemJson.put("title", item.title)
                         itemJson.put("content", item.content)
                         itemJson.put("colorHex", item.colorHex)
+                    }
+                    is CanvasObject.WebPortionWidgetObject -> {
+                        itemJson.put("title", item.title)
+                        itemJson.put("sourceUrl", item.sourceUrl)
+                        itemJson.put("siteName", item.siteName)
+                        if (item.faviconUrl != null) itemJson.put("faviconUrl", item.faviconUrl)
+                        itemJson.put("widgetType", item.widgetType.name)
+                        if (item.domSelector != null) itemJson.put("domSelector", item.domSelector)
+                        if (item.domTagName != null) itemJson.put("domTagName", item.domTagName)
+                        if (item.extractedHtml != null) itemJson.put("extractedHtml", item.extractedHtml)
+                        if (item.snapshotBase64 != null) itemJson.put("snapshotBase64", item.snapshotBase64)
+                        val cropObj = JSONObject()
+                        cropObj.put("xPercent", item.cropBounds.xPercent.toDouble())
+                        cropObj.put("yPercent", item.cropBounds.yPercent.toDouble())
+                        cropObj.put("widthPercent", item.cropBounds.widthPercent.toDouble())
+                        cropObj.put("heightPercent", item.cropBounds.heightPercent.toDouble())
+                        cropObj.put("scrollXPx", item.cropBounds.scrollXPx)
+                        cropObj.put("scrollYPx", item.cropBounds.scrollYPx)
+                        cropObj.put("widthPx", item.cropBounds.widthPx)
+                        cropObj.put("heightPx", item.cropBounds.heightPx)
+                        itemJson.put("cropBounds", cropObj)
+                        itemJson.put("refreshIntervalMinutes", item.refreshIntervalMinutes)
+                        itemJson.put("lastRefreshedAt", item.lastRefreshedAt)
+                        itemJson.put("interactionMode", item.interactionMode.name)
+                        itemJson.put("isLiveValid", item.isLiveValid)
+                        if (item.lastErrorMessage != null) itemJson.put("lastErrorMessage", item.lastErrorMessage)
                     }
                 }
                 objArray.put(itemJson)
@@ -478,6 +511,52 @@ class EnvironmentManager(context: Context) {
                                     title = item.optString("title", "Note"),
                                     content = item.optString("content", ""),
                                     colorHex = item.optString("colorHex", "#F59E0B")
+                                )
+                            )
+                        }
+                        CanvasObjectType.WEB_PORTION.name -> {
+                            val wTypeStr = item.optString("widgetType", "LIVE_DOM")
+                            val wType = try { WebWidgetType.valueOf(wTypeStr) } catch (e: Exception) { WebWidgetType.LIVE_DOM }
+                            val interStr = item.optString("interactionMode", "OPEN_ORIGINAL")
+                            val interMode = try { WebWidgetInteraction.valueOf(interStr) } catch (e: Exception) { WebWidgetInteraction.OPEN_ORIGINAL }
+
+                            val cropObj = item.optJSONObject("cropBounds")
+                            val cropBounds = if (cropObj != null) {
+                                WebWidgetCropBounds(
+                                    xPercent = cropObj.optDouble("xPercent", 0.0).toFloat(),
+                                    yPercent = cropObj.optDouble("yPercent", 0.0).toFloat(),
+                                    widthPercent = cropObj.optDouble("widthPercent", 1.0).toFloat(),
+                                    heightPercent = cropObj.optDouble("heightPercent", 1.0).toFloat(),
+                                    scrollXPx = cropObj.optInt("scrollXPx", 0),
+                                    scrollYPx = cropObj.optInt("scrollYPx", 0),
+                                    widthPx = cropObj.optInt("widthPx", 320),
+                                    heightPx = cropObj.optInt("heightPx", 220)
+                                )
+                            } else WebWidgetCropBounds()
+
+                            objects.add(
+                                CanvasObject.WebPortionWidgetObject(
+                                    id = itemId,
+                                    x = x,
+                                    y = y,
+                                    width = width,
+                                    height = height,
+                                    zIndex = zIndex,
+                                    title = item.optString("title", "Web Widget"),
+                                    sourceUrl = item.optString("sourceUrl", "https://"),
+                                    siteName = item.optString("siteName", ""),
+                                    faviconUrl = if (item.has("faviconUrl")) item.getString("faviconUrl") else null,
+                                    widgetType = wType,
+                                    domSelector = if (item.has("domSelector")) item.getString("domSelector") else null,
+                                    domTagName = if (item.has("domTagName")) item.getString("domTagName") else null,
+                                    extractedHtml = if (item.has("extractedHtml")) item.getString("extractedHtml") else null,
+                                    snapshotBase64 = if (item.has("snapshotBase64")) item.getString("snapshotBase64") else null,
+                                    cropBounds = cropBounds,
+                                    refreshIntervalMinutes = item.optInt("refreshIntervalMinutes", 15),
+                                    lastRefreshedAt = item.optLong("lastRefreshedAt", System.currentTimeMillis()),
+                                    interactionMode = interMode,
+                                    isLiveValid = item.optBoolean("isLiveValid", true),
+                                    lastErrorMessage = if (item.has("lastErrorMessage")) item.getString("lastErrorMessage") else null
                                 )
                             )
                         }

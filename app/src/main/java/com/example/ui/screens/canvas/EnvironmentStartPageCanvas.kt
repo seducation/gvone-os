@@ -359,6 +359,7 @@ fun EnvironmentStartPageCanvas(
                                         CanvasWidgetType.QUICK_TOOLS -> 106.dp
                                         CanvasWidgetType.NOTES_WIDGET -> 126.dp
                                     }
+                                    is CanvasObject.WebPortionWidgetObject -> (110 * obj.height).coerceIn(120f, 280f).dp
                                 }
 
                                 CanvasObjectCard(
