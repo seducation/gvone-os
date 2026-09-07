@@ -98,6 +98,7 @@ fun SafariActionsSheet(
     onOpenBookmarks: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenTorDiagnostics: () -> Unit = {},
+    onOpenCustomCommands: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
     onNavigateForward: () -> Unit = {},
     onNavigateToUrl: (String) -> Unit = {},
@@ -787,6 +788,16 @@ fun SafariActionsSheet(
                                                 onClick = {
                                                     onClose()
                                                     onOpenTorDiagnostics()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.Terminal,
+                                                label = "Custom Terminal Commands",
+                                                trailingText = "Configure",
+                                                onClick = {
+                                                    onClose()
+                                                    onOpenCustomCommands()
                                                 }
                                             )
                                             HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)

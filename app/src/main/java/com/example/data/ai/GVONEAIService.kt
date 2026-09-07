@@ -199,4 +199,43 @@ class GVONEAIService(private val torManager: TorManager? = null) {
             )
         )
     }
+
+    suspend fun askAI(prompt: String): String? = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext null
+        }
+        try {
+            val client = getHttpClient()
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey"
+            val jsonBody = JSONObject().apply {
+                put("contents", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("parts", JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("text", prompt)
+                            })
+                        })
+                    })
+                })
+            }
+            val request = Request.Builder()
+                .url(url)
+                .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            if (response.isSuccessful && responseBody.isNotEmpty()) {
+                val rootJson = JSONObject(responseBody)
+                val candidates = rootJson.optJSONArray("candidates")
+                val firstCandidate = candidates?.optJSONObject(0)
+                val content = firstCandidate?.optJSONObject("content")
+                val parts = content?.optJSONArray("parts")
+                return@withContext parts?.optJSONObject(0)?.optString("text")
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
 }

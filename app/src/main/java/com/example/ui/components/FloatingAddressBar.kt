@@ -57,11 +57,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.model.ADDRESS_BAR_TARGET_URL
-import com.example.data.model.BrowserSettings
-import com.example.data.model.BrowserTab
-import com.example.data.model.HOME_WEB_APP_URL
-import com.example.data.model.isInternalHomeUrl
+import com.example.data.command.CommandEngine
+import com.example.data.model.*
 import com.example.data.sync.PageContextDetector
 import com.example.ui.theme.*
 
@@ -92,6 +89,8 @@ fun FloatingAddressBar(
     onExpand: () -> Unit = {},
     onContract: () -> Unit = {},
     onToggleCompact: () -> Unit = {},
+    customCommands: List<CustomCommandEntity> = emptyList(),
+    onOpenCommandManager: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
@@ -125,6 +124,14 @@ fun FloatingAddressBar(
     var inputText by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
+
+    val commandSuggestions = remember(inputText, customCommands, isFocused) {
+        if (isFocused && (inputText.startsWith("/") || (inputText.isNotBlank() && customCommands.any { it.matchesTrigger(inputText) }))) {
+            CommandEngine.getSuggestions(inputText, customCommands)
+        } else {
+            emptyList()
+        }
+    }
 
     // Synchronize non-focused address bar input with active tab URL without wiping active user typing
     LaunchedEffect(currentTab?.url, isFocused, isBridgeActiveForCurrentPage) {
@@ -244,12 +251,42 @@ fun FloatingAddressBar(
             ),
         contentAlignment = if (isBottom) Alignment.BottomCenter else Alignment.TopCenter
     ) {
-        BoxWithConstraints(
+        Column(
             modifier = Modifier
                 .widthIn(max = 440.dp)
                 .fillMaxWidth(),
-            contentAlignment = Alignment.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            if (isBottom) {
+                AnimatedVisibility(
+                    visible = isFocused && commandSuggestions.isNotEmpty(),
+                    enter = fadeIn() + slideInVertically { it / 2 },
+                    exit = fadeOut() + slideOutVertically { it / 2 }
+                ) {
+                    CommandAutocompletePopup(
+                        suggestions = commandSuggestions,
+                        onSelectSuggestion = { suggestion, executeNow ->
+                            if (executeNow) {
+                                val arg = suggestion.queryArgument
+                                val runStr = if (arg.isNotEmpty()) "${suggestion.matchedTrigger} $arg" else suggestion.matchedTrigger
+                                onNavigate(runStr)
+                                isFocused = false
+                                focusManager.clearFocus()
+                            } else {
+                                inputText = "${suggestion.matchedTrigger} "
+                            }
+                        },
+                        onOpenCommandManager = onOpenCommandManager,
+                        modifier = Modifier.padding(bottom = 10.dp)
+                    )
+                }
+            }
+
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
             val maxAvailableWidth = maxWidth
             val fullPillWidth = (maxAvailableWidth - 124.dp).coerceAtLeast(140.dp)
             val compactPillWidth = 138.dp.coerceAtMost(maxAvailableWidth - 32.dp)
@@ -762,7 +799,33 @@ fun FloatingAddressBar(
                 }
             }
         }
+
+        if (!isBottom) {
+            AnimatedVisibility(
+                visible = isFocused && commandSuggestions.isNotEmpty(),
+                enter = fadeIn() + slideInVertically { -it / 2 },
+                exit = fadeOut() + slideOutVertically { -it / 2 }
+            ) {
+                CommandAutocompletePopup(
+                    suggestions = commandSuggestions,
+                    onSelectSuggestion = { suggestion, executeNow ->
+                        if (executeNow) {
+                            val arg = suggestion.queryArgument
+                            val runStr = if (arg.isNotEmpty()) "${suggestion.matchedTrigger} $arg" else suggestion.matchedTrigger
+                            onNavigate(runStr)
+                            isFocused = false
+                            focusManager.clearFocus()
+                        } else {
+                            inputText = "${suggestion.matchedTrigger} "
+                        }
+                    },
+                    onOpenCommandManager = onOpenCommandManager,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+            }
+        }
     }
+}
 
     // Target Website & Address Bar Behavior Control Dialog
     if (showTargetControlDialog && settings != null && onUpdateSettings != null) {

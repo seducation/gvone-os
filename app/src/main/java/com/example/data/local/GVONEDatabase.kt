@@ -3,11 +3,45 @@ package com.example.data.local
 import androidx.room.*
 import com.example.data.model.BookmarkEntry
 import com.example.data.model.BrowserTab
+import com.example.data.model.CustomCommandEntity
 import com.example.data.model.DownloadItem
 import com.example.data.model.HistoryEntry
 import com.example.data.model.SitePermission
 import com.example.data.model.TabGroup
 import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface CustomCommandDao {
+    @Query("SELECT * FROM custom_commands ORDER BY isPinned DESC, createdAt ASC")
+    fun getAllCommands(): Flow<List<CustomCommandEntity>>
+
+    @Query("SELECT * FROM custom_commands WHERE isEnabled = 1 ORDER BY isPinned DESC, createdAt ASC")
+    fun getEnabledCommands(): Flow<List<CustomCommandEntity>>
+
+    @Query("SELECT * FROM custom_commands WHERE id = :id LIMIT 1")
+    suspend fun getCommandById(id: String): CustomCommandEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCommand(command: CustomCommandEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCommands(commands: List<CustomCommandEntity>)
+
+    @Update
+    suspend fun updateCommand(command: CustomCommandEntity)
+
+    @Delete
+    suspend fun deleteCommand(command: CustomCommandEntity)
+
+    @Query("DELETE FROM custom_commands WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("UPDATE custom_commands SET isEnabled = :enabled WHERE id = :id")
+    suspend fun setEnabled(id: String, enabled: Boolean)
+
+    @Query("UPDATE custom_commands SET isPinned = :pinned WHERE id = :id")
+    suspend fun setPinned(id: String, pinned: Boolean)
+}
 
 @Dao
 interface HistoryDao {
@@ -160,9 +194,10 @@ interface TabGroupDao {
         DownloadItem::class,
         SitePermission::class,
         BrowserTab::class,
-        TabGroup::class
+        TabGroup::class,
+        CustomCommandEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class GVONEDatabase : RoomDatabase() {
@@ -172,4 +207,5 @@ abstract class GVONEDatabase : RoomDatabase() {
     abstract fun sitePermissionDao(): SitePermissionDao
     abstract fun tabSessionDao(): TabSessionDao
     abstract fun tabGroupDao(): TabGroupDao
+    abstract fun customCommandDao(): CustomCommandDao
 }

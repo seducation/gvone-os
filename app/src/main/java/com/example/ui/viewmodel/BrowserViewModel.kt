@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.MainActivity
 import com.example.data.ai.GVONEAIService
+import com.example.data.command.CommandEngine
 import com.example.data.download.BrowserDownloadManager
 import com.example.data.environment.EnvironmentManager
 import com.example.data.model.*
@@ -44,6 +45,7 @@ sealed interface ActiveSheet {
     object TorDiagnostics : ActiveSheet
     object WebWidgetSelection : ActiveSheet
     object WebWidgetConfig : ActiveSheet
+    object CustomCommands : ActiveSheet
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -133,6 +135,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val findMatchCount: StateFlow<Int> = _findMatchCount.asStateFlow()
     private val _findCurrentIndex = MutableStateFlow(0)
     val findCurrentIndex: StateFlow<Int> = _findCurrentIndex.asStateFlow()
+
+    // Custom Commands State
+    val customCommands: StateFlow<List<CustomCommandEntity>> = repository.customCommands.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        CommandEngine.BUILT_IN_COMMANDS
+    )
 
     // Custom Environment Start Page System
     val environmentManager = EnvironmentManager(application.applicationContext)
@@ -499,6 +508,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         // Connect WebView context menu detection bridge to ViewModel
         webAppBridge.onContextMenuListener = { data ->
             triggerContextMenu(data)
+        }
+
+        // Seed default custom commands in Room
+        viewModelScope.launch {
+            repository.seedDefaultCommandsIfEmpty()
         }
     }
 
@@ -1021,6 +1035,111 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return
 
+        // 1. Check if user entered a terminal command (e.g. /yt, /wiki, /cmd, or custom command alias)
+        if (CommandEngine.isCommandCandidate(trimmed, customCommands.value)) {
+            val activeTab = currentTab.value
+            val currentUrl = activeTab?.url.orEmpty()
+            val currentTitle = activeTab?.title.orEmpty()
+            val domain = try { java.net.URI(currentUrl).host.orEmpty() } catch (_: Exception) { "" }
+            val clipboard = try {
+                val clipService = getApplication<Application>().getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                clipService?.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+            } catch (_: Exception) { "" }
+
+            val executionContext = CommandExecutionContext(
+                currentUrl = currentUrl,
+                currentTitle = currentTitle,
+                currentDomain = domain,
+                clipboardText = clipboard
+            )
+
+            val executionResult = CommandEngine.parseResult(trimmed, customCommands.value, executionContext)
+            if (executionResult != null) {
+                when (executionResult) {
+                    is CommandExecutionResult.OpenUrl -> {
+                        loadUrlInCurrentTab(executionResult.url)
+                        return
+                    }
+                    is CommandExecutionResult.ExecuteSearch -> {
+                        loadUrlInCurrentTab(executionResult.searchUrl)
+                        return
+                    }
+                    is CommandExecutionResult.SendAIPrompt -> {
+                        performAISearch(executionResult.prompt)
+                        return
+                    }
+                    is CommandExecutionResult.TriggerBrowserAction -> {
+                        closeSheet()
+                        when (executionResult.action) {
+                            BrowserActionType.NEW_TAB -> createNewTab()
+                            BrowserActionType.NEW_PRIVATE_TAB -> createNewTab(isPrivate = true)
+                            BrowserActionType.RELOAD -> activeTab?.url?.let { loadUrlInCurrentTab(it) }
+                            BrowserActionType.BACK -> getActiveWebView()?.goBack()
+                            BrowserActionType.FORWARD -> getActiveWebView()?.goForward()
+                            BrowserActionType.HISTORY -> openSheet(ActiveSheet.History)
+                            BrowserActionType.BOOKMARKS -> openSheet(ActiveSheet.Bookmarks)
+                            BrowserActionType.DOWNLOADS -> openSheet(ActiveSheet.Downloads)
+                            BrowserActionType.CLOSE_TAB -> closeCurrentTab()
+                            BrowserActionType.TAB_OVERVIEW -> openSheet(ActiveSheet.TabOverview)
+                            BrowserActionType.SETTINGS -> openSheet(ActiveSheet.Settings)
+                            BrowserActionType.COMMAND_MANAGER -> openSheet(ActiveSheet.CustomCommands)
+                            BrowserActionType.DESKTOP_MODE -> toggleDesktopMode()
+                            BrowserActionType.TOR_DIAGNOSTICS -> openSheet(ActiveSheet.TorDiagnostics)
+                            BrowserActionType.FIND_IN_PAGE -> openSheet(ActiveSheet.FindInPage)
+                            BrowserActionType.READER_MODE -> openSheet(ActiveSheet.ReaderMode)
+                            BrowserActionType.CLEAR_DATA -> {
+                                clearBrowsingData()
+                                Toast.makeText(getApplication(), "Browsing data cleared", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        return
+                    }
+                    is CommandExecutionResult.TriggerPageAction -> {
+                        closeSheet()
+                        when (executionResult.action) {
+                            "summarize_page" -> {
+                                val activeWv = getActiveWebView()
+                                activeWv?.evaluateJavascript("document.body.innerText.substring(0, 4000)") { text ->
+                                    val cleanText = text?.trim('\"', ' ', '\n')?.replace("\\n", "\n")?.take(3500).orEmpty()
+                                    val prompt = "Summarize this webpage clearly with an executive summary and 3-5 key points.\n\nTitle: ${activeTab?.title}\nURL: ${activeTab?.url}\n\nContent:\n$cleanText"
+                                    performAISearch(prompt)
+                                }
+                            }
+                            "translate_page" -> {
+                                val targetUrl = "https://translate.google.com/translate?sl=auto&tl=en&u=" + java.net.URLEncoder.encode(currentUrl, "UTF-8")
+                                loadUrlInCurrentTab(targetUrl)
+                            }
+                            "extract_info" -> {
+                                val activeWv = getActiveWebView()
+                                activeWv?.evaluateJavascript("document.body.innerText.substring(0, 4000)") { text ->
+                                    val cleanText = text?.trim('\"', ' ', '\n')?.replace("\\n", "\n")?.take(3500).orEmpty()
+                                    val prompt = "Extract all key structured data, dates, stats, contacts, and references from this webpage.\n\nTitle: ${activeTab?.title}\nURL: ${activeTab?.url}\n\nContent:\n$cleanText"
+                                    performAISearch(prompt)
+                                }
+                            }
+                            "reader_mode" -> {
+                                openSheet(ActiveSheet.ReaderMode)
+                            }
+                            else -> {
+                                // Fallback generic page action
+                            }
+                        }
+                        return
+                    }
+                    is CommandExecutionResult.RunSafeJavaScript -> {
+                        closeSheet()
+                        getActiveWebView()?.evaluateJavascript(executionResult.javascriptCode, null)
+                        Toast.makeText(getApplication(), "Executed: ${executionResult.description}", Toast.LENGTH_SHORT).show()
+                        return
+                    }
+                    is CommandExecutionResult.ShowMessage -> {
+                        Toast.makeText(getApplication(), executionResult.message, Toast.LENGTH_SHORT).show()
+                        return
+                    }
+                }
+            }
+        }
+
         val activeTab = currentTab.value
         val routing = InputRouter.resolveRouting(
             input = trimmed,
@@ -1095,6 +1214,133 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
         _addressBarInput.value = url
         closeSheet()
+    }
+
+    // Custom Commands Management
+    fun saveCustomCommand(command: CustomCommandEntity) {
+        viewModelScope.launch {
+            repository.saveCustomCommand(command)
+        }
+    }
+
+    fun deleteCustomCommand(id: String) {
+        viewModelScope.launch {
+            repository.deleteCustomCommand(id)
+        }
+    }
+
+    fun toggleCommandEnabled(id: String, enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setCommandEnabled(id, enabled)
+        }
+    }
+
+    fun toggleCommandPinned(id: String, pinned: Boolean) {
+        viewModelScope.launch {
+            repository.setCommandPinned(id, pinned)
+        }
+    }
+
+    fun installCommandPack(pack: CommandEngine.CommandPack) {
+        viewModelScope.launch {
+            repository.saveCustomCommands(pack.commands)
+        }
+    }
+
+    fun importCommandsFromJson(json: String) {
+        val parsed = CommandEngine.importCommandsFromJson(json)
+        if (parsed.isNotEmpty()) {
+            viewModelScope.launch {
+                repository.saveCustomCommands(parsed)
+            }
+        }
+    }
+
+    fun generateCommandWithAI(prompt: String, callback: (CustomCommandEntity) -> Unit) {
+        viewModelScope.launch {
+            val systemPrompt = "You are an expert command syntax engineer for the GVONE universal terminal bar. Return ONLY valid JSON: {\"command\": \"/trigger\", \"name\": \"Title\", \"description\": \"Summary\", \"type\": \"SEARCH|URL|AI|BROWSER_ACTION|PAGE_ACTION|AUTOMATION\", \"template\": \"https://...{query}\", \"aliases\": \"/alias1, /alias2\"}"
+            val response = try {
+                aiService.askAI(prompt = "$systemPrompt\n\nUser request: $prompt")
+            } catch (_: Exception) {
+                null
+            }
+
+            val synthesized = if (!response.isNullOrBlank() && response.contains("{")) {
+                try {
+                    val jsonStart = response.indexOf("{")
+                    val jsonEnd = response.lastIndexOf("}") + 1
+                    val jsonStr = response.substring(jsonStart, jsonEnd)
+                    val obj = org.json.JSONObject(jsonStr)
+                    val cmdTrigger = obj.optString("command", "/cmd").let { if (it.startsWith("/")) it else "/$it" }
+                    val cmdName = obj.optString("name", "Custom Command")
+                    val desc = obj.optString("description", "")
+                    val typeStr = obj.optString("type", "SEARCH")
+                    val type = try { CommandType.valueOf(typeStr) } catch (_: Exception) { CommandType.SEARCH }
+                    val tmpl = obj.optString("template", "https://www.google.com/search?q={query}")
+                    val aliases = obj.optString("aliases", "")
+                    CustomCommandEntity(
+                        id = "ai_${UUID.randomUUID().toString().take(8)}",
+                        command = cmdTrigger,
+                        name = cmdName,
+                        description = desc,
+                        type = type,
+                        template = tmpl,
+                        aliasesRaw = aliases,
+                        category = CommandCategory.CUSTOM,
+                        isEnabled = true,
+                        isPinned = false,
+                        isBuiltIn = false
+                    )
+                } catch (_: Exception) {
+                    fallbackSynthesizedCommand(prompt)
+                }
+            } else {
+                fallbackSynthesizedCommand(prompt)
+            }
+            callback(synthesized)
+        }
+    }
+
+    private fun fallbackSynthesizedCommand(prompt: String): CustomCommandEntity {
+        val lower = prompt.lowercase()
+        val trigger = when {
+            lower.contains("wiki") -> "/wiki"
+            lower.contains("reddit") -> "/reddit"
+            lower.contains("github") || lower.contains("git") -> "/gh"
+            lower.contains("twitter") || lower.contains(" x ") -> "/x"
+            lower.contains("scholar") || lower.contains("paper") -> "/scholar"
+            lower.contains("map") -> "/maps"
+            lower.contains("translate") -> "/tr"
+            else -> {
+                val words = prompt.split(" ").filter { it.length in 3..8 }
+                "/" + (words.firstOrNull()?.replace(Regex("[^a-zA-Z0-9]"), "") ?: "cmd")
+            }
+        }
+
+        val (type, tmpl, name) = when {
+            lower.contains("wiki") -> Triple(CommandType.SEARCH, "https://en.wikipedia.org/wiki/Special:Search?search={query}", "Wikipedia Search")
+            lower.contains("reddit") -> Triple(CommandType.SEARCH, "https://www.reddit.com/search/?q={query}", "Reddit Search")
+            lower.contains("github") || lower.contains("git") -> Triple(CommandType.SEARCH, "https://github.com/search?q={query}", "GitHub Code Search")
+            lower.contains("scholar") || lower.contains("paper") -> Triple(CommandType.SEARCH, "https://scholar.google.com/scholar?q={query}", "Google Scholar")
+            lower.contains("map") -> Triple(CommandType.SEARCH, "https://www.google.com/maps/search/{query}", "Google Maps")
+            lower.contains("translate") -> Triple(CommandType.SEARCH, "https://translate.google.com/?sl=auto&tl=en&text={query}&op=translate", "Google Translate")
+            lower.contains("summarize") -> Triple(CommandType.PAGE_ACTION, "summarize_page", "Summarize Webpage")
+            else -> Triple(CommandType.SEARCH, "https://www.google.com/search?q={query}", "Quick Search")
+        }
+
+        return CustomCommandEntity(
+            id = "ai_${UUID.randomUUID().toString().take(8)}",
+            command = trigger,
+            name = name,
+            description = "Synthesized via GVONE AI: $prompt",
+            type = type,
+            template = tmpl,
+            aliasesRaw = "$trigger${trigger.removePrefix("/")}",
+            category = CommandCategory.CUSTOM,
+            isEnabled = true,
+            isPinned = false,
+            isBuiltIn = false
+        )
     }
 
     fun resolveUrlOrSearch(input: String): String {

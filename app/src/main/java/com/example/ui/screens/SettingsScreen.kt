@@ -42,6 +42,7 @@ fun SettingsScreen(
     onTestTor: () -> Unit = {},
     onRetryTor: () -> Unit = {},
     onOpenTorDiagnostics: () -> Unit = {},
+    onOpenCustomCommands: () -> Unit = {},
     onSettingsChanged: (BrowserSettings) -> Unit,
     onClearBrowsingData: () -> Unit,
     onBack: () -> Unit,
@@ -222,6 +223,26 @@ fun SettingsScreen(
                     title = "Address bar target website",
                     subtitle = settings.autoLoadTargetUrl.ifBlank { "Not configured" },
                     onClick = { showTargetSiteDialog = true }
+                )
+            }
+
+            // Section: Terminal & Custom Commands
+            item {
+                Text(
+                    text = "Terminal & Custom Commands",
+                    color = GVONEPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                SettingsRowItem(
+                    icon = Icons.Rounded.Terminal,
+                    title = "Custom Terminal Commands",
+                    subtitle = "Manage /commands, aliases, search shortcuts, and workflows",
+                    onClick = onOpenCustomCommands
                 )
             }
 

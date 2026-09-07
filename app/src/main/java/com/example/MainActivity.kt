@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.tor.TorConnectionState
+import com.example.ui.components.CustomCommandManagerSheet
 import com.example.ui.components.FloatingAddressBar
 import com.example.ui.components.GVONEWebView
 import com.example.ui.components.ShortsAudioPill
@@ -111,6 +112,7 @@ fun BrowserApp(
     val currentEnvironment by viewModel.currentEnvironment.collectAsStateWithLifecycle()
     val isCanvasEditMode by viewModel.isCanvasEditMode.collectAsStateWithLifecycle()
     val webWidgetDraft by viewModel.webWidgetDraft.collectAsStateWithLifecycle()
+    val customCommands by viewModel.customCommands.collectAsStateWithLifecycle()
 
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
@@ -286,6 +288,8 @@ fun BrowserApp(
                 onExpand = { isAddressBarCompact = false },
                 onContract = { isAddressBarCompact = true },
                 onToggleCompact = { isAddressBarCompact = !isAddressBarCompact },
+                customCommands = customCommands,
+                onOpenCommandManager = { viewModel.openSheet(ActiveSheet.CustomCommands) },
                 modifier = Modifier.align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
             )
         }
@@ -360,6 +364,7 @@ fun BrowserApp(
                 onTestTor = { viewModel.testTorConnection() },
                 onRetryTor = { viewModel.retryTorConnection() },
                 onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
+                onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
                 onSettingsChanged = { viewModel.updateSettings(it) },
                 onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onBack = { viewModel.closeSheet() }
@@ -456,6 +461,7 @@ fun BrowserApp(
                 onOpenBookmarks = { viewModel.openSheet(ActiveSheet.Bookmarks) },
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                 onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
+                onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
                 onNavigateToUrl = { url -> viewModel.loadUrlInCurrentTab(url) },
                 onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onClose = { viewModel.closeSheet() }
@@ -586,6 +592,27 @@ fun BrowserApp(
                 onDismiss = { viewModel.dismissGroupPicker() },
                 onSelectGroup = { groupId -> viewModel.selectGroupAndAddTab(groupId, targetUrl, context = context) },
                 onCreateGroupAndAdd = { groupName -> viewModel.createGroupAndAddTab(groupName, targetUrl, context = context) }
+            )
+        }
+
+        // Custom Command Manager Sheet
+        if (activeSheet == ActiveSheet.CustomCommands) {
+            CustomCommandManagerSheet(
+                commands = customCommands,
+                onSaveCommand = { viewModel.saveCustomCommand(it) },
+                onDeleteCommand = { viewModel.deleteCustomCommand(it) },
+                onToggleEnabled = { id, enabled -> viewModel.toggleCommandEnabled(id, enabled) },
+                onTogglePinned = { id, pinned -> viewModel.toggleCommandPinned(id, pinned) },
+                onInstallPack = { viewModel.installCommandPack(it) },
+                onImportCommands = { viewModel.importCommandsFromJson(it) },
+                onTestExecuteCommand = { input ->
+                    viewModel.closeSheet()
+                    viewModel.navigateTo(input)
+                },
+                onGenerateWithAI = { prompt, callback ->
+                    viewModel.generateCommandWithAI(prompt, callback)
+                },
+                onClose = { viewModel.closeSheet() }
             )
         }
     }

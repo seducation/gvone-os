@@ -2,9 +2,11 @@ package com.example.data.repository
 
 import android.content.Context
 import androidx.room.Room
+import com.example.data.command.CommandEngine
 import com.example.data.local.GVONEDatabase
 import com.example.data.model.BookmarkEntry
 import com.example.data.model.BrowserTab
+import com.example.data.model.CustomCommandEntity
 import com.example.data.model.DownloadItem
 import com.example.data.model.HistoryEntry
 import com.example.data.model.SitePermission
@@ -24,6 +26,25 @@ class BrowserRepository(context: Context) {
     private val sitePermissionDao = db.sitePermissionDao()
     private val tabSessionDao = db.tabSessionDao()
     private val tabGroupDao = db.tabGroupDao()
+    private val customCommandDao = db.customCommandDao()
+
+    // Custom Commands
+    val customCommands: Flow<List<CustomCommandEntity>> = customCommandDao.getAllCommands()
+    val enabledCustomCommands: Flow<List<CustomCommandEntity>> = customCommandDao.getEnabledCommands()
+
+    suspend fun saveCustomCommand(command: CustomCommandEntity) = customCommandDao.insertCommand(command)
+    suspend fun saveCustomCommands(commands: List<CustomCommandEntity>) = customCommandDao.insertCommands(commands)
+    suspend fun updateCustomCommand(command: CustomCommandEntity) = customCommandDao.updateCommand(command)
+    suspend fun deleteCustomCommand(id: String) = customCommandDao.deleteById(id)
+    suspend fun setCommandEnabled(id: String, enabled: Boolean) = customCommandDao.setEnabled(id, enabled)
+    suspend fun setCommandPinned(id: String, pinned: Boolean) = customCommandDao.setPinned(id, pinned)
+
+    suspend fun seedDefaultCommandsIfEmpty() {
+        try {
+            // Seed initial built-in commands so they are queryable and customizable in Room
+            customCommandDao.insertCommands(CommandEngine.BUILT_IN_COMMANDS)
+        } catch (_: Exception) {}
+    }
 
     // History
     val history: Flow<List<HistoryEntry>> = historyDao.getAllHistory()
