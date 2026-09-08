@@ -47,6 +47,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.command.CommandEngine
@@ -79,6 +86,10 @@ private val TermTextInfo = Color(0xFF58A6FF)
 @Composable
 fun TerminalScreen(
     viewModel: BrowserViewModel,
+    isAddressBarBottom: Boolean = true,
+    addressBarBottomPadding: Dp = 0.dp,
+    isFullScreen: Boolean = false,
+    onToggleFullScreen: (Boolean) -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -712,52 +723,141 @@ fun TerminalScreen(
         inputText = TextFieldValue("")
     }
 
-    // Main full screen terminal container
+    val density = LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    val isImeVisible = imeBottom > 0
+
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+
+    // Main terminal overlay container
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(TermBgColor)
-            .statusBarsPadding()
-            .imePadding()
             .testTag("terminal_screen")
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            // 1. TOP TERMINAL HEADER BAR
-            TerminalHeaderBar(
-                sessions = sessions,
-                activeSessionId = activeSessionId,
-                isTorActive = isTorActive,
-                onSelectSession = { activeSessionId = it },
-                onNewSession = {
-                    val newId = "sess_${sessions.size + 1}"
-                    val newSess = TerminalSession(
-                        id = newId,
-                        title = "Session ${sessions.size + 1}",
-                        lines = createInitialBanner()
-                    )
-                    sessions = sessions + newSess
-                    activeSessionId = newId
-                },
-                onCloseSession = { sessId ->
-                    if (sessions.size > 1) {
-                        sessions = sessions.filterNot { it.id == sessId }
-                        activeSessionId = sessions.first().id
-                    } else {
+        // Semi-transparent backdrop scrim over the background webpage when docked
+        if (!isFullScreen) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
                         onClose()
                     }
-                },
-                onClearScreen = {
-                    sessions = sessions.map {
-                        if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
-                    }
-                    viewModel.terminalRepository.clearSavedSessionLines()
-                },
-                onClose = onClose
             )
+        }
 
-            HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
+        // Terminal Panel (Docked on top of address bar / bottom bar, or Fullscreen)
+        Surface(
+            color = TermBgColor,
+            shape = if (isFullScreen) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+            border = if (isFullScreen) null else BorderStroke(1.dp, TermBorderColor),
+            shadowElevation = 16.dp,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .then(
+                    if (isFullScreen) {
+                        Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                            .imePadding()
+                    } else {
+                        Modifier
+                            .statusBarsPadding()
+                            .padding(
+                                bottom = if (isAddressBarBottom) {
+                                    addressBarBottomPadding
+                                } else {
+                                    0.dp
+                                }
+                            )
+                            .then(
+                                if (!isAddressBarBottom) {
+                                    Modifier
+                                        .navigationBarsPadding()
+                                        .imePadding()
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .fillMaxHeight(0.60f)
+                    }
+                )
+                .offset { IntOffset(0, dragOffsetY.coerceAtLeast(0f).toInt()) }
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Top drag handle when docked
+                if (!isFullScreen) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp, bottom = 4.dp)
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onDragEnd = {
+                                        if (dragOffsetY > 100f) {
+                                            onClose()
+                                        }
+                                        dragOffsetY = 0f
+                                    },
+                                    onVerticalDrag = { _, dragAmount ->
+                                        dragOffsetY += dragAmount
+                                    }
+                                )
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(38.dp)
+                                .height(4.dp)
+                                .background(Color(0xFF484F58), CircleShape)
+                        )
+                    }
+                }
+
+                // 1. TOP TERMINAL HEADER BAR
+                TerminalHeaderBar(
+                    sessions = sessions,
+                    activeSessionId = activeSessionId,
+                    isTorActive = isTorActive,
+                    isFullScreen = isFullScreen,
+                    onToggleFullScreen = { onToggleFullScreen(!isFullScreen) },
+                    onSelectSession = { activeSessionId = it },
+                    onNewSession = {
+                        val newId = "sess_${sessions.size + 1}"
+                        val newSess = TerminalSession(
+                            id = newId,
+                            title = "Session ${sessions.size + 1}",
+                            lines = createInitialBanner()
+                        )
+                        sessions = sessions + newSess
+                        activeSessionId = newId
+                    },
+                    onCloseSession = { sessId ->
+                        if (sessions.size > 1) {
+                            sessions = sessions.filterNot { it.id == sessId }
+                            activeSessionId = sessions.first().id
+                        } else {
+                            onClose()
+                        }
+                    },
+                    onClearScreen = {
+                        sessions = sessions.map {
+                            if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
+                        }
+                        viewModel.terminalRepository.clearSavedSessionLines()
+                    },
+                    onClose = onClose
+                )
+
+                HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
 
             // 2. TERMINAL OUTPUT LOG (Scrollable monospace display)
             SelectionContainer(
@@ -1002,12 +1102,15 @@ fun TerminalScreen(
         }
     }
 }
+}
 
 @Composable
 private fun TerminalHeaderBar(
     sessions: List<TerminalSession>,
     activeSessionId: String,
     isTorActive: Boolean,
+    isFullScreen: Boolean,
+    onToggleFullScreen: () -> Unit,
     onSelectSession: (String) -> Unit,
     onNewSession: () -> Unit,
     onCloseSession: (String) -> Unit,
@@ -1018,22 +1121,41 @@ private fun TerminalHeaderBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(TermSurfaceColor)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Left: Session Switcher Tabs
+        // Left: Monospace badge + Session Switcher Tabs
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.weight(1f, fill = false)
         ) {
-            // Status indicator
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(if (isTorActive) TermPromptPurple else TermPromptGreen, CircleShape)
-            )
+            // Prompt badge
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = Color(0xFF161B22),
+                border = BorderStroke(1.dp, Color(0xFF30363D))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = ">_",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TermPromptGreen
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(if (isTorActive) TermPromptPurple else TermPromptGreen, CircleShape)
+                    )
+                }
+            }
 
             // Session pills
             sessions.forEach { sess ->
@@ -1041,7 +1163,7 @@ private fun TerminalHeaderBar(
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = if (isActive) Color(0xFF21262D) else Color.Transparent,
-                    border = androidx.compose.foundation.BorderStroke(
+                    border = BorderStroke(
                         1.dp,
                         if (isActive) Color(0xFF388BFD) else Color(0xFF30363D)
                     ),
@@ -1092,21 +1214,35 @@ private fun TerminalHeaderBar(
             }
         }
 
-        // Right Action Controls: Clear Screen & Close
+        // Right Action Controls: Clear Screen, Fullscreen/Dock toggle, Close/Minimize
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             IconButton(
                 onClick = onClearScreen,
                 modifier = Modifier
-                    .size(30.dp)
+                    .size(28.dp)
                     .testTag("terminal_clear_btn")
             ) {
                 Icon(
                     imageVector = Icons.Rounded.DeleteSweep,
                     contentDescription = "Clear Screen",
                     tint = TermTextSecondary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            IconButton(
+                onClick = onToggleFullScreen,
+                modifier = Modifier
+                    .size(28.dp)
+                    .testTag("terminal_fullscreen_toggle_btn")
+            ) {
+                Icon(
+                    imageVector = if (isFullScreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                    contentDescription = if (isFullScreen) "Dock Terminal" else "Maximize Terminal",
+                    tint = TermPromptCyan,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -1114,11 +1250,11 @@ private fun TerminalHeaderBar(
             IconButton(
                 onClick = onClose,
                 modifier = Modifier
-                    .size(30.dp)
+                    .size(28.dp)
                     .testTag("terminal_close_btn")
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.Close,
+                    imageVector = if (isFullScreen) Icons.Rounded.Close else Icons.Rounded.KeyboardArrowDown,
                     contentDescription = "Close Terminal",
                     tint = TermTextPrimary,
                     modifier = Modifier.size(20.dp)

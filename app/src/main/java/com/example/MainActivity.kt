@@ -18,6 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.tor.TorConnectionState
@@ -138,9 +141,34 @@ fun BrowserApp(
     // Address bar compactness state driven by web page scrolling
     var isAddressBarCompact by remember { mutableStateOf(false) }
 
+    // Termux CLI full screen state
+    var isTerminalFullScreen by remember { mutableStateOf(false) }
+    LaunchedEffect(activeSheet) {
+        if (activeSheet != ActiveSheet.Terminal) {
+            isTerminalFullScreen = false
+        }
+    }
+
     // Reset address bar to full expanded state when switching tabs
     LaunchedEffect(currentTabId) {
         isAddressBarCompact = false
+    }
+
+    // Track address bar measured height for seamless docking of Terminal and overlays
+    var addressBarHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val navBarBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    val baseBarHeight = if (isAddressBarCompact) 50.dp else 76.dp
+
+    val effectiveAddressBarHeight = if (settings.addressBarBottom) {
+        if (addressBarHeightPx > 0) {
+            with(density) { addressBarHeightPx.toDp() }
+        } else {
+            baseBarHeight + navBarBottomPadding + imeBottomPadding
+        }
+    } else {
+        0.dp
     }
 
     // Handle back button presses gracefully
@@ -264,8 +292,24 @@ fun BrowserApp(
             )
         }
 
-        // Floating Bottom Address Bar Pill matching Safari Compact Design (Exactly 3 major controls)
-        if (activeSheet == ActiveSheet.None || activeSheet == ActiveSheet.FindInPage) {
+        // Termux-Style CLI Drawer/Overlay (Displays docked on top of address bar or bottom bar, with fullscreen toggle)
+        AnimatedVisibility(
+            visible = activeSheet == ActiveSheet.Terminal,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+        ) {
+            TerminalScreen(
+                viewModel = viewModel,
+                isAddressBarBottom = settings.addressBarBottom,
+                addressBarBottomPadding = effectiveAddressBarHeight,
+                isFullScreen = isTerminalFullScreen,
+                onToggleFullScreen = { isTerminalFullScreen = it },
+                onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // Floating Bottom Address Bar Pill matching Safari Compact Design (Visible when no modal or when Terminal is docked)
+        if ((activeSheet == ActiveSheet.None || activeSheet == ActiveSheet.FindInPage || activeSheet == ActiveSheet.Terminal) && !isTerminalFullScreen) {
             FloatingAddressBar(
                 currentTab = currentTab,
                 tabCount = tabs.count { it.isPrivate == isPrivateMode },
@@ -290,7 +334,13 @@ fun BrowserApp(
                 onToggleCompact = { isAddressBarCompact = !isAddressBarCompact },
                 customCommands = customCommands,
                 onOpenCommandManager = { viewModel.openSheet(ActiveSheet.CustomCommands) },
-                modifier = Modifier.align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
+                modifier = Modifier
+                    .align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
+                    .onGloballyPositioned { coordinates ->
+                        if (settings.addressBarBottom) {
+                            addressBarHeightPx = coordinates.size.height
+                        }
+                    }
             )
         }
 
@@ -614,14 +664,6 @@ fun BrowserApp(
                 onGenerateWithAI = { prompt, callback ->
                     viewModel.generateCommandWithAI(prompt, callback)
                 },
-                onClose = { viewModel.closeSheet() }
-            )
-        }
-
-        // Fullscreen Terminal CLI Overlay
-        if (activeSheet == ActiveSheet.Terminal) {
-            TerminalScreen(
-                viewModel = viewModel,
                 onClose = { viewModel.closeSheet() }
             )
         }
