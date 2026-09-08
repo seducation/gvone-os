@@ -46,6 +46,7 @@ sealed interface ActiveSheet {
     object WebWidgetSelection : ActiveSheet
     object WebWidgetConfig : ActiveSheet
     object CustomCommands : ActiveSheet
+    object Terminal : ActiveSheet
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -54,6 +55,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val torManager = TorManager()
     val downloadManager = BrowserDownloadManager(application, repository)
     val aiService = GVONEAIService(torManager)
+    val terminalRepository = com.example.data.terminal.TerminalRepository(application)
 
     // Bridge for Browser <-> GVONE Search/Chat Web App Communication
     val webAppBridge = GVONEWebAppBridge(
@@ -1087,6 +1089,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                             BrowserActionType.TOR_DIAGNOSTICS -> openSheet(ActiveSheet.TorDiagnostics)
                             BrowserActionType.FIND_IN_PAGE -> openSheet(ActiveSheet.FindInPage)
                             BrowserActionType.READER_MODE -> openSheet(ActiveSheet.ReaderMode)
+                            BrowserActionType.TERMINAL -> openSheet(ActiveSheet.Terminal)
                             BrowserActionType.CLEAR_DATA -> {
                                 clearBrowsingData()
                                 Toast.makeText(getApplication(), "Browsing data cleared", Toast.LENGTH_SHORT).show()

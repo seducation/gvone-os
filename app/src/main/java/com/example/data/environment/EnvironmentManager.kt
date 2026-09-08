@@ -10,6 +10,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
+const val DEFAULT_PERSONAL_START_PAGE = "https://rssgroupfeed-jaelvwfd.manus.space"
+
 class EnvironmentManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("gvone_environments_prefs", Context.MODE_PRIVATE)
 

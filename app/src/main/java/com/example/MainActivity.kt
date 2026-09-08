@@ -343,6 +343,7 @@ fun BrowserApp(
                 onRefresh = { currentTab?.url?.let { viewModel.loadUrlInCurrentTab(it) } },
                 onOpenHistory = { viewModel.openSheet(ActiveSheet.History) },
                 onOpenBookmarks = { viewModel.openSheet(ActiveSheet.Bookmarks) },
+                onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
                 onOpenDownloads = { viewModel.openSheet(ActiveSheet.Downloads) },
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                 onToggleDesktop = { viewModel.toggleDesktopMode() },
@@ -459,6 +460,7 @@ fun BrowserApp(
                 onOpenDownloads = { viewModel.openSheet(ActiveSheet.Downloads) },
                 onOpenHistory = { viewModel.openSheet(ActiveSheet.History) },
                 onOpenBookmarks = { viewModel.openSheet(ActiveSheet.Bookmarks) },
+                onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                 onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
                 onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
@@ -612,6 +614,14 @@ fun BrowserApp(
                 onGenerateWithAI = { prompt, callback ->
                     viewModel.generateCommandWithAI(prompt, callback)
                 },
+                onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // Fullscreen Terminal CLI Overlay
+        if (activeSheet == ActiveSheet.Terminal) {
+            TerminalScreen(
+                viewModel = viewModel,
                 onClose = { viewModel.closeSheet() }
             )
         }

@@ -34,6 +34,7 @@ fun ControlCentreSheet(
     onRefresh: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenBookmarks: () -> Unit,
+    onOpenTerminal: () -> Unit = {},
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
     onToggleDesktop: () -> Unit,
@@ -111,15 +112,14 @@ fun ControlCentreSheet(
                     onClick = onOpenBookmarks
                 )
                 ControlActionTile(
+                    icon = Icons.Rounded.Terminal,
+                    label = "Terminal",
+                    onClick = onOpenTerminal
+                )
+                ControlActionTile(
                     icon = Icons.Rounded.Download,
                     label = "Downloads",
                     onClick = onOpenDownloads
-                )
-                ControlActionTile(
-                    icon = Icons.Rounded.VpnKey,
-                    label = "Tor Mode",
-                    isActive = isTorActive,
-                    onClick = onToggleTor
                 )
             }
 
@@ -146,9 +146,10 @@ fun ControlCentreSheet(
                     onClick = onNewPrivateTab
                 )
                 ControlActionTile(
-                    icon = Icons.Rounded.Share,
-                    label = "Share Link",
-                    onClick = onShare
+                    icon = Icons.Rounded.VpnKey,
+                    label = "Tor Mode",
+                    isActive = isTorActive,
+                    onClick = onToggleTor
                 )
             }
 

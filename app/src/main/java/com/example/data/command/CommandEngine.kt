@@ -360,6 +360,19 @@ object CommandEngine {
             isPinned = false,
             isBuiltIn = true
         ),
+        CustomCommandEntity(
+            id = "cmd_terminal",
+            command = "/terminal",
+            name = "Terminal CLI",
+            description = "Open dedicated full-screen Terminal command-line interface",
+            type = CommandType.BROWSER_ACTION,
+            template = "terminal",
+            aliasesRaw = "/term,/cli,/sh,/bash,/console",
+            category = CommandCategory.BROWSER,
+            isEnabled = true,
+            isPinned = true,
+            isBuiltIn = true
+        ),
 
         // JavaScript / Page Automation Commands
         CustomCommandEntity(

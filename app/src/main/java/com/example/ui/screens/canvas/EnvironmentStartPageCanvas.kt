@@ -69,6 +69,13 @@ fun EnvironmentStartPageCanvas(
         parseColorSafe(environment.background.accentColorHex, Color(0xFF38BDF8))
     }
 
+    // Directly open starting link if environment startPageUrl is set
+    LaunchedEffect(environment.id, environment.startPageUrl, isEditMode) {
+        if (!isEditMode && !environment.startPageUrl.isNullOrBlank()) {
+            onNavigate(environment.startPageUrl)
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()

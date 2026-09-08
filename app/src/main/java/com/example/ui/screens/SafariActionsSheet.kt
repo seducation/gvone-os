@@ -96,6 +96,7 @@ fun SafariActionsSheet(
     onOpenDownloads: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenBookmarks: () -> Unit,
+    onOpenTerminal: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onOpenTorDiagnostics: () -> Unit = {},
     onOpenCustomCommands: () -> Unit = {},
@@ -793,6 +794,16 @@ fun SafariActionsSheet(
                                             HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
                                             SafariActionRow(
                                                 icon = Icons.Rounded.Terminal,
+                                                label = "Terminal CLI",
+                                                trailingText = "Shell",
+                                                onClick = {
+                                                    onClose()
+                                                    onOpenTerminal()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.Terminal,
                                                 label = "Custom Terminal Commands",
                                                 trailingText = "Configure",
                                                 onClick = {
@@ -817,7 +828,7 @@ fun SafariActionsSheet(
                     }
                 }
 
-                // 4. 4-GRID SHORTCUT TILES: History | Bookmarks | Downloads | Passwords
+                // 4. SHORTCUT TILES: History | Bookmarks | Terminal | Downloads
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -842,20 +853,20 @@ fun SafariActionsSheet(
                             modifier = Modifier.weight(1f)
                         )
                         GridShortcutItem(
+                            icon = Icons.Rounded.Terminal,
+                            label = "Terminal",
+                            onClick = {
+                                onClose()
+                                onOpenTerminal()
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        GridShortcutItem(
                             icon = Icons.Rounded.Download,
                             label = "Downloads",
                             onClick = {
                                 onClose()
                                 onOpenDownloads()
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        GridShortcutItem(
-                            icon = Icons.Rounded.Info,
-                            label = "Site Info",
-                            onClick = {
-                                onClose()
-                                onOpenSiteInfo()
                             },
                             modifier = Modifier.weight(1f)
                         )
