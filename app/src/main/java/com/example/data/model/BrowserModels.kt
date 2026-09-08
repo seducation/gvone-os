@@ -141,6 +141,7 @@ data class BrowserSettings(
     val autoLoadTargetUrl: String = ADDRESS_BAR_TARGET_URL,
     val bidirectionalBridgeEnabled: Boolean = true,
     val bridgeApplyToAllWebsites: Boolean = false,
+    val terminalAutoAppearOnAddressBar: Boolean = false,
     val shortsAudioMode: ShortsAudioMode = ShortsAudioMode.ALWAYS_UNMUTED,
     val backgroundPlayEnabled: Boolean = true
 )

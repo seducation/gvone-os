@@ -238,6 +238,16 @@ fun SettingsScreen(
             }
 
             item {
+                SettingsSwitchItem(
+                    icon = Icons.Rounded.DesktopWindows,
+                    title = "Always appear on address bar click",
+                    subtitle = "Terminal CLI automatically appears when clicking address bar; disable so it disappears",
+                    checked = settings.terminalAutoAppearOnAddressBar,
+                    onCheckedChange = { onSettingsChanged(settings.copy(terminalAutoAppearOnAddressBar = it)) }
+                )
+            }
+
+            item {
                 SettingsRowItem(
                     icon = Icons.Rounded.Terminal,
                     title = "Custom Terminal Commands",

@@ -335,6 +335,8 @@ fun BrowserApp(
                 customCommands = customCommands,
                 onOpenCommandManager = { viewModel.openSheet(ActiveSheet.CustomCommands) },
                 onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
+                isTerminalOpen = activeSheet == ActiveSheet.Terminal,
+                onCloseTerminal = { viewModel.closeSheet() },
                 modifier = Modifier
                     .align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
                     .onGloballyPositioned { coordinates ->
