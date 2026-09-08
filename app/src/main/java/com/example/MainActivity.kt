@@ -334,6 +334,7 @@ fun BrowserApp(
                 onToggleCompact = { isAddressBarCompact = !isAddressBarCompact },
                 customCommands = customCommands,
                 onOpenCommandManager = { viewModel.openSheet(ActiveSheet.CustomCommands) },
+                onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
                 modifier = Modifier
                     .align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
                     .onGloballyPositioned { coordinates ->
