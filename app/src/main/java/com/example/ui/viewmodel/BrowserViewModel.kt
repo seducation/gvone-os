@@ -49,6 +49,7 @@ sealed interface ActiveSheet {
     object WebWidgetConfig : ActiveSheet
     object CustomCommands : ActiveSheet
     object Terminal : ActiveSheet
+    object WebsiteConnector : ActiveSheet
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -241,6 +242,60 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun setCanvasEditMode(enabled: Boolean) {
         _isCanvasEditMode.value = enabled
+    }
+
+    // Website Access & Account Connector State
+    val websiteAccessConnectorService = com.example.data.connector.WebsiteAccessConnectorService(application.applicationContext)
+    private val _websiteAccessContext = MutableStateFlow<com.example.data.connector.WebsiteAccessContext?>(null)
+    val websiteAccessContext: StateFlow<com.example.data.connector.WebsiteAccessContext?> = _websiteAccessContext.asStateFlow()
+
+    private val _websiteAccessReport = MutableStateFlow<com.example.data.connector.WebsiteAccessReport?>(null)
+    val websiteAccessReport: StateFlow<com.example.data.connector.WebsiteAccessReport?> = _websiteAccessReport.asStateFlow()
+
+    fun openWebsiteConnector(context: com.example.data.connector.WebsiteAccessContext? = null) {
+        val targetContext = context ?: currentTab.value?.let { tab ->
+            com.example.data.connector.WebsiteAccessContext(
+                currentTabId = tab.id,
+                currentUrl = tab.url,
+                currentDomain = com.example.data.connector.WebsiteAccessConnectorService.extractDomain(tab.url),
+                currentEnvironmentId = currentEnvironment.value.id,
+                currentEnvironmentName = currentEnvironment.value.name
+            )
+        } ?: com.example.data.connector.WebsiteAccessContext(
+            currentTabId = "default",
+            currentUrl = "gvone://newtab",
+            currentDomain = "Start Page",
+            currentEnvironmentId = currentEnvironment.value.id,
+            currentEnvironmentName = currentEnvironment.value.name
+        )
+        _websiteAccessContext.value = targetContext
+        _activeSheet.value = ActiveSheet.WebsiteConnector
+        refreshWebsiteConnectorReport()
+    }
+
+    fun refreshWebsiteConnectorReport() {
+        val ctx = _websiteAccessContext.value ?: return
+        viewModelScope.launch {
+            val perm = repository.getSitePermission(ctx.currentDomain)
+            val rep = websiteAccessConnectorService.inspectWebsite(ctx, perm)
+            _websiteAccessReport.value = rep
+        }
+    }
+
+    fun clearCookiesForCurrentSite() {
+        val ctx = _websiteAccessContext.value ?: return
+        viewModelScope.launch {
+            websiteAccessConnectorService.clearCookiesForDomain(ctx.currentUrl, ctx.currentDomain)
+            refreshWebsiteConnectorReport()
+        }
+    }
+
+    fun clearSiteDataForCurrentSite() {
+        val ctx = _websiteAccessContext.value ?: return
+        viewModelScope.launch {
+            websiteAccessConnectorService.clearSiteDataForOrigin(ctx.currentDomain)
+            refreshWebsiteConnectorReport()
+        }
     }
 
     fun switchEnvironment(id: String) {

@@ -4,10 +4,14 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -20,9 +24,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.connector.WebsiteAccessReport
+import com.example.data.model.SitePermission
 import com.example.data.tor.TorConnectionState
 import com.example.ui.components.CustomCommandManagerSheet
 import com.example.ui.components.FloatingAddressBar
@@ -140,6 +148,26 @@ fun BrowserApp(
 
     // Address bar compactness state driven by web page scrolling
     var isAddressBarCompact by remember { mutableStateOf(false) }
+
+    var showAvatarDialog by remember { mutableStateOf(false) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            Toast.makeText(context, "Selected photo: ${uri.lastPathSegment}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            Toast.makeText(context, "Camera permission granted", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Camera permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Termux CLI full screen state
     var isTerminalFullScreen by remember { mutableStateOf(false) }
@@ -337,6 +365,26 @@ fun BrowserApp(
                 onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
                 isTerminalOpen = activeSheet == ActiveSheet.Terminal,
                 onCloseTerminal = { viewModel.closeSheet() },
+                onOpenConnector = { context ->
+                    viewModel.openWebsiteConnector(context)
+                },
+                onOpenPhotos = {
+                    try {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    } catch (_: Exception) {}
+                },
+                onOpenCamera = {
+                    try {
+                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                    } catch (_: Exception) {}
+                },
+                onOpenAvatar = {
+                    showAvatarDialog = true
+                },
+                currentEnvironmentId = currentEnvironment.id,
+                currentEnvironmentName = currentEnvironment.name,
                 modifier = Modifier
                     .align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
                     .onGloballyPositioned { coordinates ->
@@ -668,6 +716,84 @@ fun BrowserApp(
                     viewModel.generateCommandWithAI(prompt, callback)
                 },
                 onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // GVONE Website Access & Account Connector Bottom Sheet
+        if (activeSheet == ActiveSheet.WebsiteConnector) {
+            val report by viewModel.websiteAccessReport.collectAsStateWithLifecycle()
+            val accessContext by viewModel.websiteAccessContext.collectAsStateWithLifecycle()
+            var currentPerm by remember { mutableStateOf<SitePermission?>(null) }
+
+            LaunchedEffect(accessContext?.currentDomain) {
+                accessContext?.currentDomain?.let { domain ->
+                    currentPerm = viewModel.getSitePermission(domain)
+                }
+            }
+
+            val effectiveReport = report ?: accessContext?.let { ctx ->
+                WebsiteAccessReport(
+                    context = ctx,
+                    accountStatus = com.example.data.connector.AccountDetectionStatus.Unknown,
+                    cookiesCount = 0,
+                    cookieNames = emptyList(),
+                    permissionsCount = 0,
+                    grantedPermissions = emptyList(),
+                    siteDataFormatted = "0 KB",
+                    siteDataBytes = 0L,
+                    isHttps = ctx.currentUrl.startsWith("https://", ignoreCase = true)
+                )
+            }
+
+            effectiveReport?.let { rep ->
+                WebsiteAccessConnectorSheet(
+                    report = rep,
+                    sitePermission = currentPerm,
+                    onUpdatePermission = { updated ->
+                        currentPerm = updated
+                        viewModel.saveSitePermission(updated)
+                        viewModel.refreshWebsiteConnectorReport()
+                    },
+                    onClearCookies = { viewModel.clearCookiesForCurrentSite() },
+                    onClearSiteData = { viewModel.clearSiteDataForCurrentSite() },
+                    onRefresh = { viewModel.refreshWebsiteConnectorReport() },
+                    onClose = { viewModel.closeSheet() }
+                )
+            }
+        }
+
+        // Browser Avatar & Persona Profile Dialog
+        if (showAvatarDialog) {
+            AlertDialog(
+                onDismissRequest = { showAvatarDialog = false },
+                title = {
+                    Text(
+                        text = "Browser Avatar & Persona",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Active Environment: ${currentEnvironment.name}",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Persona: Default Web Identity\nSession: Isolated Container\nTab ID: ${currentTab?.id ?: "N/A"}",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 12.sp
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showAvatarDialog = false }) {
+                        Text("Done", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                    }
+                },
+                containerColor = Color(0xFF141C2B)
             )
         }
     }
