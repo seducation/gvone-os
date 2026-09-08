@@ -128,6 +128,14 @@ fun FloatingAddressBar(
         bridgeEnabled && (isGVONEActive || bridgeApplyToAll)
     }
 
+    val handleTerminalAddressBarTrigger: () -> Unit = {
+        if (settings?.terminalAutoAppearOnAddressBar == true) {
+            onOpenTerminal()
+        } else if (isTerminalOpen) {
+            onCloseTerminal()
+        }
+    }
+
     var inputText by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -445,6 +453,7 @@ fun FloatingAddressBar(
                             onClick = {
                                 if (effectivelyCompact) {
                                     onExpand()
+                                    handleTerminalAddressBarTrigger()
                                     return@combinedClickable
                                 }
                                 val currentUrl = currentTab?.url.orEmpty()
@@ -465,12 +474,7 @@ fun FloatingAddressBar(
                                     focusRequester.requestFocus()
                                 } catch (_: Exception) {}
 
-                                // Terminal CLI auto-appear / disappear handling on address bar tap
-                                if (settings?.terminalAutoAppearOnAddressBar == true) {
-                                    onOpenTerminal()
-                                } else if (isTerminalOpen) {
-                                    onCloseTerminal()
-                                }
+                                handleTerminalAddressBarTrigger()
                             },
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -576,9 +580,7 @@ fun FloatingAddressBar(
                                                         } else {
                                                             inputText = currentUrl
                                                         }
-                                                        if (settings?.terminalAutoAppearOnAddressBar == true) {
-                                                            onOpenTerminal()
-                                                        }
+                                                        handleTerminalAddressBarTrigger()
                                                     }
                                                 }
                                             }
@@ -692,6 +694,8 @@ fun FloatingAddressBar(
                                                         try {
                                                             focusRequester.requestFocus()
                                                         } catch (_: Exception) {}
+
+                                                        handleTerminalAddressBarTrigger()
                                                     },
                                                     onLongClick = {
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1024,7 +1028,7 @@ fun FloatingAddressBar(
                                     Spacer(modifier = Modifier.height(3.dp))
                                     Text(
                                         text = "● Bridge Engine: ACTIVE (HTTP/WS v2.4)\n" +
-                                                "● Address Bar Auto-Appear: " + (if (tempTerminalAutoAppear) "ALWAYS APPEAR (Pinned)" else "DISABLED (Disappears)") + "\n" +
+                                                "● Address Bar Tap: " + (if (tempTerminalAutoAppear) "ALWAYS APPEAR" else "DISAPPEAR") + "\n" +
                                                 "● Quick Action: Tap here to open CLI console",
                                         color = Color(0xFF94A3B8),
                                         fontSize = 10.sp,
@@ -1036,91 +1040,97 @@ fun FloatingAddressBar(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Interactive Option: Always appear while clicking address bar or disable/disappear
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (tempTerminalAutoAppear) Color(0xFF0F2236) else Color(0xFF131923),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.2.dp,
-                                    if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF2E3D52)
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        tempTerminalAutoAppear = !tempTerminalAutoAppear
+                            // Interactive Option: Only Disappear and Always Appear options
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // 1. Always Appear button
+                                OutlinedButton(
+                                    onClick = {
+                                        tempTerminalAutoAppear = true
                                         onUpdateSettings(
                                             settings.copy(
                                                 autoLoadTargetOnFocus = tempAutoLoad,
                                                 autoLoadTargetUrl = tempUrl,
                                                 bidirectionalBridgeEnabled = tempBridgeEnabled,
                                                 bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                                terminalAutoAppearOnAddressBar = tempTerminalAutoAppear
+                                                terminalAutoAppearOnAddressBar = true
                                             )
                                         )
-                                        val msg = if (tempTerminalAutoAppear) "Terminal CLI will always appear when clicking address bar" else "Terminal CLI auto-appear disabled (disappears on tap)"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                    .testTag("bridge_terminal_always_appear_toggle_card")
-                            ) {
-                                Row(
+                                        Toast.makeText(context, "Terminal CLI will always appear when clicking address bar", Toast.LENGTH_SHORT).show()
+                                    },
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 9.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .testTag("bridge_terminal_always_appear_btn"),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.2.dp,
+                                        if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF334155)
+                                    ),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (tempTerminalAutoAppear) Color(0xFF0F2B48) else Color(0xFF131923),
+                                        contentColor = if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF94A3B8)
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(
-                                            imageVector = if (tempTerminalAutoAppear) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                                            contentDescription = null,
-                                            tint = if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF64748B),
-                                            modifier = Modifier.size(18.dp)
+                                    Icon(
+                                        imageVector = if (tempTerminalAutoAppear) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp),
+                                        tint = if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF64748B)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = "Always Appear",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (tempTerminalAutoAppear) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+
+                                // 2. Disappear button
+                                OutlinedButton(
+                                    onClick = {
+                                        tempTerminalAutoAppear = false
+                                        onUpdateSettings(
+                                            settings.copy(
+                                                autoLoadTargetOnFocus = tempAutoLoad,
+                                                autoLoadTargetUrl = tempUrl,
+                                                bidirectionalBridgeEnabled = tempBridgeEnabled,
+                                                bridgeApplyToAllWebsites = tempBridgeApplyToAll,
+                                                terminalAutoAppearOnAddressBar = false
+                                            )
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Column {
-                                            Text(
-                                                text = if (tempTerminalAutoAppear) "Always appear on address bar click" else "Auto-appear disabled (disappear)",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = if (tempTerminalAutoAppear)
-                                                    "Terminal CLI always appears when clicking address bar"
-                                                else
-                                                    "Click to enable: currently terminal CLI disappears on address bar tap",
-                                                color = Color(0xFF94A3B8),
-                                                fontSize = 10.sp,
-                                                lineHeight = 13.sp
-                                            )
-                                        }
-                                    }
-                                    Switch(
-                                        checked = tempTerminalAutoAppear,
-                                        onCheckedChange = { isChecked ->
-                                            tempTerminalAutoAppear = isChecked
-                                            onUpdateSettings(
-                                                settings.copy(
-                                                    autoLoadTargetOnFocus = tempAutoLoad,
-                                                    autoLoadTargetUrl = tempUrl,
-                                                    bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                                    bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                                    terminalAutoAppearOnAddressBar = isChecked
-                                                )
-                                            )
-                                            val msg = if (isChecked) "Terminal CLI will always appear when clicking address bar" else "Terminal CLI auto-appear disabled (disappears on tap)"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        },
-                                        colors = SwitchDefaults.colors(
-                                            checkedThumbColor = Color.White,
-                                            checkedTrackColor = Color(0xFF2563EB),
-                                            uncheckedThumbColor = Color(0xFF94A3B8),
-                                            uncheckedTrackColor = Color(0xFF334155)
-                                        ),
-                                        modifier = Modifier.scale(0.82f).testTag("terminal_auto_appear_switch")
+                                        Toast.makeText(context, "Terminal CLI will disappear when clicking address bar", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(38.dp)
+                                        .testTag("bridge_terminal_disappear_btn"),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.2.dp,
+                                        if (!tempTerminalAutoAppear) Color(0xFFF59E0B) else Color(0xFF334155)
+                                    ),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = if (!tempTerminalAutoAppear) Color(0xFF3B270A) else Color(0xFF131923),
+                                        contentColor = if (!tempTerminalAutoAppear) Color(0xFFFBBF24) else Color(0xFF94A3B8)
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (!tempTerminalAutoAppear) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp),
+                                        tint = if (!tempTerminalAutoAppear) Color(0xFFFBBF24) else Color(0xFF64748B)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = "Disappear",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (!tempTerminalAutoAppear) FontWeight.Bold else FontWeight.Medium
                                     )
                                 }
                             }
@@ -1157,44 +1167,6 @@ fun FloatingAddressBar(
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White
-                                    )
-                                }
-
-                                OutlinedButton(
-                                    onClick = {
-                                        tempTerminalAutoAppear = !tempTerminalAutoAppear
-                                        onUpdateSettings(
-                                            settings.copy(
-                                                autoLoadTargetOnFocus = tempAutoLoad,
-                                                autoLoadTargetUrl = tempUrl,
-                                                bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                                bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                                terminalAutoAppearOnAddressBar = tempTerminalAutoAppear
-                                            )
-                                        )
-                                        val msg = if (tempTerminalAutoAppear) "Terminal CLI will always appear when clicking address bar" else "Terminal CLI auto-appear disabled (disappears on tap)"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.height(36.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF334155)),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (tempTerminalAutoAppear) Color(0xFF0F2236) else Color.Transparent,
-                                        contentColor = if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF94A3B8)
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (tempTerminalAutoAppear) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF94A3B8)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = if (tempTerminalAutoAppear) "Always Appear" else "Disappear",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
 
