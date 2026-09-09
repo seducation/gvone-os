@@ -58,14 +58,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.command.CommandEngine
 import com.example.data.model.*
-import com.example.data.sync.WebAppConnectionState
 import com.example.data.terminal.TerminalLine
 import com.example.data.terminal.TerminalLineType
 import com.example.data.terminal.TerminalSession
 import com.example.data.tor.TorConnectionState
 import com.example.ui.viewmodel.ActiveSheet
 import com.example.ui.viewmodel.BrowserViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.net.URL
@@ -115,37 +113,20 @@ fun TerminalScreen(
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
     val isPrivateMode = currentTab?.isPrivate == true
 
-    // Observe global terminal lines and bridge state from BrowserViewModel
-    val globalTerminalLines by viewModel.terminalLines.collectAsStateWithLifecycle()
-    val bridgeConnectionState by viewModel.webAppBridge.connectionState.collectAsStateWithLifecycle()
-
     // Multi-session management
     var sessions by remember {
-        val initialLines = viewModel.terminalLines.value.ifEmpty {
-            val isSuccess = viewModel.webAppBridge.connectionState.value == WebAppConnectionState.READY
-            createInitialBanner(viewModel.webAppBridge.connectionState.value.name, isSuccess)
-        }
         mutableStateOf(
             listOf(
                 TerminalSession(
                     id = "sess_1",
                     title = "Session 1",
-                    lines = initialLines
+                    lines = emptyList()
                 )
             )
         )
     }
     var activeSessionId by remember { mutableStateOf("sess_1") }
     val activeSession = sessions.find { it.id == activeSessionId } ?: sessions.first()
-
-    // Synchronize global terminal lines into active session in real-time
-    LaunchedEffect(globalTerminalLines) {
-        if (globalTerminalLines.isNotEmpty()) {
-            sessions = sessions.map {
-                if (it.id == activeSessionId) it.copy(lines = globalTerminalLines) else it
-            }
-        }
-    }
 
     // Active input state
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
@@ -161,12 +142,17 @@ fun TerminalScreen(
     // Terminal initial welcome banner if session is empty
     LaunchedEffect(activeSessionId) {
         if (activeSession.lines.isEmpty()) {
-            val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
-            val bannerLines = createInitialBanner(bridgeConnectionState.name, isSuccess)
-            sessions = sessions.map {
-                if (it.id == activeSessionId) it.copy(lines = bannerLines) else it
+            val savedLines = viewModel.terminalRepository.getSavedSessionLines()
+            if (savedLines.isNotEmpty()) {
+                sessions = sessions.map {
+                    if (it.id == activeSessionId) it.copy(lines = savedLines) else it
+                }
+            } else {
+                val bannerLines = createInitialBanner()
+                sessions = sessions.map {
+                    if (it.id == activeSessionId) it.copy(lines = bannerLines) else it
+                }
             }
-            viewModel.appendTerminalLines(bannerLines)
         }
     }
 
@@ -223,7 +209,7 @@ fun TerminalScreen(
         sessions = sessions.map {
             if (it.id == activeSessionId) it.copy(lines = updated) else it
         }
-        viewModel.appendTerminalLines(newLines)
+        viewModel.terminalRepository.saveSessionLines(updated)
     }
 
     fun appendLines(newLines: List<TerminalLine>, dummy: ((List<TerminalLine>) -> Unit)? = null) {
@@ -272,7 +258,7 @@ fun TerminalScreen(
                 sessions = sessions.map {
                     if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
                 }
-                viewModel.clearTerminalLines()
+                viewModel.terminalRepository.clearSavedSessionLines()
                 inputText = TextFieldValue("")
                 return
             }
@@ -284,52 +270,6 @@ fun TerminalScreen(
 
             "/help", "/?" -> {
                 outputLines.addAll(generateHelpOutput(allCommands))
-                commitLines(outputLines)
-                inputText = TextFieldValue("")
-                return
-            }
-
-            "/bridge" -> {
-                val state = viewModel.webAppBridge.connectionState.value
-                val isSuccess = state == WebAppConnectionState.READY
-                val bridgeEnabled = viewModel.settings.value.bidirectionalBridgeEnabled
-                val applyAll = viewModel.settings.value.bridgeApplyToAllWebsites
-                val currentUrl = viewModel.currentTab.value?.url.orEmpty()
-                val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
-
-                outputLines.add(TerminalLine("── GVONE WEB APP BRIDGE REPORT ──", TerminalLineType.SYSTEM))
-                outputLines.add(
-                    TerminalLine(
-                        "● Bridge Handshake: " + (if (isSuccess) "SUCCESSFUL (Connected & Ready)" else "NOT CONNECTED (State: ${state.name})"),
-                        if (isSuccess) TerminalLineType.SUCCESS else TerminalLineType.ERROR
-                    )
-                )
-                outputLines.add(TerminalLine("● Target Endpoint: $host", TerminalLineType.INFO))
-                outputLines.add(TerminalLine("● Bidirectional Channel: " + (if (bridgeEnabled) "ENABLED" else "DISABLED"), if (bridgeEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
-                outputLines.add(TerminalLine("● Scope: " + (if (applyAll) "Universal (All Websites)" else "GVONE Web Apps Only"), TerminalLineType.OUTPUT))
-                outputLines.add(
-                    TerminalLine(
-                        "● Address Bar Link: CONNECTED & SYNCHRONIZED",
-                        TerminalLineType.SUCCESS
-                    )
-                )
-                outputLines.add(
-                    TerminalLine(
-                        "● Verification: " + (if (isSuccess) "Success - bidirectional commands and address bar inputs are streaming." else "Inactive - verify target page supports GVONE bridge."),
-                        if (isSuccess) TerminalLineType.SUCCESS else TerminalLineType.INFO
-                    )
-                )
-                commitLines(outputLines)
-                inputText = TextFieldValue("")
-                return
-            }
-
-            "/addressbar" -> {
-                val autoAppear = viewModel.settings.value.terminalAutoAppearOnAddressBar
-                outputLines.add(TerminalLine("── ADDRESS BAR & TERMINAL LINK REPORT ──", TerminalLineType.SYSTEM))
-                outputLines.add(TerminalLine("● Connection State: CONNECTED", TerminalLineType.SUCCESS))
-                outputLines.add(TerminalLine("● Address Bar Click Action: " + (if (autoAppear) "ALWAYS APPEAR (Terminal Opens)" else "DISAPPEAR (Terminal Closes)"), TerminalLineType.INFO))
-                outputLines.add(TerminalLine("● Command Routing: Address bar commands dispatch to CLI and Web App Bridge", TerminalLineType.SUCCESS))
                 commitLines(outputLines)
                 inputText = TextFieldValue("")
                 return
@@ -887,17 +827,15 @@ fun TerminalScreen(
                     sessions = sessions,
                     activeSessionId = activeSessionId,
                     isTorActive = isTorActive,
-                    bridgeConnectionState = bridgeConnectionState,
                     isFullScreen = isFullScreen,
                     onToggleFullScreen = { onToggleFullScreen(!isFullScreen) },
                     onSelectSession = { activeSessionId = it },
                     onNewSession = {
                         val newId = "sess_${sessions.size + 1}"
-                        val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
                         val newSess = TerminalSession(
                             id = newId,
                             title = "Session ${sessions.size + 1}",
-                            lines = createInitialBanner(bridgeConnectionState.name, isSuccess)
+                            lines = createInitialBanner()
                         )
                         sessions = sessions + newSess
                         activeSessionId = newId
@@ -914,10 +852,7 @@ fun TerminalScreen(
                         sessions = sessions.map {
                             if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
                         }
-                        viewModel.clearTerminalLines()
-                    },
-                    onBridgeClick = {
-                        executeCommand("/bridge")
+                        viewModel.terminalRepository.clearSavedSessionLines()
                     },
                     onClose = onClose
                 )
@@ -1174,14 +1109,12 @@ private fun TerminalHeaderBar(
     sessions: List<TerminalSession>,
     activeSessionId: String,
     isTorActive: Boolean,
-    bridgeConnectionState: WebAppConnectionState,
     isFullScreen: Boolean,
     onToggleFullScreen: () -> Unit,
     onSelectSession: (String) -> Unit,
     onNewSession: () -> Unit,
     onCloseSession: (String) -> Unit,
     onClearScreen: () -> Unit,
-    onBridgeClick: () -> Unit,
     onClose: () -> Unit
 ) {
     Row(
@@ -1281,67 +1214,11 @@ private fun TerminalHeaderBar(
             }
         }
 
-        // Right Action Controls: Bridge Connection Badge, Clear Screen, Fullscreen/Dock toggle, Close/Minimize
+        // Right Action Controls: Clear Screen, Fullscreen/Dock toggle, Close/Minimize
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            // Bridge Connection Indicator Badge (Shows whether bridge connection is successful or not)
-            val isBridgeOk = bridgeConnectionState == WebAppConnectionState.READY
-            val bridgeBg = when (bridgeConnectionState) {
-                WebAppConnectionState.READY -> Color(0xFF064E3B)
-                WebAppConnectionState.CONNECTING, WebAppConnectionState.PROCESSING -> Color(0xFF1E3A8A)
-                WebAppConnectionState.UNAVAILABLE -> Color(0xFF450A0A)
-                else -> Color(0xFF1F2937)
-            }
-            val bridgeBorder = when (bridgeConnectionState) {
-                WebAppConnectionState.READY -> Color(0xFF10B981)
-                WebAppConnectionState.CONNECTING, WebAppConnectionState.PROCESSING -> Color(0xFF3B82F6)
-                WebAppConnectionState.UNAVAILABLE -> Color(0xFFEF4444)
-                else -> Color(0xFF4B5563)
-            }
-            val bridgeText = when (bridgeConnectionState) {
-                WebAppConnectionState.READY -> "BRIDGE: OK"
-                WebAppConnectionState.CONNECTING -> "BRIDGE: ..."
-                WebAppConnectionState.PROCESSING -> "BRIDGE: BUSY"
-                WebAppConnectionState.UNAVAILABLE -> "BRIDGE: OFF"
-                else -> "BRIDGE: IDLE"
-            }
-            val bridgeTextColor = when (bridgeConnectionState) {
-                WebAppConnectionState.READY -> Color(0xFF6EE7B7)
-                WebAppConnectionState.CONNECTING, WebAppConnectionState.PROCESSING -> Color(0xFF93C5FD)
-                WebAppConnectionState.UNAVAILABLE -> Color(0xFFFCA5A5)
-                else -> Color(0xFFD1D5DB)
-            }
-
-            Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = bridgeBg,
-                border = BorderStroke(1.dp, bridgeBorder),
-                modifier = Modifier
-                    .clickable { onBridgeClick() }
-                    .testTag("terminal_header_bridge_badge")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .background(bridgeBorder, CircleShape)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = bridgeText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = bridgeTextColor
-                    )
-                }
-            }
-
             IconButton(
                 onClick = onClearScreen,
                 modifier = Modifier
@@ -1457,25 +1334,21 @@ private fun TermuxAccessoryBar(
     }
 }
 
-private fun createInitialBanner(bridgeStatus: String = "IDLE", isBridgeSuccess: Boolean = false): List<TerminalLine> {
+private fun createInitialBanner(): List<TerminalLine> {
     return listOf(
         TerminalLine(
             text = """
 ================================================================
  GVONE UNIVERSAL BROWSER CLI [v2.4] - aarch64-linux-android
  Built-in Centralized Command Engine & Browser Shell
- Type 'help' for command manual | 'bridge' for connection status
+ Type 'help' for command manual | Use 'tabs' to inspect open tabs
 ================================================================
             """.trimIndent(),
             type = TerminalLineType.SYSTEM
         ),
         TerminalLine(
-            text = "Connected to Browser Core. Address bar & command dispatcher ready.",
+            text = "Connected to Browser Core. Centralized command dispatcher ready.",
             type = TerminalLineType.INFO
-        ),
-        TerminalLine(
-            text = "Bridge Status: $bridgeStatus (" + (if (isBridgeSuccess) "SUCCESSFUL - Connected" else "NOT CONNECTED") + ")",
-            type = if (isBridgeSuccess) TerminalLineType.SUCCESS else TerminalLineType.WARNING
         )
     )
 }
@@ -1489,8 +1362,6 @@ private fun generateHelpOutput(commands: List<CustomCommandEntity>): List<Termin
     lines.add(TerminalLine("[1] TERMINAL & SYSTEM UTILITIES", TerminalLineType.SUCCESS))
     lines.add(TerminalLine("  help, ?              Display this manual", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  clear, cls           Clear terminal screen", TerminalLineType.OUTPUT))
-    lines.add(TerminalLine("  bridge               Check Web App Bridge status (Success/Failed)", TerminalLineType.OUTPUT))
-    lines.add(TerminalLine("  addressbar           Check address bar stream link status", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  history              Show recently executed commands", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  tabs, lstabs         List all browser tabs with index and URLs", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  tab <index|name>     Switch active browser tab", TerminalLineType.OUTPUT))

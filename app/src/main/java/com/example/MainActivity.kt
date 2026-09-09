@@ -4,14 +4,10 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.KeyEvent
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -24,13 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.data.connector.WebsiteAccessReport
-import com.example.data.model.SitePermission
 import com.example.data.tor.TorConnectionState
 import com.example.ui.components.CustomCommandManagerSheet
 import com.example.ui.components.FloatingAddressBar
@@ -41,13 +33,6 @@ import com.example.ui.contextmenu.PagePreviewSheet
 import com.example.ui.contextmenu.TabGroupPickerSheet
 import com.example.ui.screens.*
 import com.example.ui.screens.canvas.EnvironmentStartPageCanvas
-import com.example.ui.screens.communication.CommunicationHubScreen
-import com.example.ui.screens.connectors.ConnectorHubScreen
-import com.example.ui.screens.connectors.WebsiteConnectorsManagerScreen
-import com.example.ui.screens.extensions.DataSaverExtensionSheet
-import com.example.ui.screens.files.GVONEFileBrowserSheet
-import com.example.ui.screens.files.GVONEFileViewerScreen
-import com.example.ui.screens.research.ResearchWorkspaceScreen
 import com.example.ui.screens.webwidget.WebWidgetConfigSheet
 import com.example.ui.screens.webwidget.WebWidgetSelectionOverlay
 import com.example.ui.theme.GVONEBrowserTheme
@@ -156,26 +141,6 @@ fun BrowserApp(
     // Address bar compactness state driven by web page scrolling
     var isAddressBarCompact by remember { mutableStateOf(false) }
 
-    var showAvatarDialog by remember { mutableStateOf(false) }
-
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            Toast.makeText(context, "Selected photo: ${uri.lastPathSegment}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            Toast.makeText(context, "Camera permission granted", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(context, "Camera permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     // Termux CLI full screen state
     var isTerminalFullScreen by remember { mutableStateOf(false) }
     LaunchedEffect(activeSheet) {
@@ -254,17 +219,6 @@ fun BrowserApp(
                                 onUpdateLayoutMode = { viewModel.updateCanvasLayoutMode(it) },
                                 modifier = Modifier.fillMaxSize()
                             )
-                        } else if (tab.url.startsWith("gvone-file://")) {
-                            val filePath = tab.url.removePrefix("gvone-file://")
-                            GVONEFileViewerScreen(
-                                fileRelativePath = filePath,
-                                fileSystem = viewModel.fileSystem,
-                                onCloseTab = { viewModel.closeTab(tab.id) },
-                                onOpenTerminalWithCommand = {
-                                    viewModel.openSheet(ActiveSheet.Terminal)
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            )
                         } else {
                             GVONEWebView(
                                 tab = tab,
@@ -276,7 +230,6 @@ fun BrowserApp(
                                 bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
                                 shortsAudioMode = settings.shortsAudioMode,
                                 backgroundPlayEnabled = settings.backgroundPlayEnabled,
-                                dataSaverManager = viewModel.dataSaverManager,
                                 onRegisterWebView = { tabId, wv ->
                                     viewModel.registerWebView(tabId, wv)
                                 },
@@ -384,41 +337,6 @@ fun BrowserApp(
                 onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
                 isTerminalOpen = activeSheet == ActiveSheet.Terminal,
                 onCloseTerminal = { viewModel.closeSheet() },
-                onOpenConnector = { context ->
-                    viewModel.openWebsiteConnector(context)
-                },
-                onOpenPhotos = {
-                    try {
-                        photoPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    } catch (_: Exception) {}
-                },
-                onOpenCamera = {
-                    try {
-                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                    } catch (_: Exception) {}
-                },
-                onOpenAvatar = {
-                    showAvatarDialog = true
-                },
-                onOpenFiles = {
-                    viewModel.openSheet(ActiveSheet.Files)
-                },
-                onOpenConnectorHub = {
-                    viewModel.openConnectorHub()
-                },
-                onOpenResearchWorkspace = {
-                    viewModel.openResearchWorkspace()
-                },
-                onOpenDataSaver = {
-                    viewModel.openDataSaver()
-                },
-                onOpenCommunicationHub = {
-                    viewModel.openCommunicationHub()
-                },
-                currentEnvironmentId = currentEnvironment.id,
-                currentEnvironmentName = currentEnvironment.name,
                 modifier = Modifier
                     .align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
                     .onGloballyPositioned { coordinates ->
@@ -481,6 +399,7 @@ fun BrowserApp(
                 onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
                 onOpenDownloads = { viewModel.openSheet(ActiveSheet.Downloads) },
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
+                onOpenAgentDashboard = { viewModel.openSheet(ActiveSheet.AgentDashboard) },
                 onToggleDesktop = { viewModel.toggleDesktopMode() },
                 onFindInPage = { viewModel.openSheet(ActiveSheet.FindInPage) },
                 onToggleTor = { viewModel.toggleTor() },
@@ -501,8 +420,6 @@ fun BrowserApp(
                 onRetryTor = { viewModel.retryTorConnection() },
                 onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
                 onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
-                onOpenFiles = { viewModel.openSheet(ActiveSheet.Files) },
-                onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
                 onSettingsChanged = { viewModel.updateSettings(it) },
                 onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onBack = { viewModel.closeSheet() }
@@ -601,12 +518,6 @@ fun BrowserApp(
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                 onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
                 onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
-                onOpenFiles = { viewModel.openSheet(ActiveSheet.Files) },
-                onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
-                onOpenConnectorHub = { viewModel.openConnectorHub() },
-                onOpenResearchWorkspace = { viewModel.openResearchWorkspace() },
-                onOpenDataSaver = { viewModel.openDataSaver() },
-                onOpenCommunicationHub = { viewModel.openCommunicationHub() },
                 onNavigateToUrl = { url -> viewModel.loadUrlInCurrentTab(url) },
                 onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onClose = { viewModel.closeSheet() }
@@ -761,147 +672,11 @@ fun BrowserApp(
             )
         }
 
-        // Universal GVONE File System & Storage Browser Sheet
-        if (activeSheet == ActiveSheet.Files) {
-            GVONEFileBrowserSheet(
-                fileSystem = viewModel.fileSystem,
-                onOpenFileInTab = { file, inNewTab ->
-                    viewModel.openFileInTab(file, inNewTab)
-                },
-                onDismiss = { viewModel.closeSheet() }
-            )
-        }
-
-        // Universal Website Accounts, Connectors, Passwords & Cookies Manager
-        if (activeSheet == ActiveSheet.WebsiteConnectors) {
-            WebsiteConnectorsManagerScreen(
-                viewModel = viewModel,
-                onOpenUrl = { url ->
-                    viewModel.loadUrlInCurrentTab(url)
-                },
+        // KAI.KAMUI.GVONE Autonomous Organism & CNS Dashboard
+        if (activeSheet == ActiveSheet.AgentDashboard) {
+            AgentDashboardSheet(
+                cns = viewModel.cns,
                 onClose = { viewModel.closeSheet() }
-            )
-        }
-
-        // Universal Connector Hub (Google Drive, GitHub, Slack, Notion, Dropbox)
-        if (activeSheet == ActiveSheet.ConnectorHub) {
-            ConnectorHubScreen(
-                manager = viewModel.connectorHubManager,
-                onOpenUrlInTab = { url ->
-                    viewModel.loadUrlInCurrentTab(url)
-                },
-                onClose = { viewModel.closeSheet() }
-            )
-        }
-
-        // Research Workspace (Save webpage as source, Highlight -> note, Citation attached, Evidence Map)
-        if (activeSheet == ActiveSheet.ResearchWorkspace) {
-            ResearchWorkspaceScreen(
-                manager = viewModel.researchWorkspaceManager,
-                currentTabUrl = currentTab?.url.orEmpty(),
-                currentTabTitle = currentTab?.title.orEmpty(),
-                onOpenUrlInTab = { url ->
-                    viewModel.loadUrlInCurrentTab(url)
-                },
-                onClose = { viewModel.closeSheet() }
-            )
-        }
-
-        // Data Saver Extension Sheet
-        if (activeSheet == ActiveSheet.DataSaver) {
-            val currentDomain = remember(currentTab?.url) {
-                com.example.data.connector.WebsiteAccessConnectorService.extractDomain(currentTab?.url.orEmpty())
-            }
-            DataSaverExtensionSheet(
-                dataSaverManager = viewModel.dataSaverManager,
-                currentDomain = currentDomain,
-                onClose = { viewModel.closeSheet() }
-            )
-        }
-
-        // Unified Communication Hub (Gmail, Slack, Discord, Teams, Unified Inbox, Notifications)
-        if (activeSheet == ActiveSheet.CommunicationHub) {
-            CommunicationHubScreen(
-                manager = viewModel.communicationHubManager,
-                onClose = { viewModel.closeSheet() }
-            )
-        }
-
-        // GVONE Website Access & Account Connector Bottom Sheet
-        if (activeSheet == ActiveSheet.WebsiteConnector) {
-            val report by viewModel.websiteAccessReport.collectAsStateWithLifecycle()
-            val accessContext by viewModel.websiteAccessContext.collectAsStateWithLifecycle()
-            var currentPerm by remember { mutableStateOf<SitePermission?>(null) }
-
-            LaunchedEffect(accessContext?.currentDomain) {
-                accessContext?.currentDomain?.let { domain ->
-                    currentPerm = viewModel.getSitePermission(domain)
-                }
-            }
-
-            val effectiveReport = report ?: accessContext?.let { ctx ->
-                WebsiteAccessReport(
-                    context = ctx,
-                    accountStatus = com.example.data.connector.AccountDetectionStatus.Unknown,
-                    cookiesCount = 0,
-                    cookieNames = emptyList(),
-                    permissionsCount = 0,
-                    grantedPermissions = emptyList(),
-                    siteDataFormatted = "0 KB",
-                    siteDataBytes = 0L,
-                    isHttps = ctx.currentUrl.startsWith("https://", ignoreCase = true)
-                )
-            }
-
-            effectiveReport?.let { rep ->
-                WebsiteAccessConnectorSheet(
-                    report = rep,
-                    sitePermission = currentPerm,
-                    onUpdatePermission = { updated ->
-                        currentPerm = updated
-                        viewModel.saveSitePermission(updated)
-                        viewModel.refreshWebsiteConnectorReport()
-                    },
-                    onClearCookies = { viewModel.clearCookiesForCurrentSite() },
-                    onClearSiteData = { viewModel.clearSiteDataForCurrentSite() },
-                    onRefresh = { viewModel.refreshWebsiteConnectorReport() },
-                    onClose = { viewModel.closeSheet() }
-                )
-            }
-        }
-
-        // Browser Avatar & Persona Profile Dialog
-        if (showAvatarDialog) {
-            AlertDialog(
-                onDismissRequest = { showAvatarDialog = false },
-                title = {
-                    Text(
-                        text = "Browser Avatar & Persona",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = "Active Environment: ${currentEnvironment.name}",
-                            color = Color(0xFF38BDF8),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Persona: Default Web Identity\nSession: Isolated Container\nTab ID: ${currentTab?.id ?: "N/A"}",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 12.sp
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showAvatarDialog = false }) {
-                        Text("Done", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
-                    }
-                },
-                containerColor = Color(0xFF141C2B)
             )
         }
     }

@@ -43,8 +43,6 @@ fun SettingsScreen(
     onRetryTor: () -> Unit = {},
     onOpenTorDiagnostics: () -> Unit = {},
     onOpenCustomCommands: () -> Unit = {},
-    onOpenFiles: () -> Unit = {},
-    onOpenWebsiteConnectors: () -> Unit = {},
     onSettingsChanged: (BrowserSettings) -> Unit,
     onClearBrowsingData: () -> Unit,
     onBack: () -> Unit,
@@ -255,73 +253,6 @@ fun SettingsScreen(
                     title = "Custom Terminal Commands",
                     subtitle = "Manage /commands, aliases, search shortcuts, and workflows",
                     onClick = onOpenCustomCommands
-                )
-            }
-
-            // Section: Files & Storage (Universal GVONE File System)
-            item {
-                Text(
-                    text = "Files & Storage",
-                    color = GVONEPrimary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp)
-                )
-            }
-
-            item {
-                SettingsRowItem(
-                    icon = Icons.Rounded.FolderCopy,
-                    title = "Files & Storage Manager",
-                    subtitle = "Universal file system, documents, projects, recent items, and storage breakdown",
-                    onClick = onOpenFiles
-                )
-            }
-
-            item {
-                SettingsRowItem(
-                    icon = Icons.Rounded.Storage,
-                    title = "Storage Sandbox Location",
-                    subtitle = "Unified root: /gvone_fs • Accessible by Browser, Terminal & CLI",
-                    onClick = onOpenFiles
-                )
-            }
-
-            // Section: Website Connectors, Logins, Passwords & Cookies
-            item {
-                Text(
-                    text = "Website Accounts, Passwords & Cookies",
-                    color = GVONEPrimary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp)
-                )
-            }
-
-            item {
-                SettingsRowItem(
-                    icon = Icons.Rounded.Link,
-                    title = "Connected Websites & Logins",
-                    subtitle = "All websites logged in with account, cookies & passwords in one place",
-                    onClick = onOpenWebsiteConnectors
-                )
-            }
-
-            item {
-                SettingsRowItem(
-                    icon = Icons.Rounded.Key,
-                    title = "Passwords & Credentials",
-                    subtitle = "View, unmask, copy, or update passwords for logged in websites",
-                    onClick = onOpenWebsiteConnectors
-                )
-            }
-
-            item {
-                SettingsRowItem(
-                    icon = Icons.Rounded.Cookie,
-                    title = "Cookies & Active Sessions",
-                    subtitle = "Inspect active session tokens, cookie counts & clear per-domain cookies",
-                    onClick = onOpenWebsiteConnectors
                 )
             }
 

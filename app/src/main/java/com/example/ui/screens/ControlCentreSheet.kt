@@ -37,6 +37,7 @@ fun ControlCentreSheet(
     onOpenTerminal: () -> Unit = {},
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenAgentDashboard: () -> Unit = {},
     onToggleDesktop: () -> Unit,
     onFindInPage: () -> Unit,
     onToggleTor: () -> Unit,
@@ -154,6 +155,55 @@ fun ControlCentreSheet(
             }
 
             Spacer(modifier = Modifier.height(20.dp))
+
+            // CNS Organism & Agents Dashboard button
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onOpenAgentDashboard() }
+                    .testTag("open_cns_agents_button"),
+                color = Color(0xFF161E2E),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.Psychology,
+                            contentDescription = "CNS Agent Organism",
+                            tint = Color(0xFF00E5FF),
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "KAI.KAMUI // CNS Agents",
+                                color = GVONETextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Autonomous organism, safety reflexes & missions",
+                                color = GVONETextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Icon(
+                        imageVector = Icons.Rounded.ChevronRight,
+                        contentDescription = "Open CNS Dashboard",
+                        tint = Color(0xFF00E5FF),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Settings button matching Screenshot 1 red marker N
             Surface(

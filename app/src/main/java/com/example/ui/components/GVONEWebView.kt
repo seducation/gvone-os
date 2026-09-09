@@ -55,7 +55,6 @@ fun GVONEWebView(
     bridgeApplyToAll: Boolean = true,
     shortsAudioMode: com.example.data.model.ShortsAudioMode = com.example.data.model.ShortsAudioMode.ALWAYS_UNMUTED,
     backgroundPlayEnabled: Boolean = true,
-    dataSaverManager: com.example.data.datasaver.DataSaverManager? = null,
     onRegisterWebView: ((tabId: String, webView: WebView) -> Unit)? = null,
     onRetryTor: () -> Unit = {},
     onDisableTor: () -> Unit = {},
@@ -319,12 +318,6 @@ fun GVONEWebView(
                                         webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode)
                                         webAppBridge?.injectBackgroundPlayerScript(wv, backgroundPlayEnabled)
                                         webAppBridge?.injectContextMenuScript(wv)
-                                        // Inject Data Saver compression rules if active
-                                        val domain = try { java.net.URI(it).host.orEmpty() } catch (_: Exception) { "" }
-                                        val dataSaverJs = dataSaverManager?.getInjectionScript(domain).orEmpty()
-                                        if (dataSaverJs.isNotBlank()) {
-                                            wv.evaluateJavascript(dataSaverJs, null)
-                                        }
                                     }
                                 }
                                 view?.title?.let {

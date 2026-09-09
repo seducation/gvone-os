@@ -58,17 +58,21 @@ class GVONEMediaPlaybackService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_START_OR_UPDATE -> {
-                val title = intent.getStringExtra(EXTRA_MEDIA_TITLE) ?: "Media Playing"
-                val isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, true)
-                val notification = buildNotification(title, isPlaying)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        notification,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                    )
-                } else {
-                    startForeground(NOTIFICATION_ID, notification)
+                try {
+                    val title = intent.getStringExtra(EXTRA_MEDIA_TITLE) ?: "Media Playing"
+                    val isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, true)
+                    val notification = buildNotification(title, isPlaying)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(
+                            NOTIFICATION_ID,
+                            notification,
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                        )
+                    } else {
+                        startForeground(NOTIFICATION_ID, notification)
+                    }
+                } catch (e: Exception) {
+                    // Safe guard for background execution and Android 14+ permissions
                 }
             }
         }
