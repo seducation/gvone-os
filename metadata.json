@@ -1,6 +1,6 @@
 {
   "name": "GVONE Browser",
-  "description": "Next-generation Chromium browser with GVONE AI Search, tab management, privacy engine, Tor foundation, and modern glassmorphism controls.",
+  "description": "Next-generation browser with Gemini AI Search, Connector Hub (Drive, GitHub, Slack, Notion, Dropbox), Research Workspace with auto-citations & evidence maps, Data Saver extension, and unified Communication Hub.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

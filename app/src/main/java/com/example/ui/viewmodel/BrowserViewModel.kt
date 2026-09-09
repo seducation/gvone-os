@@ -17,6 +17,8 @@ import com.example.data.environment.EnvironmentManager
 import com.example.data.model.*
 import com.example.data.repository.BrowserRepository
 import com.example.data.sync.*
+import com.example.data.terminal.TerminalLine
+import com.example.data.terminal.TerminalLineType
 import com.example.data.tor.*
 import com.example.ui.contextmenu.LinkContextMenuData
 import com.example.ui.contextmenu.PagePreviewData
@@ -47,7 +49,13 @@ sealed interface ActiveSheet {
     object WebWidgetConfig : ActiveSheet
     object CustomCommands : ActiveSheet
     object Terminal : ActiveSheet
-    object AgentDashboard : ActiveSheet
+    object WebsiteConnector : ActiveSheet
+    object Files : ActiveSheet
+    object WebsiteConnectors : ActiveSheet
+    object ConnectorHub : ActiveSheet
+    object ResearchWorkspace : ActiveSheet
+    object DataSaver : ActiveSheet
+    object CommunicationHub : ActiveSheet
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -56,47 +64,86 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val torManager = TorManager()
     val downloadManager = BrowserDownloadManager(application, repository)
     val aiService = GVONEAIService(torManager)
+    val fileSystem = com.example.data.files.GVONEFileSystem(application)
     val terminalRepository = com.example.data.terminal.TerminalRepository(application)
+    val connectorHubManager = com.example.data.connector.ConnectorHubManager(application, fileSystem)
+    val researchWorkspaceManager = com.example.data.research.ResearchWorkspaceManager(application, fileSystem, aiService, connectorHubManager)
+    val dataSaverManager = com.example.data.datasaver.DataSaverManager(application)
+    val communicationHubManager = com.example.data.communication.CommunicationHubManager(application, aiService)
+    private val _terminalLines = MutableStateFlow<List<TerminalLine>>(emptyList())
+    val terminalLines: StateFlow<List<TerminalLine>> = _terminalLines.asStateFlow()
 
-    // KAI.KAMUI.GVONE Agent Architecture & CNS
-    val browserController: com.example.agent.browser.BrowserController by lazy {
-        com.example.agent.browser.BrowserControllerImpl(this, repository)
+    fun appendTerminalLine(text: String, type: TerminalLineType = TerminalLineType.OUTPUT) {
+        appendTerminalLines(listOf(TerminalLine(text = text, type = type)))
     }
-    val cns: com.example.agent.cns.CentralNervousSystem = com.example.agent.cns.CentralNervousSystem.global
 
-    private fun setupAgentSystem() {
-        try {
-            (browserController as? com.example.agent.browser.BrowserControllerImpl)?.startObserving()
-
-            val browserAgent = com.example.agent.specialized.BrowserAgent(browserController)
-            val searchAgent = com.example.agent.specialized.SearchAgent(aiService)
-            val fileAgent = com.example.agent.specialized.FileAgent(getApplication())
-            val webReviewAgent = com.example.agent.specialized.WebReviewAgent(browserController)
-            val codingAgent = com.example.agent.specialized.CodingAgent()
-            val workspaceAgent = com.example.agent.specialized.WorkspaceAgent(environmentManager)
-            val openHands = com.example.agent.adapters.OpenHandsAdapter()
-            val openClaw = com.example.agent.adapters.OpenClawAdapter()
-
-            cns.registerAgent(browserAgent)
-            cns.registerAgent(searchAgent)
-            cns.registerAgent(fileAgent)
-            cns.registerAgent(webReviewAgent)
-            cns.registerAgent(codingAgent)
-            cns.registerAgent(workspaceAgent)
-            cns.registerAgent(openHands)
-            cns.registerAgent(openClaw)
-        } catch (e: Exception) {
-            e.printStackTrace()
+    fun appendTerminalLines(lines: List<TerminalLine>) {
+        val current = _terminalLines.value.toMutableList()
+        current.addAll(lines)
+        while (current.size > 200) {
+            current.removeAt(0)
         }
+        _terminalLines.value = current
+        terminalRepository.saveSessionLines(current)
+    }
+
+    fun clearTerminalLines() {
+        _terminalLines.value = emptyList()
+        terminalRepository.clearSavedSessionLines()
     }
 
     // Bridge for Browser <-> GVONE Search/Chat Web App Communication
     val webAppBridge = GVONEWebAppBridge(
         onStateChanged = { state ->
-            // state handled
+            val activeTab = currentTab.value
+            val currentUrl = activeTab?.url.orEmpty()
+            val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
+            when (state) {
+                WebAppConnectionState.READY -> {
+                    appendTerminalLine(
+                        "[BRIDGE] Connection SUCCESSFUL: Handshake verified with $host. Bidirectional InputRouter bridge ACTIVE.",
+                        TerminalLineType.SUCCESS
+                    )
+                }
+                WebAppConnectionState.CONNECTING -> {
+                    appendTerminalLine(
+                        "[BRIDGE] Initializing handshake with $host...",
+                        TerminalLineType.INFO
+                    )
+                }
+                WebAppConnectionState.PROCESSING -> {
+                    appendTerminalLine(
+                        "[BRIDGE] Web app is processing request...",
+                        TerminalLineType.INFO
+                    )
+                }
+                WebAppConnectionState.COMPLETED -> {
+                    appendTerminalLine(
+                        "[BRIDGE] Web app completed request processing.",
+                        TerminalLineType.SUCCESS
+                    )
+                }
+                WebAppConnectionState.UNAVAILABLE -> {
+                    appendTerminalLine(
+                        "[BRIDGE] Connection FAILED or UNAVAILABLE for $host.",
+                        TerminalLineType.ERROR
+                    )
+                }
+                WebAppConnectionState.IDLE -> {}
+            }
         },
         onInputDelivered = { text, success ->
-            // input delivery status handled
+            if (success) {
+                appendTerminalLine(
+                    "[BRIDGE] Input delivered successfully to Web App: \"$text\"",
+                    TerminalLineType.SUCCESS
+                )
+            } else {
+                appendTerminalLine(
+                    "[BRIDGE] Delivery FAILED for: \"$text\" (Web App DOM element not found or not responsive)",
+                    TerminalLineType.ERROR
+                )
+            }
         }
     )
     val webAppConnectionState: StateFlow<WebAppConnectionState> = webAppBridge.connectionState
@@ -206,6 +253,60 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun setCanvasEditMode(enabled: Boolean) {
         _isCanvasEditMode.value = enabled
+    }
+
+    // Website Access & Account Connector State
+    val websiteAccessConnectorService = com.example.data.connector.WebsiteAccessConnectorService(application.applicationContext)
+    private val _websiteAccessContext = MutableStateFlow<com.example.data.connector.WebsiteAccessContext?>(null)
+    val websiteAccessContext: StateFlow<com.example.data.connector.WebsiteAccessContext?> = _websiteAccessContext.asStateFlow()
+
+    private val _websiteAccessReport = MutableStateFlow<com.example.data.connector.WebsiteAccessReport?>(null)
+    val websiteAccessReport: StateFlow<com.example.data.connector.WebsiteAccessReport?> = _websiteAccessReport.asStateFlow()
+
+    fun openWebsiteConnector(context: com.example.data.connector.WebsiteAccessContext? = null) {
+        val targetContext = context ?: currentTab.value?.let { tab ->
+            com.example.data.connector.WebsiteAccessContext(
+                currentTabId = tab.id,
+                currentUrl = tab.url,
+                currentDomain = com.example.data.connector.WebsiteAccessConnectorService.extractDomain(tab.url),
+                currentEnvironmentId = currentEnvironment.value.id,
+                currentEnvironmentName = currentEnvironment.value.name
+            )
+        } ?: com.example.data.connector.WebsiteAccessContext(
+            currentTabId = "default",
+            currentUrl = "gvone://newtab",
+            currentDomain = "Start Page",
+            currentEnvironmentId = currentEnvironment.value.id,
+            currentEnvironmentName = currentEnvironment.value.name
+        )
+        _websiteAccessContext.value = targetContext
+        _activeSheet.value = ActiveSheet.WebsiteConnector
+        refreshWebsiteConnectorReport()
+    }
+
+    fun refreshWebsiteConnectorReport() {
+        val ctx = _websiteAccessContext.value ?: return
+        viewModelScope.launch {
+            val perm = repository.getSitePermission(ctx.currentDomain)
+            val rep = websiteAccessConnectorService.inspectWebsite(ctx, perm)
+            _websiteAccessReport.value = rep
+        }
+    }
+
+    fun clearCookiesForCurrentSite() {
+        val ctx = _websiteAccessContext.value ?: return
+        viewModelScope.launch {
+            websiteAccessConnectorService.clearCookiesForDomain(ctx.currentUrl, ctx.currentDomain)
+            refreshWebsiteConnectorReport()
+        }
+    }
+
+    fun clearSiteDataForCurrentSite() {
+        val ctx = _websiteAccessContext.value ?: return
+        viewModelScope.launch {
+            websiteAccessConnectorService.clearSiteDataForOrigin(ctx.currentDomain)
+            refreshWebsiteConnectorReport()
+        }
     }
 
     fun switchEnvironment(id: String) {
@@ -414,16 +515,22 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val diagnosticReport: StateFlow<TorDiagnosticReport?> = torManager.diagnosticReport
     val isDiagnosing: StateFlow<Boolean> = torManager.isDiagnosing
 
-    fun getActiveTab(): BrowserTab? {
-        val id = _currentTabId.value
-        return _tabs.value.find { it.id == id } ?: _tabs.value.firstOrNull()
-    }
-
     val currentTab: StateFlow<BrowserTab?> = combine(_tabs, _currentTabId) { tabsList, currentId ->
         tabsList.find { it.id == currentId } ?: tabsList.firstOrNull()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
+        val savedTerminalLines = terminalRepository.getSavedSessionLines()
+        if (savedTerminalLines.isNotEmpty()) {
+            _terminalLines.value = savedTerminalLines
+        } else {
+            _terminalLines.value = listOf(
+                TerminalLine("GVONE COMMAND & BRIDGE ENGINE v2.4", TerminalLineType.SYSTEM),
+                TerminalLine("Connected to Address Bar & Bidirectional Bridge Runtime.", TerminalLineType.INFO),
+                TerminalLine("Commands and Bridge status events will appear here in real time.", TerminalLineType.OUTPUT)
+            )
+        }
+
         val initialPersonalTabs = listOf(
             BrowserTab(
                 id = "tab_rss_feed",
@@ -503,12 +610,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val activeEnv = environmentManager.currentEnvironment.value
         val initialActiveTabs = allInitialTabs.filter { it.environmentId == activeEnv.id }.ifEmpty { initialPersonalTabs }
         val initialActiveGroups = allInitialGroups.filter { it.environmentId == activeEnv.id }
-        val firstTab = initialActiveTabs.firstOrNull() ?: initialPersonalTabs.first()
         _tabGroups.value = initialActiveGroups
         _tabs.value = initialActiveTabs
-        _currentTabId.value = firstTab.id
-        _activeGroupId.value = firstTab.tabGroupId
-        _addressBarInput.value = if (isInternalHomeUrl(firstTab.url)) "" else firstTab.url
+        _currentTabId.value = initialActiveTabs.first().id
+        _activeGroupId.value = initialActiveTabs.first().tabGroupId
+        _addressBarInput.value = if (isInternalHomeUrl(initialActiveTabs.first().url)) "" else initialActiveTabs.first().url
 
         // Restore tab groups and tabs from Room database asynchronously
         viewModelScope.launch {
@@ -555,9 +661,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.seedDefaultCommandsIfEmpty()
         }
-
-        // Initialize KAI.KAMUI.GVONE Autonomous Organism Architecture
-        setupAgentSystem()
     }
 
     private fun loadPersistedSettings(): BrowserSettings {
@@ -625,6 +728,23 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _activeSheet.value = sheet
     }
 
+    fun openConnectorHub() { openSheet(ActiveSheet.ConnectorHub) }
+    fun openResearchWorkspace() { openSheet(ActiveSheet.ResearchWorkspace) }
+    fun openDataSaver() { openSheet(ActiveSheet.DataSaver) }
+    fun openCommunicationHub() { openSheet(ActiveSheet.CommunicationHub) }
+
+    fun saveCurrentPageToResearchWorkspace() {
+        val tab = currentTab.value ?: return
+        val url = tab.url
+        val title = tab.title.ifBlank { url }
+        researchWorkspaceManager.saveWebpageAsSource(
+            url = url,
+            title = title,
+            excerpt = "Captured from active browser session.",
+            fullText = "Article captured from $url"
+        )
+    }
+
     fun closeSheet() {
         _activeSheet.value = ActiveSheet.None
         _webWidgetDraft.value = null
@@ -687,7 +807,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         isPrivate: Boolean = _isPrivateMode.value,
         groupId: String? = _activeGroupId.value,
         inBackground: Boolean = false
-    ): String {
+    ) {
         val currentEnv = environmentManager.currentEnvironment.value
         val defaultUrl = if (!currentEnv.startPageUrl.isNullOrBlank()) currentEnv.startPageUrl else START_PAGE_URL
         val targetUrl = url ?: defaultUrl
@@ -713,7 +833,34 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             closeSheet()
         }
         persistTabsAndActiveState()
-        return newTab.id
+    }
+
+    fun openFileInTab(file: com.example.data.files.GVONEFileItem, inNewTab: Boolean = false) {
+        val fileUrl = "gvone-file://${file.path}"
+        if (inNewTab || _tabs.value.isEmpty()) {
+            val newTab = BrowserTab(
+                id = UUID.randomUUID().toString(),
+                title = file.name,
+                url = fileUrl,
+                isPrivate = false,
+                tabGroupId = _activeGroupId.value,
+                environmentId = environmentManager.activeEnvironmentId.value
+            )
+            _tabs.value = _tabs.value + newTab
+            _currentTabId.value = newTab.id
+            _addressBarInput.value = fileUrl
+            persistTabsAndActiveState()
+        } else {
+            val currentId = _currentTabId.value
+            _tabs.value = _tabs.value.map { tab ->
+                if (tab.id == currentId) {
+                    tab.copy(url = fileUrl, title = file.name)
+                } else tab
+            }
+            _addressBarInput.value = fileUrl
+            persistTabsAndActiveState()
+        }
+        closeSheet()
     }
 
     fun closeCurrentTab() {
@@ -1083,6 +1230,40 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return
 
+        // Always log input to persistent command history and Terminal session
+        terminalRepository.addCommandToHistory(trimmed)
+        appendTerminalLine("gvone@addressbar:~$ $trimmed", TerminalLineType.COMMAND)
+
+        // Built-in interactive bridge command check via address bar
+        if (trimmed.equals("/bridge", ignoreCase = true) ||
+            trimmed.equals("/bridge status", ignoreCase = true) ||
+            trimmed.equals("bridge status", ignoreCase = true) ||
+            trimmed.equals("bridge", ignoreCase = true)
+        ) {
+            val bridgeEnabled = _settings.value.bidirectionalBridgeEnabled
+            val applyAll = _settings.value.bridgeApplyToAllWebsites
+            val state = webAppBridge.connectionState.value
+            val currentUrl = currentTab.value?.url.orEmpty()
+            val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
+            val isSuccess = state == WebAppConnectionState.READY
+
+            appendTerminalLine("── GVONE BRIDGE DIAGNOSTIC STATUS ──", TerminalLineType.SYSTEM)
+            appendTerminalLine(
+                "● Bridge Connection: " + (if (isSuccess) "CONNECTED & ACTIVE (Ready)" else "STATUS: ${state.name} (Not Ready)"),
+                if (isSuccess) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+            )
+            appendTerminalLine("● Bridge Setting: " + (if (bridgeEnabled) "ENABLED" else "DISABLED"), if (bridgeEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING)
+            appendTerminalLine("● Bridge Scope: " + (if (applyAll) "Apply to All Websites (Universal)" else "Trusted GVONE Web Apps Only"), TerminalLineType.INFO)
+            appendTerminalLine("● Current Target: $host", TerminalLineType.OUTPUT)
+            appendTerminalLine(
+                "● Result: " + (if (isSuccess) "Bridge is SUCCESSFUL. Address bar can send direct inputs." else "Bridge is NOT CONNECTED. Check if target page is open or supports GVONE bridge."),
+                if (isSuccess) TerminalLineType.SUCCESS else TerminalLineType.ERROR
+            )
+            val msg = if (isSuccess) "Bridge is connected & successful" else "Bridge status: ${state.name}"
+            Toast.makeText(getApplication(), msg, Toast.LENGTH_SHORT).show()
+            return
+        }
+
         // 1. Check if user entered a terminal command (e.g. /yt, /wiki, /cmd, or custom command alias)
         if (CommandEngine.isCommandCandidate(trimmed, customCommands.value)) {
             val activeTab = currentTab.value
@@ -1105,18 +1286,22 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             if (executionResult != null) {
                 when (executionResult) {
                     is CommandExecutionResult.OpenUrl -> {
+                        appendTerminalLine("[SUCCESS] Command executed -> Loading URL: ${executionResult.url}", TerminalLineType.SUCCESS)
                         loadUrlInCurrentTab(executionResult.url)
                         return
                     }
                     is CommandExecutionResult.ExecuteSearch -> {
+                        appendTerminalLine("[SUCCESS] Search command executed -> ${executionResult.searchUrl}", TerminalLineType.SUCCESS)
                         loadUrlInCurrentTab(executionResult.searchUrl)
                         return
                     }
                     is CommandExecutionResult.SendAIPrompt -> {
+                        appendTerminalLine("[INFO] Forwarding prompt to GVONE AI: \"${executionResult.prompt}\"", TerminalLineType.INFO)
                         performAISearch(executionResult.prompt)
                         return
                     }
                     is CommandExecutionResult.TriggerBrowserAction -> {
+                        appendTerminalLine("[SUCCESS] Browser Action triggered: ${executionResult.action.name}", TerminalLineType.SUCCESS)
                         closeSheet()
                         when (executionResult.action) {
                             BrowserActionType.NEW_TAB -> createNewTab()
@@ -1144,6 +1329,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         return
                     }
                     is CommandExecutionResult.TriggerPageAction -> {
+                        appendTerminalLine("[SUCCESS] Page Action triggered: ${executionResult.action}", TerminalLineType.SUCCESS)
                         closeSheet()
                         when (executionResult.action) {
                             "summarize_page" -> {
@@ -1176,12 +1362,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         return
                     }
                     is CommandExecutionResult.RunSafeJavaScript -> {
+                        appendTerminalLine("[SUCCESS] JavaScript evaluated: ${executionResult.description}", TerminalLineType.SUCCESS)
                         closeSheet()
                         getActiveWebView()?.evaluateJavascript(executionResult.javascriptCode, null)
                         Toast.makeText(getApplication(), "Executed: ${executionResult.description}", Toast.LENGTH_SHORT).show()
                         return
                     }
                     is CommandExecutionResult.ShowMessage -> {
+                        appendTerminalLine("[OUTPUT] ${executionResult.message}", TerminalLineType.OUTPUT)
                         Toast.makeText(getApplication(), executionResult.message, Toast.LENGTH_SHORT).show()
                         return
                     }
@@ -1201,9 +1389,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         when (routing) {
             InputDestination.DELIVER_TO_WEB_APP -> {
+                appendTerminalLine("[BRIDGE] Routing address bar input to active Web App...", TerminalLineType.INFO)
                 val activeWebView = getActiveWebView(activeTab?.id)
                 val delivered = webAppBridge.deliverAddressBarInput(activeWebView, trimmed, action = "submit")
                 if (!delivered) {
+                    appendTerminalLine("[BRIDGE] Connection FAILED: Input delivery unconfirmed. Falling back to standard navigation.", TerminalLineType.ERROR)
                     // Safe fallback if active WebView was missing, detached, or on YouTube
                     if (com.example.data.sync.PageContextDetector.isYouTubeOrigin(activeTab?.url)) {
                         val encoded = java.net.URLEncoder.encode(trimmed, "UTF-8")
@@ -1218,6 +1408,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         loadUrlInCurrentTab(destinationUrl)
                     }
                 } else {
+                    appendTerminalLine("[BRIDGE] Connection SUCCESSFUL: Input dispatched to Web App!", TerminalLineType.SUCCESS)
                     // Successfully delivered input directly to the Web App without page reload/navigation!
                     closeSheet()
                 }
@@ -1225,6 +1416,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
             InputDestination.NAVIGATE_URL -> {
                 val destinationUrl = InputRouter.formatNavigationUrl(trimmed)
+                appendTerminalLine("[NAV] Loading URL: $destinationUrl", TerminalLineType.INFO)
                 loadUrlInCurrentTab(destinationUrl)
             }
 
@@ -1237,9 +1429,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                     trimmed.startsWith("explain", ignoreCase = true)
 
                 if (_settings.value.searchEngine == SearchEngineType.GVONE && isQuestion && _settings.value.aiSearchAutoTrigger) {
+                    appendTerminalLine("[AI SEARCH] Synthesizing answer for: \"$trimmed\"", TerminalLineType.INFO)
                     performAISearch(trimmed)
                 } else {
                     val destinationUrl = resolveUrlOrSearch(trimmed)
+                    appendTerminalLine("[SEARCH] Navigating to search: $destinationUrl", TerminalLineType.INFO)
                     loadUrlInCurrentTab(destinationUrl)
                 }
             }

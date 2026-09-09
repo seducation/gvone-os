@@ -100,6 +100,12 @@ fun SafariActionsSheet(
     onOpenSettings: () -> Unit,
     onOpenTorDiagnostics: () -> Unit = {},
     onOpenCustomCommands: () -> Unit = {},
+    onOpenFiles: () -> Unit = {},
+    onOpenWebsiteConnectors: () -> Unit = {},
+    onOpenConnectorHub: () -> Unit = {},
+    onOpenResearchWorkspace: () -> Unit = {},
+    onOpenDataSaver: () -> Unit = {},
+    onOpenCommunicationHub: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
     onNavigateForward: () -> Unit = {},
     onNavigateToUrl: (String) -> Unit = {},
@@ -468,6 +474,46 @@ fun SafariActionsSheet(
                                         isEnabled = antiFingerprintActive,
                                         onToggle = { antiFingerprintActive = it }
                                     )
+                                    HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                    SafariActionRow(
+                                        icon = Icons.Rounded.DataSaverOn,
+                                        label = "Data Saver Extension",
+                                        trailingText = "Configure",
+                                        onClick = {
+                                            onClose()
+                                            onOpenDataSaver()
+                                        }
+                                    )
+                                    HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                    SafariActionRow(
+                                        icon = Icons.Rounded.Hub,
+                                        label = "Connector Hub",
+                                        trailingText = "Drive • GitHub • Slack",
+                                        onClick = {
+                                            onClose()
+                                            onOpenConnectorHub()
+                                        }
+                                    )
+                                    HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                    SafariActionRow(
+                                        icon = Icons.Rounded.Article,
+                                        label = "Research Workspace",
+                                        trailingText = "Citations & Evidence",
+                                        onClick = {
+                                            onClose()
+                                            onOpenResearchWorkspace()
+                                        }
+                                    )
+                                    HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                    SafariActionRow(
+                                        icon = Icons.Rounded.Forum,
+                                        label = "Communication Hub",
+                                        trailingText = "Unified Inbox",
+                                        onClick = {
+                                            onClose()
+                                            onOpenCommunicationHub()
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -813,6 +859,66 @@ fun SafariActionsSheet(
                                             )
                                             HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
                                             SafariActionRow(
+                                                icon = Icons.Rounded.FolderCopy,
+                                                label = "Files & Storage",
+                                                trailingText = "GVONE FS",
+                                                onClick = {
+                                                    onClose()
+                                                    onOpenFiles()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.Hub,
+                                                label = "Connector Hub",
+                                                trailingText = "Drive • GitHub • Slack",
+                                                onClick = {
+                                                    onClose()
+                                                    onOpenConnectorHub()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.Article,
+                                                label = "Research Workspace",
+                                                trailingText = "Sources • Citations • Notes",
+                                                onClick = {
+                                                    onClose()
+                                                    onOpenResearchWorkspace()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.DataSaverOn,
+                                                label = "Data Saver Extension",
+                                                trailingText = "Bandwidth Optimization",
+                                                onClick = {
+                                                    onClose()
+                                                    onOpenDataSaver()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.Forum,
+                                                label = "Communication Hub",
+                                                trailingText = "Unified Inbox",
+                                                onClick = {
+                                                    onClose()
+                                                    onOpenCommunicationHub()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.Link,
+                                                label = "Website Logins & Connectors",
+                                                trailingText = "Passwords & Cookies",
+                                                onClick = {
+                                                    onClose()
+                                                    onOpenWebsiteConnectors()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
                                                 icon = Icons.Rounded.DeleteOutline,
                                                 label = "Clear Browsing Data",
                                                 onClick = {
@@ -858,6 +964,15 @@ fun SafariActionsSheet(
                             onClick = {
                                 onClose()
                                 onOpenTerminal()
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        GridShortcutItem(
+                            icon = Icons.Rounded.FolderCopy,
+                            label = "Files",
+                            onClick = {
+                                onClose()
+                                onOpenFiles()
                             },
                             modifier = Modifier.weight(1f)
                         )

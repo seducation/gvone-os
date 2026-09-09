@@ -97,12 +97,24 @@ fun FloatingAddressBar(
     onOpenTerminal: () -> Unit = {},
     isTerminalOpen: Boolean = false,
     onCloseTerminal: () -> Unit = {},
+    onOpenConnector: ((com.example.data.connector.WebsiteAccessContext) -> Unit)? = null,
+    onOpenPhotos: (() -> Unit)? = null,
+    onOpenCamera: (() -> Unit)? = null,
+    onOpenAvatar: (() -> Unit)? = null,
+    onOpenFiles: (() -> Unit)? = null,
+    onOpenConnectorHub: (() -> Unit)? = null,
+    onOpenResearchWorkspace: (() -> Unit)? = null,
+    onOpenDataSaver: (() -> Unit)? = null,
+    onOpenCommunicationHub: (() -> Unit)? = null,
+    currentEnvironmentId: String = "default",
+    currentEnvironmentName: String = "Default",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var isFocused by remember { mutableStateOf(false) }
     var showTargetControlDialog by remember { mutableStateOf(false) }
+    var showControlActionSheet by remember { mutableStateOf(false) }
     val autoLoadEnabled = settings?.autoLoadTargetOnFocus ?: true
     val targetUrl = settings?.autoLoadTargetUrl ?: ADDRESS_BAR_TARGET_URL
     val bridgeEnabled = settings?.bidirectionalBridgeEnabled ?: true
@@ -126,6 +138,14 @@ fun FloatingAddressBar(
     // Direct Bridge / Type-to-write input mode is active on trusted GVONE origins or when "Apply Bridge to All Websites" is toggled ON
     val isBridgeActiveForCurrentPage = remember(bridgeEnabled, bridgeApplyToAll, isGVONEActive) {
         bridgeEnabled && (isGVONEActive || bridgeApplyToAll)
+    }
+
+    val handleTerminalAddressBarTrigger: () -> Unit = {
+        if (settings?.terminalAutoAppearOnAddressBar == true) {
+            onOpenTerminal()
+        } else if (isTerminalOpen) {
+            onCloseTerminal()
+        }
     }
 
     var inputText by remember { mutableStateOf("") }
@@ -445,6 +465,7 @@ fun FloatingAddressBar(
                             onClick = {
                                 if (effectivelyCompact) {
                                     onExpand()
+                                    handleTerminalAddressBarTrigger()
                                     return@combinedClickable
                                 }
                                 val currentUrl = currentTab?.url.orEmpty()
@@ -465,12 +486,7 @@ fun FloatingAddressBar(
                                     focusRequester.requestFocus()
                                 } catch (_: Exception) {}
 
-                                // Terminal CLI auto-appear / disappear handling on address bar tap
-                                if (settings?.terminalAutoAppearOnAddressBar == true) {
-                                    onOpenTerminal()
-                                } else if (isTerminalOpen) {
-                                    onCloseTerminal()
-                                }
+                                handleTerminalAddressBarTrigger()
                             },
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -531,7 +547,7 @@ fun FloatingAddressBar(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 IconButton(
-                                    onClick = { showTargetControlDialog = true },
+                                    onClick = { showControlActionSheet = true },
                                     modifier = Modifier
                                         .size(32.dp)
                                         .testTag("address_bar_control_toggle_button")
@@ -576,9 +592,7 @@ fun FloatingAddressBar(
                                                         } else {
                                                             inputText = currentUrl
                                                         }
-                                                        if (settings?.terminalAutoAppearOnAddressBar == true) {
-                                                            onOpenTerminal()
-                                                        }
+                                                        handleTerminalAddressBarTrigger()
                                                     }
                                                 }
                                             }
@@ -692,6 +706,8 @@ fun FloatingAddressBar(
                                                         try {
                                                             focusRequester.requestFocus()
                                                         } catch (_: Exception) {}
+
+                                                        handleTerminalAddressBarTrigger()
                                                     },
                                                     onLongClick = {
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -844,621 +860,85 @@ fun FloatingAddressBar(
     }
 }
 
-    // Target Website & Address Bar Behavior Control Dialog
-    if (showTargetControlDialog && settings != null && onUpdateSettings != null) {
-        var tempUrl by remember(settings.autoLoadTargetUrl) { mutableStateOf(settings.autoLoadTargetUrl) }
-        var tempAutoLoad by remember(settings.autoLoadTargetOnFocus) { mutableStateOf(settings.autoLoadTargetOnFocus) }
-        var tempBridgeEnabled by remember(settings.bidirectionalBridgeEnabled) { mutableStateOf(settings.bidirectionalBridgeEnabled) }
-        var tempBridgeApplyToAll by remember(settings.bridgeApplyToAllWebsites) { mutableStateOf(settings.bridgeApplyToAllWebsites) }
-        var tempTerminalAutoAppear by remember(settings.terminalAutoAppearOnAddressBar) { mutableStateOf(settings.terminalAutoAppearOnAddressBar) }
-
-        val presetSites = listOf(
-            Pair("GVONE CharAssist", "https://charassist-c4uzg7hb.manus.space"),
-            Pair("RSS Group Feed", "https://rssgroupfeed-jaelvwfd.manus.space"),
-            Pair("DuckDuckGo", "https://duckduckgo.com"),
-            Pair("Google", "https://www.google.com"),
-            Pair("Brave Search", "https://search.brave.com")
+    // Address Bar Control Action Menu (Dark-mode Apple-inspired horizontal action sheet)
+    if (showControlActionSheet) {
+        val currentUrl = currentTab?.url.orEmpty()
+        val currentDomain = com.example.data.connector.WebsiteAccessConnectorService.extractDomain(currentUrl)
+        val accessContext = com.example.data.connector.WebsiteAccessContext(
+            currentTabId = currentTab?.id ?: "default",
+            currentUrl = currentUrl,
+            currentDomain = currentDomain,
+            currentEnvironmentId = currentEnvironmentId,
+            currentEnvironmentName = currentEnvironmentName
         )
 
-        AlertDialog(
-            onDismissRequest = { showTargetControlDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.Tune,
-                        contentDescription = null,
-                        tint = GVONEPrimary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text("Address Bar & Bridge Controls", color = GVONETextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                }
+        val controlActions = ControlActionRegistry.buildDefaultActions(
+            onPhotos = {
+                showControlActionSheet = false
+                onOpenPhotos?.invoke()
             },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Text(
-                        text = "Configure the bidirectional bridge architecture, input router, and address bar behaviors.",
-                        color = GVONETextSecondary,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp
-                    )
-
-                    // Large Computer Screen with Terminal CLI & Options on Top of Bridge Controls
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = Color(0xFF090D14),
-                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Color(0xFF818CF8)))),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("bridge_dialog_computer_terminal_screen")
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp)
-                        ) {
-                            // Monitor Screen Top Window Bar
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Box(modifier = Modifier.size(9.dp).clip(CircleShape).background(Color(0xFFEF4444)))
-                                    Box(modifier = Modifier.size(9.dp).clip(CircleShape).background(Color(0xFFF59E0B)))
-                                    Box(modifier = Modifier.size(9.dp).clip(CircleShape).background(Color(0xFF10B981)))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Icon(
-                                        imageVector = Icons.Rounded.DesktopWindows,
-                                        contentDescription = null,
-                                        tint = Color(0xFF38BDF8),
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Text(
-                                        text = "TERMINAL CLI CONSOLE",
-                                        color = Color(0xFF94A3B8),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.8.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = if (tempTerminalAutoAppear) Color(0xFF064E3B) else Color(0xFF1E293B),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (tempTerminalAutoAppear) Color(0xFF10B981) else Color(0xFF475569)),
-                                    modifier = Modifier
-                                        .clickable {
-                                            tempTerminalAutoAppear = !tempTerminalAutoAppear
-                                            onUpdateSettings(
-                                                settings.copy(
-                                                    autoLoadTargetOnFocus = tempAutoLoad,
-                                                    autoLoadTargetUrl = tempUrl,
-                                                    bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                                    bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                                    terminalAutoAppearOnAddressBar = tempTerminalAutoAppear
-                                                )
-                                            )
-                                            val msg = if (tempTerminalAutoAppear) "Terminal CLI will always appear when clicking address bar" else "Auto-appear disabled (Terminal CLI disappears on tap)"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        }
-                                        .testTag("bridge_dialog_auto_appear_badge")
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(6.dp)
-                                                .clip(CircleShape)
-                                                .background(if (tempTerminalAutoAppear) Color(0xFF4ADE80) else Color(0xFF94A3B8))
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = if (tempTerminalAutoAppear) "ALWAYS ON TAP" else "CLICK TO PIN",
-                                            color = if (tempTerminalAutoAppear) Color(0xFF4ADE80) else Color(0xFF94A3B8),
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Terminal Code Display Canvas (tap to launch)
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFF0D121D),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        showTargetControlDialog = false
-                                        onOpenTerminal()
-                                    }
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(10.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "gvone@browser",
-                                            color = Color(0xFF4ADE80),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                        Text(
-                                            text = ":",
-                                            color = Color(0xFF94A3B8),
-                                            fontSize = 11.sp,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                        Text(
-                                            text = "~",
-                                            color = Color(0xFF38BDF8),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                        Text(
-                                            text = "$ bridge status --interactive",
-                                            color = Color(0xFFE2E8F0),
-                                            fontSize = 11.sp,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(3.dp))
-                                    Text(
-                                        text = "● Bridge Engine: ACTIVE (HTTP/WS v2.4)\n" +
-                                                "● Address Bar Auto-Appear: " + (if (tempTerminalAutoAppear) "ALWAYS APPEAR (Pinned)" else "DISABLED (Disappears)") + "\n" +
-                                                "● Quick Action: Tap here to open CLI console",
-                                        color = Color(0xFF94A3B8),
-                                        fontSize = 10.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        lineHeight = 14.sp
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Interactive Option: Always appear while clicking address bar or disable/disappear
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (tempTerminalAutoAppear) Color(0xFF0F2236) else Color(0xFF131923),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.2.dp,
-                                    if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF2E3D52)
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        tempTerminalAutoAppear = !tempTerminalAutoAppear
-                                        onUpdateSettings(
-                                            settings.copy(
-                                                autoLoadTargetOnFocus = tempAutoLoad,
-                                                autoLoadTargetUrl = tempUrl,
-                                                bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                                bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                                terminalAutoAppearOnAddressBar = tempTerminalAutoAppear
-                                            )
-                                        )
-                                        val msg = if (tempTerminalAutoAppear) "Terminal CLI will always appear when clicking address bar" else "Terminal CLI auto-appear disabled (disappears on tap)"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                    .testTag("bridge_terminal_always_appear_toggle_card")
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 9.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(
-                                            imageVector = if (tempTerminalAutoAppear) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                                            contentDescription = null,
-                                            tint = if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF64748B),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Column {
-                                            Text(
-                                                text = if (tempTerminalAutoAppear) "Always appear on address bar click" else "Auto-appear disabled (disappear)",
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = if (tempTerminalAutoAppear)
-                                                    "Terminal CLI always appears when clicking address bar"
-                                                else
-                                                    "Click to enable: currently terminal CLI disappears on address bar tap",
-                                                color = Color(0xFF94A3B8),
-                                                fontSize = 10.sp,
-                                                lineHeight = 13.sp
-                                            )
-                                        }
-                                    }
-                                    Switch(
-                                        checked = tempTerminalAutoAppear,
-                                        onCheckedChange = { isChecked ->
-                                            tempTerminalAutoAppear = isChecked
-                                            onUpdateSettings(
-                                                settings.copy(
-                                                    autoLoadTargetOnFocus = tempAutoLoad,
-                                                    autoLoadTargetUrl = tempUrl,
-                                                    bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                                    bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                                    terminalAutoAppearOnAddressBar = isChecked
-                                                )
-                                            )
-                                            val msg = if (isChecked) "Terminal CLI will always appear when clicking address bar" else "Terminal CLI auto-appear disabled (disappears on tap)"
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                        },
-                                        colors = SwitchDefaults.colors(
-                                            checkedThumbColor = Color.White,
-                                            checkedTrackColor = Color(0xFF2563EB),
-                                            uncheckedThumbColor = Color(0xFF94A3B8),
-                                            uncheckedTrackColor = Color(0xFF334155)
-                                        ),
-                                        modifier = Modifier.scale(0.82f).testTag("terminal_auto_appear_switch")
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Terminal Interactive Options & Action Row
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Button(
-                                    onClick = {
-                                        showTargetControlDialog = false
-                                        onOpenTerminal()
-                                    },
-                                    modifier = Modifier.weight(1f).height(36.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFF2563EB)
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Terminal,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = Color.White
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Open Terminal CLI",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                }
-
-                                OutlinedButton(
-                                    onClick = {
-                                        tempTerminalAutoAppear = !tempTerminalAutoAppear
-                                        onUpdateSettings(
-                                            settings.copy(
-                                                autoLoadTargetOnFocus = tempAutoLoad,
-                                                autoLoadTargetUrl = tempUrl,
-                                                bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                                bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                                terminalAutoAppearOnAddressBar = tempTerminalAutoAppear
-                                            )
-                                        )
-                                        val msg = if (tempTerminalAutoAppear) "Terminal CLI will always appear when clicking address bar" else "Terminal CLI auto-appear disabled (disappears on tap)"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.height(36.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF334155)),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (tempTerminalAutoAppear) Color(0xFF0F2236) else Color.Transparent,
-                                        contentColor = if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF94A3B8)
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (tempTerminalAutoAppear) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF94A3B8)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = if (tempTerminalAutoAppear) "Always Appear" else "Disappear",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-
-                                OutlinedButton(
-                                    onClick = {
-                                        showTargetControlDialog = false
-                                        onOpenCommandManager()
-                                    },
-                                    modifier = Modifier.height(36.dp),
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = Color(0xFF94A3B8)
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Tune,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = Color(0xFF94A3B8)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Commands",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 1. Bidirectional Bridge / InputRouter Master Toggle
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1B2332),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, if (tempBridgeEnabled) GVONEPrimary.copy(alpha = 0.5f) else Color(0x33FFFFFF))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.SyncAlt,
-                                        contentDescription = null,
-                                        tint = if (tempBridgeEnabled) GVONEPrimary else Color(0xFF8E9BAE),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Bidirectional Bridge / InputRouter",
-                                        color = GVONETextPrimary,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                                Text(
-                                    text = "Directly route address queries to webpage input/chat without reloading",
-                                    color = GVONETextSecondary,
-                                    fontSize = 11.sp
-                                )
-                            }
-                            Switch(
-                                checked = tempBridgeEnabled,
-                                onCheckedChange = { tempBridgeEnabled = it },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = GVONEPrimary
-                                )
-                            )
-                        }
-                    }
-
-                    // 2. Apply to All Websites (Universal Bridge) Toggle
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1B2332),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, if (tempBridgeApplyToAll && tempBridgeEnabled) GVONEPrimary.copy(alpha = 0.5f) else Color(0x33FFFFFF))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Language,
-                                        contentDescription = null,
-                                        tint = if (tempBridgeApplyToAll && tempBridgeEnabled) GVONEPrimary else Color(0xFF8E9BAE),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Apply Bridge to All Websites",
-                                        color = if (tempBridgeEnabled) GVONETextPrimary else Color(0xFF6B7A90),
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                                Text(
-                                    text = if (tempBridgeApplyToAll) "Active for all websites & AI web apps" else "Active only for trusted GVONE web apps",
-                                    color = GVONETextSecondary,
-                                    fontSize = 11.sp
-                                )
-                            }
-                            Switch(
-                                checked = tempBridgeApplyToAll,
-                                enabled = tempBridgeEnabled,
-                                onCheckedChange = { tempBridgeApplyToAll = it },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = GVONEPrimary
-                                )
-                            )
-                        }
-                    }
-
-                    // 3. Auto-load on Tap Toggle
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1B2332),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33FFFFFF))
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text(
-                                    text = "Auto-load Target on Tap",
-                                    color = GVONETextPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "Automatically load target website when focusing address bar",
-                                    color = GVONETextSecondary,
-                                    fontSize = 11.sp
-                                )
-                            }
-                            Switch(
-                                checked = tempAutoLoad,
-                                onCheckedChange = { tempAutoLoad = it },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = GVONEPrimary
-                                )
-                            )
-                        }
-                    }
-
-                    // 4. Target Website URL Input
-                    Column {
-                        Text(
-                            text = "TARGET WEBSITE URL",
-                            color = GVONEPrimary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-                        OutlinedTextField(
-                            value = tempUrl,
-                            onValueChange = { tempUrl = it },
-                            placeholder = { Text("https://...", color = Color(0xFF6B7A90)) },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = Color(0xFF161D2A),
-                                unfocusedContainerColor = Color(0xFF161D2A),
-                                focusedBorderColor = GVONEPrimary,
-                                unfocusedBorderColor = Color(0xFF2C394E),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("target_url_input_field")
-                        )
-                    }
-
-                    // 5. Preset Website Chips
-                    Column {
-                        Text(
-                            text = "QUICK PRESETS",
-                            color = GVONETextSecondary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            presetSites.take(3).forEach { (name, url) ->
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (tempUrl == url) GVONEPrimary.copy(alpha = 0.25f) else Color(0xFF1C2433),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (tempUrl == url) GVONEPrimary else Color(0x22FFFFFF)
-                                    ),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable { tempUrl = url }
-                                ) {
-                                    Text(
-                                        text = name,
-                                        color = if (tempUrl == url) GVONEPrimary else Color(0xFFCCD6E5),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+            onCamera = {
+                showControlActionSheet = false
+                onOpenCamera?.invoke()
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val finalUrl = if (tempUrl.isNotBlank() && !tempUrl.startsWith("http://") && !tempUrl.startsWith("https://")) {
-                            "https://$tempUrl"
-                        } else {
-                            tempUrl
-                        }
-                        onUpdateSettings(
-                            settings.copy(
-                                autoLoadTargetOnFocus = tempAutoLoad,
-                                autoLoadTargetUrl = finalUrl,
-                                bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                terminalAutoAppearOnAddressBar = tempTerminalAutoAppear
-                            )
-                        )
-                        showTargetControlDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Save & Apply", color = Color.White, fontWeight = FontWeight.Bold)
-                }
+            onAvatar = {
+                showControlActionSheet = false
+                onOpenAvatar?.invoke()
             },
-            dismissButton = {
-                TextButton(onClick = { showTargetControlDialog = false }) {
-                    Text("Cancel", color = GVONETextSecondary)
-                }
+            onConnector = {
+                showControlActionSheet = false
+                onOpenConnector?.invoke(accessContext)
             },
-            containerColor = Color(0xFF141923)
+            onFiles = {
+                showControlActionSheet = false
+                onOpenFiles?.invoke()
+            },
+            onTerminal = {
+                showControlActionSheet = false
+                onOpenTerminal()
+            },
+            onBridge = {
+                // Handled inside ControlActionSheet by scrolling to Bridge section
+            },
+            onConnectorHub = {
+                showControlActionSheet = false
+                onOpenConnectorHub?.invoke()
+            },
+            onResearch = {
+                showControlActionSheet = false
+                onOpenResearchWorkspace?.invoke()
+            },
+            onDataSaver = {
+                showControlActionSheet = false
+                onOpenDataSaver?.invoke()
+            },
+            onCommunicationHub = {
+                showControlActionSheet = false
+                onOpenCommunicationHub?.invoke()
+            }
         )
+
+        ControlActionSheet(
+            actions = controlActions,
+            websiteContext = accessContext,
+            settings = settings,
+            onUpdateSettings = onUpdateSettings,
+            onOpenTerminal = {
+                showControlActionSheet = false
+                onOpenTerminal()
+            },
+            onOpenCommandManager = {
+                showControlActionSheet = false
+                onOpenCommandManager()
+            },
+            onDismiss = { showControlActionSheet = false }
+        )
+    }
+
+    // Redirect legacy target control dialog to the unified Control & Terminal Center
+    if (showTargetControlDialog) {
+        showControlActionSheet = true
+        showTargetControlDialog = false
     }
 }
 
