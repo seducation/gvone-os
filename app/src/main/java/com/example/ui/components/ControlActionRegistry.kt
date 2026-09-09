@@ -25,6 +25,7 @@ object ControlActionRegistry {
     const val ACTION_CAMERA = "camera"
     const val ACTION_AVATAR = "avatar"
     const val ACTION_CONNECTOR = "connector"
+    const val ACTION_FILES = "files"
     const val ACTION_TERMINAL = "terminal"
     const val ACTION_BRIDGE = "bridge"
 
@@ -34,14 +35,16 @@ object ControlActionRegistry {
      * 2. Camera
      * 3. Avatar
      * 4. Connector
-     * 5. Terminal (CLI)
-     * 6. Bridge
+     * 5. Files (Universal File System)
+     * 6. Terminal (CLI)
+     * 7. Bridge
      */
     fun buildDefaultActions(
         onPhotos: () -> Unit,
         onCamera: () -> Unit,
         onAvatar: () -> Unit,
         onConnector: () -> Unit,
+        onFiles: () -> Unit = {},
         onTerminal: () -> Unit,
         onBridge: () -> Unit
     ): List<ControlActionItem> {
@@ -73,6 +76,13 @@ object ControlActionRegistry {
                 icon = Icons.Outlined.Link,
                 contentDescription = "Website Access & Account Connector",
                 onClick = onConnector
+            ),
+            ControlActionItem(
+                id = ACTION_FILES,
+                title = "Files",
+                icon = Icons.Outlined.Folder,
+                contentDescription = "Universal GVONE File System",
+                onClick = onFiles
             ),
             ControlActionItem(
                 id = ACTION_TERMINAL,

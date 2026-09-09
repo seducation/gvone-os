@@ -19,11 +19,12 @@ class WebsiteAccessConnectorUnitTest {
             onCamera = {},
             onAvatar = {},
             onConnector = {},
+            onFiles = {},
             onTerminal = {},
             onBridge = {}
         )
 
-        assertEquals(6, actions.size)
+        assertEquals(7, actions.size)
         assertEquals(ControlActionRegistry.ACTION_PHOTOS, actions[0].id)
         assertEquals("Photos", actions[0].title)
         assertEquals(ControlActionRegistry.ACTION_CAMERA, actions[1].id)
@@ -32,10 +33,12 @@ class WebsiteAccessConnectorUnitTest {
         assertEquals("Avatar", actions[2].title)
         assertEquals(ControlActionRegistry.ACTION_CONNECTOR, actions[3].id)
         assertEquals("Connector", actions[3].title)
-        assertEquals(ControlActionRegistry.ACTION_TERMINAL, actions[4].id)
-        assertEquals("Terminal", actions[4].title)
-        assertEquals(ControlActionRegistry.ACTION_BRIDGE, actions[5].id)
-        assertEquals("Bridge", actions[5].title)
+        assertEquals(ControlActionRegistry.ACTION_FILES, actions[4].id)
+        assertEquals("Files", actions[4].title)
+        assertEquals(ControlActionRegistry.ACTION_TERMINAL, actions[5].id)
+        assertEquals("Terminal", actions[5].title)
+        assertEquals(ControlActionRegistry.ACTION_BRIDGE, actions[6].id)
+        assertEquals("Bridge", actions[6].title)
     }
 
     @Test

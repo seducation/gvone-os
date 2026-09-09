@@ -50,6 +50,8 @@ sealed interface ActiveSheet {
     object CustomCommands : ActiveSheet
     object Terminal : ActiveSheet
     object WebsiteConnector : ActiveSheet
+    object Files : ActiveSheet
+    object WebsiteConnectors : ActiveSheet
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -58,6 +60,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val torManager = TorManager()
     val downloadManager = BrowserDownloadManager(application, repository)
     val aiService = GVONEAIService(torManager)
+    val fileSystem = com.example.data.files.GVONEFileSystem(application)
     val terminalRepository = com.example.data.terminal.TerminalRepository(application)
     private val _terminalLines = MutableStateFlow<List<TerminalLine>>(emptyList())
     val terminalLines: StateFlow<List<TerminalLine>> = _terminalLines.asStateFlow()
@@ -805,6 +808,34 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             closeSheet()
         }
         persistTabsAndActiveState()
+    }
+
+    fun openFileInTab(file: com.example.data.files.GVONEFileItem, inNewTab: Boolean = false) {
+        val fileUrl = "gvone-file://${file.path}"
+        if (inNewTab || _tabs.value.isEmpty()) {
+            val newTab = BrowserTab(
+                id = UUID.randomUUID().toString(),
+                title = file.name,
+                url = fileUrl,
+                isPrivate = false,
+                tabGroupId = _activeGroupId.value,
+                environmentId = environmentManager.activeEnvironmentId.value
+            )
+            _tabs.value = _tabs.value + newTab
+            _currentTabId.value = newTab.id
+            _addressBarInput.value = fileUrl
+            persistTabsAndActiveState()
+        } else {
+            val currentId = _currentTabId.value
+            _tabs.value = _tabs.value.map { tab ->
+                if (tab.id == currentId) {
+                    tab.copy(url = fileUrl, title = file.name)
+                } else tab
+            }
+            _addressBarInput.value = fileUrl
+            persistTabsAndActiveState()
+        }
+        closeSheet()
     }
 
     fun closeCurrentTab() {

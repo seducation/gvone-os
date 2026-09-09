@@ -101,6 +101,7 @@ fun FloatingAddressBar(
     onOpenPhotos: (() -> Unit)? = null,
     onOpenCamera: (() -> Unit)? = null,
     onOpenAvatar: (() -> Unit)? = null,
+    onOpenFiles: (() -> Unit)? = null,
     currentEnvironmentId: String = "default",
     currentEnvironmentName: String = "Default",
     modifier: Modifier = Modifier
@@ -883,6 +884,10 @@ fun FloatingAddressBar(
             onConnector = {
                 showControlActionSheet = false
                 onOpenConnector?.invoke(accessContext)
+            },
+            onFiles = {
+                showControlActionSheet = false
+                onOpenFiles?.invoke()
             },
             onTerminal = {
                 showControlActionSheet = false

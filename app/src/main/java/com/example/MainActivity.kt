@@ -41,6 +41,9 @@ import com.example.ui.contextmenu.PagePreviewSheet
 import com.example.ui.contextmenu.TabGroupPickerSheet
 import com.example.ui.screens.*
 import com.example.ui.screens.canvas.EnvironmentStartPageCanvas
+import com.example.ui.screens.connectors.WebsiteConnectorsManagerScreen
+import com.example.ui.screens.files.GVONEFileBrowserSheet
+import com.example.ui.screens.files.GVONEFileViewerScreen
 import com.example.ui.screens.webwidget.WebWidgetConfigSheet
 import com.example.ui.screens.webwidget.WebWidgetSelectionOverlay
 import com.example.ui.theme.GVONEBrowserTheme
@@ -247,6 +250,17 @@ fun BrowserApp(
                                 onUpdateLayoutMode = { viewModel.updateCanvasLayoutMode(it) },
                                 modifier = Modifier.fillMaxSize()
                             )
+                        } else if (tab.url.startsWith("gvone-file://")) {
+                            val filePath = tab.url.removePrefix("gvone-file://")
+                            GVONEFileViewerScreen(
+                                fileRelativePath = filePath,
+                                fileSystem = viewModel.fileSystem,
+                                onCloseTab = { viewModel.closeTab(tab.id) },
+                                onOpenTerminalWithCommand = {
+                                    viewModel.openSheet(ActiveSheet.Terminal)
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
                         } else {
                             GVONEWebView(
                                 tab = tab,
@@ -383,6 +397,9 @@ fun BrowserApp(
                 onOpenAvatar = {
                     showAvatarDialog = true
                 },
+                onOpenFiles = {
+                    viewModel.openSheet(ActiveSheet.Files)
+                },
                 currentEnvironmentId = currentEnvironment.id,
                 currentEnvironmentName = currentEnvironment.name,
                 modifier = Modifier
@@ -467,6 +484,8 @@ fun BrowserApp(
                 onRetryTor = { viewModel.retryTorConnection() },
                 onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
                 onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
+                onOpenFiles = { viewModel.openSheet(ActiveSheet.Files) },
+                onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
                 onSettingsChanged = { viewModel.updateSettings(it) },
                 onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onBack = { viewModel.closeSheet() }
@@ -565,6 +584,8 @@ fun BrowserApp(
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                 onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
                 onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
+                onOpenFiles = { viewModel.openSheet(ActiveSheet.Files) },
+                onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
                 onNavigateToUrl = { url -> viewModel.loadUrlInCurrentTab(url) },
                 onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onClose = { viewModel.closeSheet() }
@@ -714,6 +735,28 @@ fun BrowserApp(
                 },
                 onGenerateWithAI = { prompt, callback ->
                     viewModel.generateCommandWithAI(prompt, callback)
+                },
+                onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // Universal GVONE File System & Storage Browser Sheet
+        if (activeSheet == ActiveSheet.Files) {
+            GVONEFileBrowserSheet(
+                fileSystem = viewModel.fileSystem,
+                onOpenFileInTab = { file, inNewTab ->
+                    viewModel.openFileInTab(file, inNewTab)
+                },
+                onDismiss = { viewModel.closeSheet() }
+            )
+        }
+
+        // Universal Website Accounts, Connectors, Passwords & Cookies Manager
+        if (activeSheet == ActiveSheet.WebsiteConnectors) {
+            WebsiteConnectorsManagerScreen(
+                viewModel = viewModel,
+                onOpenUrl = { url ->
+                    viewModel.loadUrlInCurrentTab(url)
                 },
                 onClose = { viewModel.closeSheet() }
             )
