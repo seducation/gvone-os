@@ -807,7 +807,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         isPrivate: Boolean = _isPrivateMode.value,
         groupId: String? = _activeGroupId.value,
         inBackground: Boolean = false
-    ) {
+    ): String {
         val currentEnv = environmentManager.currentEnvironment.value
         val defaultUrl = if (!currentEnv.startPageUrl.isNullOrBlank()) currentEnv.startPageUrl else START_PAGE_URL
         val targetUrl = url ?: defaultUrl
@@ -833,6 +833,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             closeSheet()
         }
         persistTabsAndActiveState()
+        return newTab.id
     }
 
     fun openFileInTab(file: com.example.data.files.GVONEFileItem, inNewTab: Boolean = false) {

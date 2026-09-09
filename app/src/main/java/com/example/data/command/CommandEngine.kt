@@ -309,6 +309,58 @@ object CommandEngine {
             isBuiltIn = true
         ),
         CustomCommandEntity(
+            id = "cmd_agent",
+            command = "/agent",
+            name = "Agentic Mode (Atlas, Comet, Dia)",
+            description = "Activate autonomous agentic execution, multi-tab research & sandbox",
+            type = CommandType.AUTOMATION,
+            template = "agentic_mode",
+            aliasesRaw = "/agentic,/atlas,/comet,/dia",
+            category = CommandCategory.AUTOMATION,
+            isEnabled = true,
+            isPinned = true,
+            isBuiltIn = true
+        ),
+        CustomCommandEntity(
+            id = "cmd_group",
+            command = "/group",
+            name = "Tab Groups",
+            description = "Manage, create, and organize browser tab cohorts",
+            type = CommandType.BROWSER_ACTION,
+            template = "tab_groups",
+            aliasesRaw = "/groups,/tabgroup,/grouptabs",
+            category = CommandCategory.BROWSER,
+            isEnabled = true,
+            isPinned = true,
+            isBuiltIn = true
+        ),
+        CustomCommandEntity(
+            id = "cmd_sandbox",
+            command = "/sandbox",
+            name = "Sandbox Tab & File Workspace",
+            description = "Focus Sandbox tab group and live file workspace",
+            type = CommandType.BROWSER_ACTION,
+            template = "sandbox_workspace",
+            aliasesRaw = "/sb,/workspace",
+            category = CommandCategory.BROWSER,
+            isEnabled = true,
+            isPinned = true,
+            isBuiltIn = true
+        ),
+        CustomCommandEntity(
+            id = "cmd_organize",
+            command = "/organize",
+            name = "Intelligent Tab Clustering",
+            description = "Auto-organize all open tabs into domain & topic groups",
+            type = CommandType.AUTOMATION,
+            template = "organize_tabs",
+            aliasesRaw = "/cluster,/autocohort",
+            category = CommandCategory.AUTOMATION,
+            isEnabled = true,
+            isPinned = false,
+            isBuiltIn = true
+        ),
+        CustomCommandEntity(
             id = "cmd_commands",
             command = "/commands",
             name = "Command Manager",

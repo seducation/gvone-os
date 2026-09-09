@@ -3,14 +3,18 @@ package com.example.data.terminal
 import java.util.UUID
 
 enum class TerminalLineType {
-    COMMAND,      // e.g. gvone@browser:~$ /yt lo-fi
-    OUTPUT,       // standard output text
-    SUCCESS,      // green highlighted output
-    ERROR,        // red error output
-    INFO,         // cyan / sky blue info text
-    WARNING,      // yellow warning
-    SYSTEM,       // muted system header or timestamp
-    AI_RESPONSE   // AI response text
+    COMMAND,        // e.g. gvone@browser:~$ /yt lo-fi
+    OUTPUT,         // standard output text
+    SUCCESS,        // green highlighted output
+    ERROR,          // red error output
+    INFO,           // cyan / sky blue info text
+    WARNING,        // yellow warning
+    SYSTEM,         // muted system header or timestamp
+    AI_RESPONSE,    // AI response text
+    AGENT_PLAN,     // Agent plan header / breakdown
+    AGENT_STEP,     // Active agent step execution
+    AGENT_THOUGHT,  // Agent internal reasoning / thought
+    AGENT_TOOL      // Agent tool execution / observation
 }
 
 data class TerminalLine(

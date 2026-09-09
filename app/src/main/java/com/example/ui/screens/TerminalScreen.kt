@@ -56,12 +56,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.agent.sandbox.AgentPersona
+import com.example.agent.sandbox.SandboxAgentEngine
 import com.example.data.command.CommandEngine
+import com.example.data.files.GVONEFileSystem
 import com.example.data.model.*
 import com.example.data.sync.WebAppConnectionState
 import com.example.data.terminal.TerminalLine
 import com.example.data.terminal.TerminalLineType
 import com.example.data.terminal.TerminalSession
+import com.example.data.terminal.TerminalShellEngine
 import com.example.data.tor.TorConnectionState
 import com.example.ui.viewmodel.ActiveSheet
 import com.example.ui.viewmodel.BrowserViewModel
@@ -118,6 +122,28 @@ fun TerminalScreen(
     // Observe global terminal lines and bridge state from BrowserViewModel
     val globalTerminalLines by viewModel.terminalLines.collectAsStateWithLifecycle()
     val bridgeConnectionState by viewModel.webAppBridge.connectionState.collectAsStateWithLifecycle()
+
+    // Autonomous Sandbox & Shell Engines
+    val fileSystem = remember { GVONEFileSystem(context) }
+    val agentEngine = remember {
+        SandboxAgentEngine(
+            context = context,
+            viewModel = viewModel,
+            aiService = viewModel.aiService,
+            fileSystem = fileSystem
+        )
+    }
+    val shellEngine = remember {
+        TerminalShellEngine(
+            context = context,
+            viewModel = viewModel,
+            fileSystem = fileSystem,
+            agentEngine = agentEngine
+        )
+    }
+    var isAgenticMode by remember { mutableStateOf(false) }
+    var currentCwd by remember { mutableStateOf(shellEngine.promptPath) }
+    var activePersona by remember { mutableStateOf(agentEngine.activePersona) }
 
     // Multi-session management
     var sessions by remember {
@@ -233,9 +259,10 @@ fun TerminalScreen(
     // Command execution handler using centralized CommandEngine
     fun executeCommand(rawInput: String) {
         val trimmed = rawInput.trim()
+        val promptPrefix = if (isAgenticMode) "gvone[agentic:${activePersona.badge.lowercase()}]:$currentCwd$ " else "gvone@browser:$currentCwd$ "
         if (trimmed.isEmpty()) {
             val emptyCommandLine = TerminalLine(
-                text = "gvone@browser:~$ ",
+                text = promptPrefix,
                 type = TerminalLineType.COMMAND
             )
             appendLines(listOf(emptyCommandLine)) { newLines ->
@@ -254,7 +281,7 @@ fun TerminalScreen(
         historyIndex = -1
 
         val cmdLine = TerminalLine(
-            text = "gvone@browser:~$ $trimmed",
+            text = "$promptPrefix$trimmed",
             type = TerminalLineType.COMMAND
         )
         val outputLines = mutableListOf<TerminalLine>()
@@ -284,6 +311,508 @@ fun TerminalScreen(
 
             "/help", "/?" -> {
                 outputLines.addAll(generateHelpOutput(allCommands))
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/agent", "/agentic" -> {
+                when {
+                    queryArg.isBlank() -> {
+                        isAgenticMode = !isAgenticMode
+                        agentEngine.isAgenticModeEnabled = isAgenticMode
+                        outputLines.add(
+                            TerminalLine(
+                                "[AGENTIC MODE] " + (if (isAgenticMode) "ACTIVATED (${activePersona.displayName}). Type any goal/instruction to execute autonomously." else "DEACTIVATED. Standard bash shell active."),
+                                if (isAgenticMode) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+                            )
+                        )
+                        outputLines.add(
+                            TerminalLine(
+                                "Paradigms: ChatGPT Atlas (deep browser automation), Comet (multi-tab research), Dia Browser (file & tab sandbox)",
+                                TerminalLineType.INFO
+                            )
+                        )
+                    }
+                    queryArg.equals("on", ignoreCase = true) || queryArg.equals("start", ignoreCase = true) || queryArg.equals("enable", ignoreCase = true) -> {
+                        isAgenticMode = true
+                        agentEngine.isAgenticModeEnabled = true
+                        outputLines.add(TerminalLine("[AGENTIC MODE] ACTIVATED. Persona: ${activePersona.displayName}", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("Interactive agent prompt active. Use '/agent persona <atlas|comet|dia|auto>' or '/agent off' to exit.", TerminalLineType.INFO))
+                    }
+                    queryArg.equals("off", ignoreCase = true) || queryArg.equals("stop", ignoreCase = true) || queryArg.equals("disable", ignoreCase = true) -> {
+                        isAgenticMode = false
+                        agentEngine.isAgenticModeEnabled = false
+                        outputLines.add(TerminalLine("[AGENTIC MODE] DEACTIVATED. Standard bash shell active.", TerminalLineType.WARNING))
+                    }
+                    queryArg.startsWith("persona", ignoreCase = true) -> {
+                        val personaArg = queryArg.removePrefix("persona").trim().lowercase()
+                        val newPersona = when (personaArg) {
+                            "atlas", "chatgpt" -> AgentPersona.ATLAS
+                            "comet", "perplexity" -> AgentPersona.COMET
+                            "dia", "sandbox" -> AgentPersona.DIA
+                            else -> AgentPersona.AUTO
+                        }
+                        agentEngine.activePersona = newPersona
+                        activePersona = newPersona
+                        outputLines.add(TerminalLine("[AGENTIC PERSONA] Switched to: ${newPersona.displayName} (${newPersona.description})", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("status", ignoreCase = true) -> {
+                        val activeGroupName = viewModel.tabGroups.value.find { it.id == agentEngine.activeSandboxGroupId }?.name ?: "None"
+                        outputLines.add(TerminalLine("── AGENTIC RUNTIME STATUS ──", TerminalLineType.SYSTEM))
+                        outputLines.add(TerminalLine("● Mode: " + (if (isAgenticMode) "ACTIVE" else "IDLE"), if (isAgenticMode) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("● Active Persona: ${activePersona.displayName} (${activePersona.badge})", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Sandbox Tab Group: $activeGroupName", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("● Sandbox Directory: /${shellEngine.currentDirectory}", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("● Multi-Agent Core: CentralNervousSystem + BrowserController + GVONEFileSystem", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("tabs", ignoreCase = true) || queryArg.equals("group", ignoreCase = true) || queryArg.equals("organize", ignoreCase = true) -> {
+                        commitLines(outputLines)
+                        coroutineScope.launch {
+                            agentEngine.autoOrganizeTabs { line ->
+                                appendLines(listOf(line)) { newLines ->
+                                    sessions = sessions.map {
+                                        if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                                    }
+                                }
+                            }
+                        }
+                        inputText = TextFieldValue("")
+                        return
+                    }
+                    else -> {
+                        commitLines(outputLines)
+                        coroutineScope.launch {
+                            agentEngine.runAgenticWorkflow(queryArg, shellEngine.currentDirectory) { line ->
+                                appendLines(listOf(line)) { newLines ->
+                                    sessions = sessions.map {
+                                        if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                                    }
+                                }
+                            }
+                        }
+                        inputText = TextFieldValue("")
+                        return
+                    }
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/groups", "/tabgroups", "/group" -> {
+                when {
+                    queryArg.isBlank() -> {
+                        outputLines.addAll(shellEngine.listTabGroups())
+                    }
+                    queryArg.startsWith("create", ignoreCase = true) -> {
+                        val name = queryArg.removePrefix("create").trim()
+                        if (name.isBlank()) {
+                            outputLines.add(TerminalLine("Usage: /group create <group_name> [color_hex]", TerminalLineType.WARNING))
+                        } else {
+                            val parts = name.split(" ")
+                            val groupName = parts[0]
+                            val color = parts.getOrNull(1)
+                            val newId = viewModel.createTabGroup(groupName, colorHex = color)
+                            outputLines.add(TerminalLine("[OK] Created Tab Group: \"$groupName\" (ID: ${newId.take(8)}...)", TerminalLineType.SUCCESS))
+                        }
+                    }
+                    queryArg.startsWith("add", ignoreCase = true) -> {
+                        val parts = queryArg.removePrefix("add").trim().split(" ")
+                        if (parts.size < 2) {
+                            outputLines.add(TerminalLine("Usage: /group add <tab_index_or_id> <group_name_or_id>", TerminalLineType.WARNING))
+                        } else {
+                            val tabRef = parts[0]
+                            val groupRef = parts[1]
+                            val targetTab = tabRef.toIntOrNull()?.let { tabs.getOrNull(it) } ?: tabs.find { it.id == tabRef }
+                            val targetGroup = viewModel.tabGroups.value.find { it.name.equals(groupRef, ignoreCase = true) || it.id == groupRef }
+                            if (targetTab == null) {
+                                outputLines.add(TerminalLine("[ERR] Tab not found: $tabRef", TerminalLineType.ERROR))
+                            } else if (targetGroup == null) {
+                                outputLines.add(TerminalLine("[ERR] Tab group not found: $groupRef", TerminalLineType.ERROR))
+                            } else {
+                                viewModel.moveTabToGroup(targetTab.id, targetGroup.id)
+                                outputLines.add(TerminalLine("[OK] Moved tab \"${targetTab.title}\" to group \"${targetGroup.name}\"", TerminalLineType.SUCCESS))
+                            }
+                        }
+                    }
+                    queryArg.startsWith("close", ignoreCase = true) -> {
+                        val groupRef = queryArg.removePrefix("close").trim()
+                        val targetGroup = viewModel.tabGroups.value.find { it.name.equals(groupRef, ignoreCase = true) || it.id == groupRef }
+                        if (targetGroup != null) {
+                            viewModel.deleteTabGroup(targetGroup.id, closeTabs = true)
+                            outputLines.add(TerminalLine("[OK] Closed Tab Group \"${targetGroup.name}\" and all its tabs", TerminalLineType.SUCCESS))
+                        } else {
+                            outputLines.add(TerminalLine("[ERR] Tab group not found: $groupRef", TerminalLineType.ERROR))
+                        }
+                    }
+                    queryArg.startsWith("sandbox", ignoreCase = true) -> {
+                        coroutineScope.launch {
+                            val lines = shellEngine.focusSandboxTabGroup()
+                            commitLines(lines)
+                        }
+                        inputText = TextFieldValue("")
+                        return
+                    }
+                    queryArg.startsWith("organize", ignoreCase = true) -> {
+                        coroutineScope.launch {
+                            agentEngine.autoOrganizeTabs { line ->
+                                appendLines(listOf(line)) { newLines ->
+                                    sessions = sessions.map {
+                                        if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                                    }
+                                }
+                            }
+                        }
+                        inputText = TextFieldValue("")
+                        return
+                    }
+                    else -> {
+                        outputLines.addAll(shellEngine.listTabGroups())
+                    }
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/sandbox" -> {
+                coroutineScope.launch {
+                    val lines = shellEngine.focusSandboxTabGroup()
+                    commitLines(lines)
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/organize" -> {
+                commitLines(outputLines)
+                coroutineScope.launch {
+                    agentEngine.autoOrganizeTabs { line ->
+                        appendLines(listOf(line)) { newLines ->
+                            sessions = sessions.map {
+                                if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                            }
+                        }
+                    }
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/creategroup" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("Usage: /creategroup <group_name> [color_hex]", TerminalLineType.WARNING))
+                } else {
+                    val parts = queryArg.split(" ")
+                    val name = parts[0]
+                    val color = parts.getOrNull(1)
+                    val id = viewModel.createTabGroup(name, colorHex = color)
+                    outputLines.add(TerminalLine("[OK] Created Tab Group \"$name\" (ID: ${id.take(8)}...)", TerminalLineType.SUCCESS))
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/grouptab" -> {
+                val parts = queryArg.split(" ")
+                if (parts.size < 2) {
+                    outputLines.add(TerminalLine("Usage: /grouptab <tab_index_or_id> <group_name_or_id>", TerminalLineType.WARNING))
+                } else {
+                    val tabRef = parts[0]
+                    val groupRef = parts[1]
+                    val targetTab = tabRef.toIntOrNull()?.let { tabs.getOrNull(it) } ?: tabs.find { it.id == tabRef }
+                    val targetGroup = viewModel.tabGroups.value.find { it.name.equals(groupRef, ignoreCase = true) || it.id == groupRef }
+                    if (targetTab == null) {
+                        outputLines.add(TerminalLine("[ERR] Tab not found: $tabRef", TerminalLineType.ERROR))
+                    } else if (targetGroup == null) {
+                        outputLines.add(TerminalLine("[ERR] Tab group not found: $groupRef", TerminalLineType.ERROR))
+                    } else {
+                        viewModel.moveTabToGroup(targetTab.id, targetGroup.id)
+                        outputLines.add(TerminalLine("[OK] Moved tab \"${targetTab.title}\" to group \"${targetGroup.name}\"", TerminalLineType.SUCCESS))
+                    }
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/ungroup" -> {
+                val targetTab = if (queryArg.isBlank()) currentTab else queryArg.toIntOrNull()?.let { tabs.getOrNull(it) } ?: tabs.find { it.id == queryArg }
+                if (targetTab != null) {
+                    viewModel.removeTabFromGroup(targetTab.id)
+                    outputLines.add(TerminalLine("[OK] Removed tab \"${targetTab.title}\" from group", TerminalLineType.SUCCESS))
+                } else {
+                    outputLines.add(TerminalLine("[ERR] Tab not found: $queryArg", TerminalLineType.ERROR))
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/pwd" -> {
+                outputLines.add(TerminalLine(shellEngine.promptPath, TerminalLineType.OUTPUT))
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/cd" -> {
+                coroutineScope.launch {
+                    val line = shellEngine.changeDirectory(queryArg)
+                    currentCwd = shellEngine.promptPath
+                    commitLines(listOf(line))
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/ls", "/dir" -> {
+                coroutineScope.launch {
+                    val lines = shellEngine.listFiles(queryArg)
+                    commitLines(lines)
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/cat" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("cat: missing file operand", TerminalLineType.ERROR))
+                    commitLines(outputLines)
+                } else {
+                    coroutineScope.launch {
+                        val lines = shellEngine.catFile(queryArg)
+                        commitLines(lines)
+                    }
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/touch" -> {
+                coroutineScope.launch {
+                    val line = shellEngine.touchFile(queryArg)
+                    commitLines(listOf(line))
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/mkdir" -> {
+                coroutineScope.launch {
+                    val line = shellEngine.makeDirectory(queryArg)
+                    commitLines(listOf(line))
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/rm" -> {
+                coroutineScope.launch {
+                    val line = shellEngine.removeFile(queryArg)
+                    commitLines(listOf(line))
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/tree" -> {
+                coroutineScope.launch {
+                    val lines = shellEngine.generateTree(queryArg)
+                    commitLines(lines)
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/df", "/du" -> {
+                coroutineScope.launch {
+                    val lines = shellEngine.getDiskUsage()
+                    commitLines(lines)
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/cookies" -> {
+                outputLines.addAll(shellEngine.inspectCookies())
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/click" -> {
+                val activeWv = viewModel.getActiveWebView()
+                if (activeWv == null) {
+                    outputLines.add(TerminalLine("[ERR] No active WebView tab available", TerminalLineType.ERROR))
+                } else if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("Usage: click <css_selector_or_text>", TerminalLineType.WARNING))
+                } else {
+                    val escaped = queryArg.replace("'", "\\'")
+                    val js = """
+                        (function() {
+                            var el = document.querySelector('$escaped');
+                            if (!el) {
+                                var all = document.querySelectorAll('button, a, input, [role="button"]');
+                                for (var i = 0; i < all.length; i++) {
+                                    if (all[i].innerText && all[i].innerText.toLowerCase().includes('$escaped'.toLowerCase())) {
+                                        el = all[i]; break;
+                                    }
+                                }
+                            }
+                            if (el) {
+                                el.click();
+                                return 'Clicked: ' + (el.tagName || '') + ' ' + (el.innerText || el.value || '').substring(0, 30);
+                            }
+                            return 'Element not found: $escaped';
+                        })();
+                    """.trimIndent()
+                    activeWv.evaluateJavascript(js) { res ->
+                        appendLines(listOf(TerminalLine(res?.trim('\"') ?: "null", TerminalLineType.SUCCESS))) { newLines ->
+                            sessions = sessions.map {
+                                if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                            }
+                        }
+                    }
+                    outputLines.add(TerminalLine("[ACTION] Attempting click on '$queryArg'...", TerminalLineType.INFO))
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/type" -> {
+                val activeWv = viewModel.getActiveWebView()
+                val parts = queryArg.split(" ", limit = 2)
+                if (activeWv == null) {
+                    outputLines.add(TerminalLine("[ERR] No active WebView tab available", TerminalLineType.ERROR))
+                } else if (parts.size < 2) {
+                    outputLines.add(TerminalLine("Usage: type <selector> <text_to_input>", TerminalLineType.WARNING))
+                } else {
+                    val sel = parts[0].replace("'", "\\'")
+                    val txt = parts[1].replace("'", "\\'")
+                    val js = """
+                        (function() {
+                            var el = document.querySelector('$sel');
+                            if (el) {
+                                el.value = '$txt';
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                return 'Typed text into ' + '$sel';
+                            }
+                            return 'Input element not found: $sel';
+                        })();
+                    """.trimIndent()
+                    activeWv.evaluateJavascript(js) { res ->
+                        appendLines(listOf(TerminalLine(res?.trim('\"') ?: "null", TerminalLineType.SUCCESS))) { newLines ->
+                            sessions = sessions.map {
+                                if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                            }
+                        }
+                    }
+                    outputLines.add(TerminalLine("[ACTION] Typing into '$sel'...", TerminalLineType.INFO))
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/scroll" -> {
+                val activeWv = viewModel.getActiveWebView()
+                if (activeWv != null) {
+                    val js = when (queryArg.lowercase()) {
+                        "bottom" -> "window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'}); 'Scrolled to bottom';"
+                        "top" -> "window.scrollTo({top: 0, behavior: 'smooth'}); 'Scrolled to top';"
+                        "up" -> "window.scrollBy({top: -500, behavior: 'smooth'}); 'Scrolled up';"
+                        else -> "window.scrollBy({top: 500, behavior: 'smooth'}); 'Scrolled down';"
+                    }
+                    activeWv.evaluateJavascript(js) { res ->
+                        appendLines(listOf(TerminalLine(res?.trim('\"') ?: "Scrolled", TerminalLineType.SUCCESS))) { newLines ->
+                            sessions = sessions.map {
+                                if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                            }
+                        }
+                    }
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/links" -> {
+                val activeWv = viewModel.getActiveWebView()
+                if (activeWv == null) {
+                    outputLines.add(TerminalLine("[ERR] No active WebView tab available", TerminalLineType.ERROR))
+                } else {
+                    val js = """
+                        (function() {
+                            var links = Array.from(document.querySelectorAll('a[href]')).slice(0, 20).map(function(a) {
+                                return (a.innerText.trim().substring(0, 30) || 'Link') + ' -> ' + a.href;
+                            });
+                            return JSON.stringify(links);
+                        })();
+                    """.trimIndent()
+                    activeWv.evaluateJavascript(js) { res ->
+                        try {
+                            val arr = org.json.JSONArray(res ?: "[]")
+                            val linkLines = mutableListOf<TerminalLine>()
+                            linkLines.add(TerminalLine("── EXTRACTED LINKS (${arr.length()}) ──", TerminalLineType.SYSTEM))
+                            for (i in 0 until arr.length()) {
+                                linkLines.add(TerminalLine("  🔗 " + arr.getString(i), TerminalLineType.OUTPUT))
+                            }
+                            appendLines(linkLines) { newLines ->
+                                sessions = sessions.map {
+                                    if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                                }
+                            }
+                        } catch (_: Exception) {
+                            appendLines(listOf(TerminalLine(res ?: "None", TerminalLineType.OUTPUT))) { newLines ->
+                                sessions = sessions.map {
+                                    if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                                }
+                            }
+                        }
+                    }
+                    outputLines.add(TerminalLine("[PAGE] Extracting hyperlinks from active page...", TerminalLineType.INFO))
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/text", "/extract" -> {
+                val activeWv = viewModel.getActiveWebView()
+                if (activeWv != null) {
+                    activeWv.evaluateJavascript("document.body.innerText.substring(0, 2000)") { text ->
+                        val clean = text?.trim('\"', ' ')?.replace("\\n", "\n") ?: ""
+                        appendLines(listOf(TerminalLine("── VISIBLE PAGE TEXT ──\n$clean\n──────────────────────", TerminalLineType.OUTPUT))) { newLines ->
+                            sessions = sessions.map {
+                                if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                            }
+                        }
+                    }
+                    outputLines.add(TerminalLine("[PAGE] Extracting visible text content...", TerminalLineType.INFO))
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/view", "/openfile" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("Usage: view <filename>", TerminalLineType.WARNING))
+                } else {
+                    val path = shellEngine.resolvePath(queryArg)
+                    val file = fileSystem.getFile(path)
+                    if (file.exists()) {
+                        val gvItem = fileSystem.toFileItem(file)
+                        viewModel.openFileInTab(gvItem, inNewTab = true)
+                        outputLines.add(TerminalLine("[OK] Opened file in new tab: $path", TerminalLineType.SUCCESS))
+                    } else {
+                        outputLines.add(TerminalLine("view: file not found: $path", TerminalLineType.ERROR))
+                    }
+                }
                 commitLines(outputLines)
                 inputText = TextFieldValue("")
                 return
@@ -765,6 +1294,22 @@ fun TerminalScreen(
             return
         }
 
+        // Fallback: If Agentic Mode is active, run the user's natural language goal through the agent!
+        if (isAgenticMode) {
+            commitLines(outputLines)
+            coroutineScope.launch {
+                agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
+                    appendLines(listOf(line)) { newLines ->
+                        sessions = sessions.map {
+                            if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                        }
+                    }
+                }
+            }
+            inputText = TextFieldValue("")
+            return
+        }
+
         // Fallback: If looks like a URL, navigate to it!
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://") ||
             (trimmed.contains(".") && !trimmed.contains(" ") && trimmed.length > 3)
@@ -919,6 +1464,15 @@ fun TerminalScreen(
                     onBridgeClick = {
                         executeCommand("/bridge")
                     },
+                    isAgenticMode = isAgenticMode,
+                    activePersona = activePersona,
+                    onToggleAgenticMode = {
+                        executeCommand("/agent")
+                    },
+                    sandboxTabCount = tabs.count { it.tabGroupId == agentEngine.activeSandboxGroupId },
+                    onFocusSandbox = {
+                        executeCommand("/sandbox")
+                    },
                     onClose = onClose
                 )
 
@@ -1020,14 +1574,26 @@ fun TerminalScreen(
                     // Prompt label
                     Text(
                         text = buildAnnotatedString {
-                            withStyle(SpanStyle(color = TermPromptGreen, fontWeight = FontWeight.Bold)) {
-                                append("gvone@browser")
-                            }
-                            withStyle(SpanStyle(color = TermTextSecondary)) {
-                                append(":")
-                            }
-                            withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
-                                append("~$ ")
+                            if (isAgenticMode) {
+                                withStyle(SpanStyle(color = Color(0xFFA855F7), fontWeight = FontWeight.Bold)) {
+                                    append("agent[${activePersona.badge.lowercase()}]")
+                                }
+                                withStyle(SpanStyle(color = TermTextSecondary)) {
+                                    append(":")
+                                }
+                                withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
+                                    append("$currentCwd$ ")
+                                }
+                            } else {
+                                withStyle(SpanStyle(color = TermPromptGreen, fontWeight = FontWeight.Bold)) {
+                                    append("gvone@browser")
+                                }
+                                withStyle(SpanStyle(color = TermTextSecondary)) {
+                                    append(":")
+                                }
+                                withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
+                                    append("$currentCwd$ ")
+                                }
                             }
                         },
                         fontFamily = FontFamily.Monospace,
@@ -1102,10 +1668,38 @@ fun TerminalScreen(
                 }
             }
 
-            // 5. TERMUX-STYLE ACCESSORY TOOLBAR (Mobile Terminal Keys: ESC, TAB, ↑, ↓, /, -, ~, |, CLEAR)
+            // 5. TERMUX-STYLE ACCESSORY TOOLBAR (Mobile Terminal Keys: agent, groups, sandbox, ls, cd, cat, tabs, ESC, TAB, ↑, ↓, /, -, ~, |, CLEAR)
             TermuxAccessoryBar(
                 onKey = { key ->
                     when (key) {
+                        "agent" -> {
+                            val prompt = "/agent "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "groups" -> {
+                            val prompt = "/groups "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "sandbox" -> {
+                            val prompt = "/sandbox "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "ls" -> {
+                            val prompt = "ls "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "cd" -> {
+                            val prompt = "cd "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "cat" -> {
+                            val prompt = "cat "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "tabs" -> {
+                            val prompt = "tabs "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
                         "ESC" -> {
                             inputText = TextFieldValue("")
                             historyIndex = -1
@@ -1182,6 +1776,11 @@ private fun TerminalHeaderBar(
     onCloseSession: (String) -> Unit,
     onClearScreen: () -> Unit,
     onBridgeClick: () -> Unit,
+    isAgenticMode: Boolean = false,
+    activePersona: AgentPersona = AgentPersona.AUTO,
+    onToggleAgenticMode: () -> Unit = {},
+    sandboxTabCount: Int = 0,
+    onFocusSandbox: () -> Unit = {},
     onClose: () -> Unit
 ) {
     Row(
@@ -1281,11 +1880,63 @@ private fun TerminalHeaderBar(
             }
         }
 
-        // Right Action Controls: Bridge Connection Badge, Clear Screen, Fullscreen/Dock toggle, Close/Minimize
+        // Right Action Controls: Agentic Mode Pill, Sandbox Group Pill, Bridge Connection Badge, Clear Screen, Fullscreen/Dock toggle, Close/Minimize
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            // Agentic Mode Pill Toggle
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = if (isAgenticMode) Color(0xFF3B0764) else Color(0xFF161B22),
+                border = BorderStroke(1.dp, if (isAgenticMode) Color(0xFFA855F7) else Color(0xFF30363D)),
+                modifier = Modifier
+                    .clickable { onToggleAgenticMode() }
+                    .testTag("terminal_header_agent_badge")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(if (isAgenticMode) Color(0xFFA855F7) else Color(0xFF6B7280), CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isAgenticMode) "AGENT: ON (${activePersona.badge})" else "AGENT: OFF",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isAgenticMode) Color(0xFFE9D5FF) else TermTextSecondary
+                    )
+                }
+            }
+
+            // Sandbox Tab Group Pill
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = Color(0xFF064E3B),
+                border = BorderStroke(1.dp, Color(0xFF10B981)),
+                modifier = Modifier
+                    .clickable { onFocusSandbox() }
+                    .testTag("terminal_header_sandbox_badge")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "📦 SANDBOX${if (sandboxTabCount > 0) " ($sandboxTabCount)" else ""}",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF6EE7B7)
+                    )
+                }
+            }
+
             // Bridge Connection Indicator Badge (Shows whether bridge connection is successful or not)
             val isBridgeOk = bridgeConnectionState == WebAppConnectionState.READY
             val bridgeBg = when (bridgeConnectionState) {
@@ -1401,6 +2052,10 @@ private fun TerminalLineItem(
         TerminalLineType.WARNING -> TermTextWarning
         TerminalLineType.SYSTEM -> TermTextSecondary
         TerminalLineType.AI_RESPONSE -> Color(0xFFC9D1D9)
+        TerminalLineType.AGENT_PLAN -> Color(0xFFC084FC) // Bright Purple
+        TerminalLineType.AGENT_STEP -> Color(0xFF38BDF8) // Cyan
+        TerminalLineType.AGENT_THOUGHT -> Color(0xFFFBBF24) // Amber
+        TerminalLineType.AGENT_TOOL -> Color(0xFF34D399) // Emerald
     }
 
     Text(
@@ -1420,7 +2075,7 @@ private fun TermuxAccessoryBar(
     onKey: (String) -> Unit
 ) {
     val keys = listOf(
-        "ESC", "TAB", "↑", "↓", "/", "-", "~", "|", ":", "$", "clear"
+        "agent", "groups", "sandbox", "ls", "cd", "cat", "tabs", "ESC", "TAB", "↑", "↓", "/", "-", "~", "|", ":", "$", "clear"
     )
 
     Row(
@@ -1506,7 +2161,46 @@ private fun generateHelpOutput(commands: List<CustomCommandEntity>): List<Termin
     lines.add(TerminalLine("  exit, quit           Close terminal interface", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("", TerminalLineType.OUTPUT))
 
-    lines.add(TerminalLine("[2] SEARCH COMMANDS", TerminalLineType.SUCCESS))
+    lines.add(TerminalLine("[2] AGENTIC RUNTIME (ChatGPT Atlas, Comet, Dia)", TerminalLineType.SUCCESS))
+    lines.add(TerminalLine("  /agent [goal]        Execute autonomous multi-step agentic goal", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /agent on|off        Toggle persistent agentic input prompt", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /agent persona <p>   Switch persona: atlas, comet, dia, auto", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /agent status        Inspect active agent runtime, sandbox group & tools", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /organize            Auto-cluster all open tabs into domain cohorts", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[3] SANDBOX TAB GROUPS & COHORTS", TerminalLineType.SUCCESS))
+    lines.add(TerminalLine("  /groups, /tabgroups  List all tab groups with tab counts and colors", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /sandbox             Focus or create dedicated Sandbox tab group", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /group create <n> [c]Create tab cohort with custom name and color", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /group add <tab> <g> Move a tab into a group", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /group close <g>     Close tab group and all its member tabs", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /ungroup [tab]       Remove tab from its current group", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[4] SANDBOX FILESYSTEM & WORKSPACE", TerminalLineType.SUCCESS))
+    lines.add(TerminalLine("  pwd                  Print working directory", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  cd [path]            Change directory (~, .., relative, absolute)", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  ls, dir [-l] [path]  List files, permissions, sizes, and timestamps", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  cat <file>           Display content of file", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  touch <file>         Create empty file", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  mkdir <dir>          Create directory", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  rm [-r] <path>       Remove file or directory", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  tree [path]          Display ASCII directory tree structure", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  view, openfile <f>   Open sandbox file in a live browser tab", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  df, du               Inspect disk space & sandbox storage consumption", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[5] BROWSER DOM & WEB INSPECTION", TerminalLineType.SUCCESS))
+    lines.add(TerminalLine("  click <sel|text>     Click DOM element by CSS selector or button text", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  type <sel> <text>    Type text into input element", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  scroll <dir>         Scroll page: down, up, top, bottom", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  links                Extract all hyperlinks from active page", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  text, extract        Extract visible textual content from page", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  cookies              Inspect active site session cookies & Tor status", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[6] SEARCH COMMANDS", TerminalLineType.SUCCESS))
     commands.filter { it.type == CommandType.SEARCH }.forEach { cmd ->
         lines.add(TerminalLine("  ${cmd.command.padEnd(12)} ${cmd.name} (${cmd.description})", TerminalLineType.OUTPUT))
     }

@@ -282,7 +282,7 @@ class GVONEFileSystem(private val context: Context) {
         }.map { toFileItem(it, favorites) }
     }
 
-    private fun toFileItem(file: File, favorites: Set<String>): GVONEFileItem {
+    fun toFileItem(file: File, favorites: Set<String> = getFavoritePaths()): GVONEFileItem {
         val relativePath = file.relativeTo(rootDir).path
         val parentPath = file.parentFile?.relativeTo(rootDir)?.path.orEmpty().let {
             if (it == ".") "" else it
@@ -309,6 +309,11 @@ class GVONEFileSystem(private val context: Context) {
             isFavorite = favorites.contains(relativePath),
             mimeType = getMimeType(ext)
         )
+    }
+
+    fun getFileItem(relativePath: String): GVONEFileItem? {
+        val file = getFile(relativePath)
+        return if (file.exists()) toFileItem(file) else null
     }
 
     fun determineFileType(fileName: String, isDirectory: Boolean): FileType {

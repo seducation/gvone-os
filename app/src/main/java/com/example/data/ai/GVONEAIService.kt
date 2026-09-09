@@ -25,11 +25,19 @@ class GVONEAIService(private val torManager: TorManager? = null) {
         return torManager?.getOkHttpClient(timeoutSeconds = 30) ?: defaultClient
     }
 
+    private fun isApiKeyConfigured(): Boolean {
+        val key = BuildConfig.GEMINI_API_KEY
+        return key.isNotBlank() &&
+                key != "MY_GEMINI_API_KEY" &&
+                key != "DEFAULT_GEMINI_API_KEY" &&
+                !key.startsWith("DEFAULT_")
+    }
+
     suspend fun searchAndSynthesize(query: String): GVONEAISearchResult = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         val isTorActive = torManager?.torStatus?.value?.state == TorConnectionState.CONNECTED
 
-        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+        if (!isApiKeyConfigured()) {
             return@withContext generateLocalSmartResult(query)
         }
 
@@ -202,12 +210,12 @@ class GVONEAIService(private val torManager: TorManager? = null) {
 
     suspend fun askAI(prompt: String): String? = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+        if (!isApiKeyConfigured()) {
             return@withContext null
         }
         try {
             val client = getHttpClient()
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey"
+            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey"
             val jsonBody = JSONObject().apply {
                 put("contents", JSONArray().apply {
                     put(JSONObject().apply {
