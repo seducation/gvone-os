@@ -41,9 +41,13 @@ import com.example.ui.contextmenu.PagePreviewSheet
 import com.example.ui.contextmenu.TabGroupPickerSheet
 import com.example.ui.screens.*
 import com.example.ui.screens.canvas.EnvironmentStartPageCanvas
+import com.example.ui.screens.communication.CommunicationHubScreen
+import com.example.ui.screens.connectors.ConnectorHubScreen
 import com.example.ui.screens.connectors.WebsiteConnectorsManagerScreen
+import com.example.ui.screens.extensions.DataSaverExtensionSheet
 import com.example.ui.screens.files.GVONEFileBrowserSheet
 import com.example.ui.screens.files.GVONEFileViewerScreen
+import com.example.ui.screens.research.ResearchWorkspaceScreen
 import com.example.ui.screens.webwidget.WebWidgetConfigSheet
 import com.example.ui.screens.webwidget.WebWidgetSelectionOverlay
 import com.example.ui.theme.GVONEBrowserTheme
@@ -272,6 +276,7 @@ fun BrowserApp(
                                 bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
                                 shortsAudioMode = settings.shortsAudioMode,
                                 backgroundPlayEnabled = settings.backgroundPlayEnabled,
+                                dataSaverManager = viewModel.dataSaverManager,
                                 onRegisterWebView = { tabId, wv ->
                                     viewModel.registerWebView(tabId, wv)
                                 },
@@ -399,6 +404,18 @@ fun BrowserApp(
                 },
                 onOpenFiles = {
                     viewModel.openSheet(ActiveSheet.Files)
+                },
+                onOpenConnectorHub = {
+                    viewModel.openConnectorHub()
+                },
+                onOpenResearchWorkspace = {
+                    viewModel.openResearchWorkspace()
+                },
+                onOpenDataSaver = {
+                    viewModel.openDataSaver()
+                },
+                onOpenCommunicationHub = {
+                    viewModel.openCommunicationHub()
                 },
                 currentEnvironmentId = currentEnvironment.id,
                 currentEnvironmentName = currentEnvironment.name,
@@ -586,6 +603,10 @@ fun BrowserApp(
                 onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
                 onOpenFiles = { viewModel.openSheet(ActiveSheet.Files) },
                 onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
+                onOpenConnectorHub = { viewModel.openConnectorHub() },
+                onOpenResearchWorkspace = { viewModel.openResearchWorkspace() },
+                onOpenDataSaver = { viewModel.openDataSaver() },
+                onOpenCommunicationHub = { viewModel.openCommunicationHub() },
                 onNavigateToUrl = { url -> viewModel.loadUrlInCurrentTab(url) },
                 onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onClose = { viewModel.closeSheet() }
@@ -758,6 +779,50 @@ fun BrowserApp(
                 onOpenUrl = { url ->
                     viewModel.loadUrlInCurrentTab(url)
                 },
+                onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // Universal Connector Hub (Google Drive, GitHub, Slack, Notion, Dropbox)
+        if (activeSheet == ActiveSheet.ConnectorHub) {
+            ConnectorHubScreen(
+                manager = viewModel.connectorHubManager,
+                onOpenUrlInTab = { url ->
+                    viewModel.loadUrlInCurrentTab(url)
+                },
+                onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // Research Workspace (Save webpage as source, Highlight -> note, Citation attached, Evidence Map)
+        if (activeSheet == ActiveSheet.ResearchWorkspace) {
+            ResearchWorkspaceScreen(
+                manager = viewModel.researchWorkspaceManager,
+                currentTabUrl = currentTab?.url.orEmpty(),
+                currentTabTitle = currentTab?.title.orEmpty(),
+                onOpenUrlInTab = { url ->
+                    viewModel.loadUrlInCurrentTab(url)
+                },
+                onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // Data Saver Extension Sheet
+        if (activeSheet == ActiveSheet.DataSaver) {
+            val currentDomain = remember(currentTab?.url) {
+                com.example.data.connector.WebsiteAccessConnectorService.extractDomain(currentTab?.url.orEmpty())
+            }
+            DataSaverExtensionSheet(
+                dataSaverManager = viewModel.dataSaverManager,
+                currentDomain = currentDomain,
+                onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // Unified Communication Hub (Gmail, Slack, Discord, Teams, Unified Inbox, Notifications)
+        if (activeSheet == ActiveSheet.CommunicationHub) {
+            CommunicationHubScreen(
+                manager = viewModel.communicationHubManager,
                 onClose = { viewModel.closeSheet() }
             )
         }

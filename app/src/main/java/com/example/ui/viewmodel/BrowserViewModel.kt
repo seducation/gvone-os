@@ -52,6 +52,10 @@ sealed interface ActiveSheet {
     object WebsiteConnector : ActiveSheet
     object Files : ActiveSheet
     object WebsiteConnectors : ActiveSheet
+    object ConnectorHub : ActiveSheet
+    object ResearchWorkspace : ActiveSheet
+    object DataSaver : ActiveSheet
+    object CommunicationHub : ActiveSheet
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -62,6 +66,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val aiService = GVONEAIService(torManager)
     val fileSystem = com.example.data.files.GVONEFileSystem(application)
     val terminalRepository = com.example.data.terminal.TerminalRepository(application)
+    val connectorHubManager = com.example.data.connector.ConnectorHubManager(application, fileSystem)
+    val researchWorkspaceManager = com.example.data.research.ResearchWorkspaceManager(application, fileSystem, aiService, connectorHubManager)
+    val dataSaverManager = com.example.data.datasaver.DataSaverManager(application)
+    val communicationHubManager = com.example.data.communication.CommunicationHubManager(application, aiService)
     private val _terminalLines = MutableStateFlow<List<TerminalLine>>(emptyList())
     val terminalLines: StateFlow<List<TerminalLine>> = _terminalLines.asStateFlow()
 
@@ -718,6 +726,23 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun openSheet(sheet: ActiveSheet) {
         _activeSheet.value = sheet
+    }
+
+    fun openConnectorHub() { openSheet(ActiveSheet.ConnectorHub) }
+    fun openResearchWorkspace() { openSheet(ActiveSheet.ResearchWorkspace) }
+    fun openDataSaver() { openSheet(ActiveSheet.DataSaver) }
+    fun openCommunicationHub() { openSheet(ActiveSheet.CommunicationHub) }
+
+    fun saveCurrentPageToResearchWorkspace() {
+        val tab = currentTab.value ?: return
+        val url = tab.url
+        val title = tab.title.ifBlank { url }
+        researchWorkspaceManager.saveWebpageAsSource(
+            url = url,
+            title = title,
+            excerpt = "Captured from active browser session.",
+            fullText = "Article captured from $url"
+        )
     }
 
     fun closeSheet() {

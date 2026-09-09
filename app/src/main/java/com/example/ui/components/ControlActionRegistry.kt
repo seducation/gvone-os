@@ -25,6 +25,10 @@ object ControlActionRegistry {
     const val ACTION_CAMERA = "camera"
     const val ACTION_AVATAR = "avatar"
     const val ACTION_CONNECTOR = "connector"
+    const val ACTION_CONNECTOR_HUB = "connector_hub"
+    const val ACTION_RESEARCH = "research_workspace"
+    const val ACTION_DATA_SAVER = "data_saver"
+    const val ACTION_COMMUNICATION = "comm_hub"
     const val ACTION_FILES = "files"
     const val ACTION_TERMINAL = "terminal"
     const val ACTION_BRIDGE = "bridge"
@@ -34,10 +38,13 @@ object ControlActionRegistry {
      * 1. Photos
      * 2. Camera
      * 3. Avatar
-     * 4. Connector
+     * 4. Connector (Website Access & Account Connector)
      * 5. Files (Universal File System)
      * 6. Terminal (CLI)
      * 7. Bridge
+     *
+     * When extended callbacks (Connector Hub, Research, Data Saver, Comms Hub) are provided,
+     * they are appended cleanly to provide rich browser functionality.
      */
     fun buildDefaultActions(
         onPhotos: () -> Unit,
@@ -46,9 +53,13 @@ object ControlActionRegistry {
         onConnector: () -> Unit,
         onFiles: () -> Unit = {},
         onTerminal: () -> Unit,
-        onBridge: () -> Unit
+        onBridge: () -> Unit,
+        onConnectorHub: (() -> Unit)? = null,
+        onResearch: (() -> Unit)? = null,
+        onDataSaver: (() -> Unit)? = null,
+        onCommunicationHub: (() -> Unit)? = null
     ): List<ControlActionItem> {
-        return listOf(
+        val list = mutableListOf(
             ControlActionItem(
                 id = ACTION_PHOTOS,
                 title = "Photos",
@@ -99,5 +110,52 @@ object ControlActionRegistry {
                 onClick = onBridge
             )
         )
+
+        if (onConnectorHub != null) {
+            list.add(
+                ControlActionItem(
+                    id = ACTION_CONNECTOR_HUB,
+                    title = "Hub",
+                    icon = Icons.Outlined.Hub,
+                    contentDescription = "Connector Hub (Drive, GitHub, Slack, Notion)",
+                    onClick = onConnectorHub
+                )
+            )
+        }
+        if (onResearch != null) {
+            list.add(
+                ControlActionItem(
+                    id = ACTION_RESEARCH,
+                    title = "Research",
+                    icon = Icons.Outlined.Article,
+                    contentDescription = "Research Workspace & Evidence Map",
+                    onClick = onResearch
+                )
+            )
+        }
+        if (onDataSaver != null) {
+            list.add(
+                ControlActionItem(
+                    id = ACTION_DATA_SAVER,
+                    title = "Saver",
+                    icon = Icons.Outlined.DataSaverOn,
+                    contentDescription = "Data Saver Extension",
+                    onClick = onDataSaver
+                )
+            )
+        }
+        if (onCommunicationHub != null) {
+            list.add(
+                ControlActionItem(
+                    id = ACTION_COMMUNICATION,
+                    title = "Comms",
+                    icon = Icons.Outlined.Forum,
+                    contentDescription = "Unified Communication Hub",
+                    onClick = onCommunicationHub
+                )
+            )
+        }
+
+        return list
     }
 }

@@ -102,6 +102,10 @@ fun FloatingAddressBar(
     onOpenCamera: (() -> Unit)? = null,
     onOpenAvatar: (() -> Unit)? = null,
     onOpenFiles: (() -> Unit)? = null,
+    onOpenConnectorHub: (() -> Unit)? = null,
+    onOpenResearchWorkspace: (() -> Unit)? = null,
+    onOpenDataSaver: (() -> Unit)? = null,
+    onOpenCommunicationHub: (() -> Unit)? = null,
     currentEnvironmentId: String = "default",
     currentEnvironmentName: String = "Default",
     modifier: Modifier = Modifier
@@ -895,6 +899,22 @@ fun FloatingAddressBar(
             },
             onBridge = {
                 // Handled inside ControlActionSheet by scrolling to Bridge section
+            },
+            onConnectorHub = {
+                showControlActionSheet = false
+                onOpenConnectorHub?.invoke()
+            },
+            onResearch = {
+                showControlActionSheet = false
+                onOpenResearchWorkspace?.invoke()
+            },
+            onDataSaver = {
+                showControlActionSheet = false
+                onOpenDataSaver?.invoke()
+            },
+            onCommunicationHub = {
+                showControlActionSheet = false
+                onOpenCommunicationHub?.invoke()
             }
         )
 
