@@ -126,12 +126,8 @@ fun GVONEWebView(
                             useWideViewPort = true
                             builtInZoomControls = true
                             displayZoomControls = false
-                            allowFileAccess = true
-                            allowContentAccess = true
-                            @Suppress("DEPRECATION")
-                            allowFileAccessFromFileURLs = true
-                            @Suppress("DEPRECATION")
-                            allowUniversalAccessFromFileURLs = true
+                            allowFileAccess = false
+                            allowContentAccess = false
                             setSupportZoom(true)
                             if (tab.desktopMode) {
                                 userAgentString = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -256,8 +252,8 @@ fun GVONEWebView(
                                 val uri = request?.url ?: return false
                                 val url = uri.toString()
                                 
-                                // Standard HTTP/HTTPS and local file/data links: let the WebView navigate internally without intercepting
-                                if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("file://") || url.startsWith("data:") || url.startsWith("about:")) {
+                                // Standard HTTP/HTTPS links: let the WebView navigate internally without intercepting
+                                if (url.startsWith("http://") || url.startsWith("https://")) {
                                     return false
                                 }
 
