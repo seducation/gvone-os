@@ -83,6 +83,23 @@ class SandboxAgentEngine(
             return
         }
 
+        // 0. Autonomic Reflex System Evaluation (Spinal Cord check for fast threat interception)
+        val reflexCheck = com.example.agent.cns.CentralNervousSystem.global.reflexSystem.evaluateRequest(
+            com.example.agent.core.AgentRequest(
+                sourceAgent = "User",
+                targetAgent = "CNS",
+                action = "execute_goal",
+                parameters = mapOf("goal" to cleanGoal)
+            )
+        )
+        if (reflexCheck.isTriggered) {
+            emit(TerminalLine("🚨 [AUTONOMIC REFLEX INTERCEPT] Action Blocked by Spinal Cord Reflex!", TerminalLineType.ERROR))
+            emit(TerminalLine("  • Threat: ${reflexCheck.threatName ?: "SUSPICIOUS_PAYLOAD"}", TerminalLineType.ERROR))
+            emit(TerminalLine("  • Reason: ${reflexCheck.reason}", TerminalLineType.ERROR))
+            emit(TerminalLine("  • Action Taken: ${reflexCheck.actionTaken}", TerminalLineType.WARNING))
+            return
+        }
+
         val persona = if (activePersona == AgentPersona.AUTO) detectBestPersona(cleanGoal) else activePersona
         val plan = createExecutionPlan(cleanGoal, persona, currentDir)
 
@@ -130,43 +147,77 @@ class SandboxAgentEngine(
             emit(TerminalLine("  ✔ Linked active tab into sandbox group \"${plan.targetTabGroupName}\"", TerminalLineType.AGENT_TOOL))
         }
 
-        // 6. Step 3: Information Retrieval & Agentic Synthesis (AI Engine / Web Search)
+        // 6. Step 3: Information Retrieval & Agentic Synthesis (CNS Orchestration & AI Engine)
         delay(300)
-        emit(TerminalLine("[STEP 3/${plan.steps.size}] Tool: AtlasWebEngine -> Gathering multi-source intelligence...", TerminalLineType.AGENT_STEP))
-        
+        emit(TerminalLine("[STEP 3/${plan.steps.size}] Tool: CentralNervousSystem -> Orchestrating Multi-Agent Protocol...", TerminalLineType.AGENT_STEP))
+
+        val cnsResult = try {
+            com.example.agent.cns.CentralNervousSystem.global.orchestrateGoal(cleanGoal)
+        } catch (e: Exception) {
+            null
+        }
+
+        if (cnsResult != null && cnsResult.participatingAgents.isNotEmpty()) {
+            emit(TerminalLine("  ✔ Multi-Agent Cohort: [${cnsResult.participatingAgents.joinToString(", ")}] executed in ${cnsResult.durationMs}ms", TerminalLineType.AGENT_TOOL))
+        }
+
         val synthesisPrompt = buildString {
             append("You are an advanced autonomous agentic browser co-pilot operating in ")
             append(persona.displayName)
             append(" mode.\n\n")
             append("User Goal: ").append(cleanGoal).append("\n")
             append("Current Context: URL=").append(currentUrl).append(", Title=").append(currentTitle).append("\n\n")
+            if (cnsResult != null && cnsResult.synthesis.isNotBlank()) {
+                append("Agent Preliminary Synthesis:\n").append(cnsResult.synthesis).append("\n\n")
+            }
             append("Provide a comprehensive, high-value structured synthesis addressing the goal. ")
             append("Include key findings, actionable steps, code/data artifacts if applicable, and recommendations.")
         }
 
-        val aiResponse = try {
-            val res = aiService.searchAndSynthesize(synthesisPrompt)
-            res.aiAnswer
-        } catch (e: Exception) {
-            "Analysis complete. Goal processed with active sandbox parameters. Error querying external AI: ${e.message}"
+        val lowerGoal = cleanGoal.lowercase()
+        val isDirectBrowserAction = cnsResult != null && cnsResult.success &&
+                (lowerGoal.contains("open ") || lowerGoal.contains("go to ") ||
+                 lowerGoal.contains("navigate ") || lowerGoal.contains("close tab") ||
+                 lowerGoal.contains("new tab") || lowerGoal.contains("reload") ||
+                 lowerGoal.contains("refresh") || lowerGoal.contains("read") ||
+                 lowerGoal.contains("summarize") || lowerGoal.startsWith("play ") ||
+                 lowerGoal.startsWith("watch ") || lowerGoal.contains("scroll") ||
+                 lowerGoal == "back" || lowerGoal == "forward" || lowerGoal.contains("tabs"))
+
+        val aiResponse = if (isDirectBrowserAction) {
+            cnsResult!!.synthesis
+        } else if (cnsResult != null && cnsResult.success && cnsResult.synthesis.isNotBlank() && cnsResult.synthesis.length > 50) {
+            cnsResult.synthesis
+        } else {
+            try {
+                val res = aiService.searchAndSynthesize(synthesisPrompt)
+                res.aiAnswer
+            } catch (e: Exception) {
+                if (cnsResult != null && cnsResult.synthesis.isNotBlank()) {
+                    cnsResult.synthesis
+                } else {
+                    "Analysis complete. Goal processed with active sandbox parameters. (${e.message})"
+                }
+            }
         }
 
         emit(TerminalLine("  ✔ Multi-source synthesis generated (${aiResponse.length} chars)", TerminalLineType.AGENT_TOOL))
 
-        // For COMET / ATLAS: optionally create a research tab for the topic
-        if (persona == AgentPersona.COMET || persona == AgentPersona.ATLAS) {
+        // For COMET / ATLAS: create a research tab for the topic (if not a direct navigation action and tab not already opened)
+        val tabAlreadyOpened = cnsResult?.participatingAgents?.contains("BrowserAgent") == true
+        if (!isDirectBrowserAction && !tabAlreadyOpened && (persona == AgentPersona.COMET || persona == AgentPersona.ATLAS)) {
             delay(150)
             val searchTopic = cleanGoal.take(40).replace("\"", "").trim()
             val researchUrl = "https://www.google.com/search?q=" + java.net.URLEncoder.encode(searchTopic, "UTF-8")
-            val newTabId = withContext(Dispatchers.Main) {
+            withContext(Dispatchers.Main) {
                 viewModel.createNewTab(
                     url = researchUrl,
                     isPrivate = viewModel.isPrivateMode.value,
                     groupId = sandboxGroupId,
-                    inBackground = true
+                    inBackground = false
                 )
             }
-            emit(TerminalLine("  ✔ Opened background research tab in group \"${plan.targetTabGroupName}\": $searchTopic", TerminalLineType.AGENT_TOOL))
+            emit(TerminalLine("  ✔ Opened research tab in sandbox group \"${plan.targetTabGroupName}\": $searchTopic", TerminalLineType.AGENT_TOOL))
         }
 
         // 7. Step 4: Sandbox File Persistence (Dia Browser style)

@@ -41,7 +41,8 @@ enum class BrowserActionType(val actionId: String, val label: String) {
     FIND_IN_PAGE("find_in_page", "Find in Page"),
     READER_MODE("reader_mode", "Toggle Reader Mode"),
     CLEAR_DATA("clear_data", "Clear Browsing Data"),
-    TERMINAL("terminal", "Open Terminal CLI");
+    TERMINAL("terminal", "Open Terminal CLI"),
+    AGENT_DASHBOARD("agent_dashboard", "Open Agentic UI Dashboard");
 
     companion object {
         fun fromActionId(id: String): BrowserActionType? {

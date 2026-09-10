@@ -351,6 +351,7 @@ fun BrowserApp(
                 addressBarBottomPadding = effectiveAddressBarHeight,
                 isFullScreen = isTerminalFullScreen,
                 onToggleFullScreen = { isTerminalFullScreen = it },
+                onOpenAgentDashboard = { viewModel.openAgentDashboard() },
                 onClose = { viewModel.closeSheet() }
             )
         }
@@ -868,6 +869,14 @@ fun BrowserApp(
                     onClose = { viewModel.closeSheet() }
                 )
             }
+        }
+
+        // Central Nervous System Multi-Agent UI Dashboard
+        if (activeSheet == ActiveSheet.AgentDashboard) {
+            AgentDashboardSheet(
+                cns = com.example.agent.cns.CentralNervousSystem.global,
+                onClose = { viewModel.closeSheet() }
+            )
         }
 
         // Browser Avatar & Persona Profile Dialog

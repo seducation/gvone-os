@@ -112,7 +112,7 @@ class BrowserControllerImpl(
             val tabId = viewModel.createNewTab(url = url, isPrivate = viewModel.isPrivateMode.value)
             _browserEvents.emit(BrowserEvent.TabCreated(tabId, viewModel.isPrivateMode.value))
         } else {
-            viewModel.loadUrlInCurrentTab(url)
+            viewModel.loadUrlInCurrentTab(url, keepTerminalOpen = true)
         }
         val activeId = viewModel.currentTabId.value
         _browserEvents.emit(BrowserEvent.UrlChanged(activeId, url))
@@ -141,7 +141,7 @@ class BrowserControllerImpl(
             wv.reload()
             true
         } else {
-            viewModel.currentTab.value?.url?.let { viewModel.loadUrlInCurrentTab(it) }
+            viewModel.currentTab.value?.url?.let { viewModel.loadUrlInCurrentTab(it, keepTerminalOpen = true) }
             true
         }
     }

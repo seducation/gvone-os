@@ -211,6 +211,86 @@ class BrowserAgent(
                 }
             }
 
+            "reload" -> {
+                executeAction(StepType.MODIFY, "Reload active webpage") {
+                    val success = browserController.reload()
+                    AgentResult(
+                        requestId = request.requestId,
+                        status = if (success) AgentStatus.COMPLETED else AgentStatus.FAILED,
+                        data = mapOf("reloaded" to success),
+                        durationMs = System.currentTimeMillis() - startTime
+                    )
+                }
+            }
+
+            "go_back" -> {
+                executeAction(StepType.NAVIGATE, "Navigate back in history") {
+                    val success = browserController.goBack()
+                    AgentResult(
+                        requestId = request.requestId,
+                        status = if (success) AgentStatus.COMPLETED else AgentStatus.FAILED,
+                        data = mapOf("back" to success),
+                        durationMs = System.currentTimeMillis() - startTime
+                    )
+                }
+            }
+
+            "go_forward" -> {
+                executeAction(StepType.NAVIGATE, "Navigate forward in history") {
+                    val success = browserController.goForward()
+                    AgentResult(
+                        requestId = request.requestId,
+                        status = if (success) AgentStatus.COMPLETED else AgentStatus.FAILED,
+                        data = mapOf("forward" to success),
+                        durationMs = System.currentTimeMillis() - startTime
+                    )
+                }
+            }
+
+            "stop" -> {
+                executeAction(StepType.MODIFY, "Stop page loading") {
+                    val success = browserController.stopLoading()
+                    AgentResult(
+                        requestId = request.requestId,
+                        status = AgentStatus.COMPLETED,
+                        data = mapOf("stopped" to success),
+                        durationMs = System.currentTimeMillis() - startTime
+                    )
+                }
+            }
+
+            "execute_script" -> {
+                val script = request.parameters["script"] as? String ?: return fail(request, "Missing 'script' parameter")
+                executeAction(StepType.MODIFY, "Execute JS script") {
+                    val res = browserController.executeScript(script)
+                    AgentResult(
+                        requestId = request.requestId,
+                        status = AgentStatus.COMPLETED,
+                        data = mapOf("result" to res),
+                        durationMs = System.currentTimeMillis() - startTime
+                    )
+                }
+            }
+
+            "scroll" -> {
+                val direction = (request.parameters["direction"] as? String)?.lowercase() ?: "down"
+                val script = when (direction) {
+                    "up" -> "window.scrollBy({ top: -window.innerHeight * 0.7, behavior: 'smooth' });"
+                    "top" -> "window.scrollTo({ top: 0, behavior: 'smooth' });"
+                    "bottom" -> "window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });"
+                    else -> "window.scrollBy({ top: window.innerHeight * 0.7, behavior: 'smooth' });"
+                }
+                executeAction(StepType.MODIFY, "Scroll $direction") {
+                    val res = browserController.executeScript(script)
+                    AgentResult(
+                        requestId = request.requestId,
+                        status = AgentStatus.COMPLETED,
+                        data = mapOf("scrolled" to direction, "result" to res),
+                        durationMs = System.currentTimeMillis() - startTime
+                    )
+                }
+            }
+
             else -> {
                 AgentResult(
                     requestId = request.requestId,

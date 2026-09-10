@@ -56,6 +56,7 @@ sealed interface ActiveSheet {
     object ResearchWorkspace : ActiveSheet
     object DataSaver : ActiveSheet
     object CommunicationHub : ActiveSheet
+    object AgentDashboard : ActiveSheet
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -63,7 +64,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val repository = BrowserRepository(application)
     val torManager = TorManager()
     val downloadManager = BrowserDownloadManager(application, repository)
-    val aiService = GVONEAIService(torManager)
+    val aiService = GVONEAIService(torManager, application)
     val fileSystem = com.example.data.files.GVONEFileSystem(application)
     val terminalRepository = com.example.data.terminal.TerminalRepository(application)
     val connectorHubManager = com.example.data.connector.ConnectorHubManager(application, fileSystem)
@@ -520,6 +521,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
+        com.example.agent.cns.CentralNervousSystem.global.initializeWithDefaults(
+            context = application,
+            viewModel = this,
+            repository = repository,
+            aiService = aiService,
+            environmentManager = environmentManager
+        )
+
         val savedTerminalLines = terminalRepository.getSavedSessionLines()
         if (savedTerminalLines.isNotEmpty()) {
             _terminalLines.value = savedTerminalLines
@@ -732,6 +741,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun openResearchWorkspace() { openSheet(ActiveSheet.ResearchWorkspace) }
     fun openDataSaver() { openSheet(ActiveSheet.DataSaver) }
     fun openCommunicationHub() { openSheet(ActiveSheet.CommunicationHub) }
+    fun openAgentDashboard() { openSheet(ActiveSheet.AgentDashboard) }
 
     fun saveCurrentPageToResearchWorkspace() {
         val tab = currentTab.value ?: return
@@ -1236,6 +1246,28 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         appendTerminalLine("gvone@addressbar:~$ $trimmed", TerminalLineType.COMMAND)
 
         // Built-in interactive bridge command check via address bar
+        if (trimmed.equals("/agent", ignoreCase = true) ||
+            trimmed.equals("/agentic", ignoreCase = true) ||
+            trimmed.equals("/agent dashboard", ignoreCase = true) ||
+            trimmed.equals("/agent ui", ignoreCase = true) ||
+            trimmed.equals("/cns", ignoreCase = true) ||
+            trimmed.equals("/dashboard", ignoreCase = true)
+        ) {
+            appendTerminalLine("[AGENT UI] Opening Central Nervous System Agent Dashboard...", TerminalLineType.SUCCESS)
+            openAgentDashboard()
+            return
+        }
+
+        if (trimmed.startsWith("/agent ", ignoreCase = true) || trimmed.startsWith("/agentic ", ignoreCase = true)) {
+            val goal = trimmed.substringAfter(" ").trim()
+            openSheet(ActiveSheet.Terminal)
+            appendTerminalLine("[AGENT] Goal dispatched to Agentic Runtime: \"$goal\"", TerminalLineType.AGENT_PLAN)
+            viewModelScope.launch {
+                com.example.agent.cns.CentralNervousSystem.global.orchestrateGoal(goal)
+            }
+            return
+        }
+
         if (trimmed.equals("/bridge", ignoreCase = true) ||
             trimmed.equals("/bridge status", ignoreCase = true) ||
             trimmed.equals("bridge status", ignoreCase = true) ||
@@ -1322,6 +1354,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                             BrowserActionType.FIND_IN_PAGE -> openSheet(ActiveSheet.FindInPage)
                             BrowserActionType.READER_MODE -> openSheet(ActiveSheet.ReaderMode)
                             BrowserActionType.TERMINAL -> openSheet(ActiveSheet.Terminal)
+                            BrowserActionType.AGENT_DASHBOARD -> openAgentDashboard()
                             BrowserActionType.CLEAR_DATA -> {
                                 clearBrowsingData()
                                 Toast.makeText(getApplication(), "Browsing data cleared", Toast.LENGTH_SHORT).show()
@@ -1451,13 +1484,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun loadUrlInCurrentTab(url: String) {
+    fun loadUrlInCurrentTab(url: String, keepTerminalOpen: Boolean = false) {
         val currentId = _currentTabId.value
         _tabs.value = _tabs.value.map {
             if (it.id == currentId) it.copy(url = url, title = "Loading...") else it
         }
         _addressBarInput.value = url
-        closeSheet()
+        if (!keepTerminalOpen || _activeSheet.value != ActiveSheet.Terminal) {
+            closeSheet()
+        }
     }
 
     // Custom Commands Management

@@ -96,6 +96,7 @@ fun TerminalScreen(
     addressBarBottomPadding: Dp = 0.dp,
     isFullScreen: Boolean = false,
     onToggleFullScreen: (Boolean) -> Unit = {},
+    onOpenAgentDashboard: () -> Unit = { viewModel.openAgentDashboard() },
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -141,9 +142,13 @@ fun TerminalScreen(
             agentEngine = agentEngine
         )
     }
-    var isAgenticMode by remember { mutableStateOf(false) }
+    var isAgenticMode by remember { mutableStateOf(true) }
     var currentCwd by remember { mutableStateOf(shellEngine.promptPath) }
     var activePersona by remember { mutableStateOf(agentEngine.activePersona) }
+
+    LaunchedEffect(isAgenticMode) {
+        agentEngine.isAgenticModeEnabled = isAgenticMode
+    }
 
     // Multi-session management
     var sessions by remember {
@@ -357,11 +362,20 @@ fun TerminalScreen(
                         activePersona = newPersona
                         outputLines.add(TerminalLine("[AGENTIC PERSONA] Switched to: ${newPersona.displayName} (${newPersona.description})", TerminalLineType.SUCCESS))
                     }
+                    queryArg.equals("dashboard", ignoreCase = true) || queryArg.equals("ui", ignoreCase = true) || queryArg.equals("cns", ignoreCase = true) -> {
+                        outputLines.add(TerminalLine("[AGENT UI DASHBOARD] Launching Central Nervous System Dashboard...", TerminalLineType.SUCCESS))
+                        commitLines(outputLines)
+                        onOpenAgentDashboard()
+                        inputText = TextFieldValue("")
+                        return
+                    }
                     queryArg.equals("status", ignoreCase = true) -> {
                         val activeGroupName = viewModel.tabGroups.value.find { it.id == agentEngine.activeSandboxGroupId }?.name ?: "None"
+                        val isGeminiLive = viewModel.aiService.isApiKeyConfigured()
                         outputLines.add(TerminalLine("── AGENTIC RUNTIME STATUS ──", TerminalLineType.SYSTEM))
                         outputLines.add(TerminalLine("● Mode: " + (if (isAgenticMode) "ACTIVE" else "IDLE"), if (isAgenticMode) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
                         outputLines.add(TerminalLine("● Active Persona: ${activePersona.displayName} (${activePersona.badge})", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Gemini 3.5 LLM: " + (if (isGeminiLive) "ONLINE & ACTIVE" else "LOCAL FALLBACK (Type '/key' for setup)"), if (isGeminiLive) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
                         outputLines.add(TerminalLine("● Sandbox Tab Group: $activeGroupName", TerminalLineType.OUTPUT))
                         outputLines.add(TerminalLine("● Sandbox Directory: /${shellEngine.currentDirectory}", TerminalLineType.OUTPUT))
                         outputLines.add(TerminalLine("● Multi-Agent Core: CentralNervousSystem + BrowserController + GVONEFileSystem", TerminalLineType.SUCCESS))
@@ -396,6 +410,56 @@ fun TerminalScreen(
                     }
                 }
                 commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/key", "/gemini", "/apikey" -> {
+                if (queryArg.isBlank()) {
+                    val isConfigured = viewModel.aiService.isApiKeyConfigured()
+                    outputLines.add(TerminalLine("── GEMINI 3.5 API CREDENTIAL STATUS ──", TerminalLineType.SYSTEM))
+                    if (isConfigured) {
+                        outputLines.add(TerminalLine("● Status: ONLINE & ACTIVE", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("● Model: gemini-3.5-flash (GenerativeLanguage v1beta)", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Source: BuildConfig / Active Session", TerminalLineType.OUTPUT))
+                    } else {
+                        outputLines.add(TerminalLine("● Status: NOT CONFIGURED (Using Local Reflex Fallback Engine)", TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("  To configure your Gemini API Key:", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("  Option A (Permanent): Add GEMINI_API_KEY to AI Studio Secrets panel", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("  Option B (Session): Type '/key YOUR_GEMINI_KEY' to validate & activate", TerminalLineType.OUTPUT))
+                    }
+                    if (viewModel.aiService.lastError != null) {
+                        outputLines.add(TerminalLine("⚠ Last Diagnostic: ${viewModel.aiService.lastError}", TerminalLineType.WARNING))
+                    }
+                    commitLines(outputLines)
+                    inputText = TextFieldValue("")
+                    return
+                } else {
+                    val keyToTest = queryArg.trim()
+                    outputLines.add(TerminalLine("[GEMINI] Validating API key with Google AI...", TerminalLineType.INFO))
+                    commitLines(outputLines)
+                    coroutineScope.launch {
+                        val (success, message) = viewModel.aiService.testApiKey(keyToTest)
+                        val line = if (success) {
+                            TerminalLine("✔ $message - Gemini 3.5 Flash is now active for this session!", TerminalLineType.SUCCESS)
+                        } else {
+                            TerminalLine("✖ $message", TerminalLineType.ERROR)
+                        }
+                        appendLines(listOf(line)) { newLines ->
+                            sessions = sessions.map {
+                                if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                            }
+                        }
+                    }
+                    inputText = TextFieldValue("")
+                    return
+                }
+            }
+
+            "/dashboard", "/cns", "dashboard", "cns" -> {
+                outputLines.add(TerminalLine("[AGENT UI DASHBOARD] Launching Central Nervous System Dashboard...", TerminalLineType.SUCCESS))
+                commitLines(outputLines)
+                onOpenAgentDashboard()
                 inputText = TextFieldValue("")
                 return
             }
@@ -1197,6 +1261,7 @@ fun TerminalScreen(
                         BrowserActionType.READER_MODE -> viewModel.openSheet(ActiveSheet.ReaderMode)
                         BrowserActionType.CLEAR_DATA -> viewModel.clearBrowsingData()
                         BrowserActionType.TERMINAL -> { /* Already in terminal */ }
+                        BrowserActionType.AGENT_DASHBOARD -> onOpenAgentDashboard()
                     }
                     outputLines.add(
                         TerminalLine(
@@ -1294,37 +1359,29 @@ fun TerminalScreen(
             return
         }
 
-        // Fallback: If Agentic Mode is active, run the user's natural language goal through the agent!
-        if (isAgenticMode) {
-            commitLines(outputLines)
-            coroutineScope.launch {
-                agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
-                    appendLines(listOf(line)) { newLines ->
-                        sessions = sessions.map {
-                            if (it.id == activeSessionId) it.copy(lines = newLines) else it
-                        }
-                    }
-                }
-            }
-            inputText = TextFieldValue("")
-            return
-        }
-
         // Fallback: If looks like a URL, navigate to it!
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://") ||
             (trimmed.contains(".") && !trimmed.contains(" ") && trimmed.length > 3)
         ) {
             val url = if (!trimmed.startsWith("http")) "https://$trimmed" else trimmed
-            viewModel.loadUrlInCurrentTab(url)
+            viewModel.loadUrlInCurrentTab(url, keepTerminalOpen = true)
             outputLines.add(TerminalLine("[NAVIGATE] Opening: $url", TerminalLineType.SUCCESS))
             commitLines(outputLines)
             inputText = TextFieldValue("")
             return
         }
 
-        // If command not found, display bash-like error message
-        outputLines.add(TerminalLine("gvone: command not found: '$trimmed'. Type 'help' for available commands.", TerminalLineType.ERROR))
+        // Autonomous Goal Fallback: Execute through Agentic Runtime
         commitLines(outputLines)
+        coroutineScope.launch {
+            agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
+                appendLines(listOf(line)) { newLines ->
+                    sessions = sessions.map {
+                        if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                    }
+                }
+            }
+        }
         inputText = TextFieldValue("")
     }
 
@@ -1469,9 +1526,14 @@ fun TerminalScreen(
                     onToggleAgenticMode = {
                         executeCommand("/agent")
                     },
+                    onOpenAgentDashboard = onOpenAgentDashboard,
                     sandboxTabCount = tabs.count { it.tabGroupId == agentEngine.activeSandboxGroupId },
                     onFocusSandbox = {
                         executeCommand("/sandbox")
+                    },
+                    isGeminiActive = viewModel.aiService.isApiKeyConfigured(),
+                    onGeminiClick = {
+                        executeCommand("/key")
                     },
                     onClose = onClose
                 )
@@ -1700,6 +1762,12 @@ fun TerminalScreen(
                             val prompt = "tabs "
                             inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
                         }
+                        "dashboard", "cns" -> {
+                            onOpenAgentDashboard()
+                        }
+                        "agent" -> {
+                            executeCommand("/agent")
+                        }
                         "ESC" -> {
                             inputText = TextFieldValue("")
                             historyIndex = -1
@@ -1779,23 +1847,25 @@ private fun TerminalHeaderBar(
     isAgenticMode: Boolean = false,
     activePersona: AgentPersona = AgentPersona.AUTO,
     onToggleAgenticMode: () -> Unit = {},
+    onOpenAgentDashboard: () -> Unit = {},
     sandboxTabCount: Int = 0,
     onFocusSandbox: () -> Unit = {},
+    isGeminiActive: Boolean = false,
+    onGeminiClick: () -> Unit = {},
     onClose: () -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(TermSurfaceColor)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Left: Monospace badge + Session Switcher Tabs
+        // TOP ROW: Prompt Indicator + Session Tabs (Horizontally Scrollable, Weighted) + Action Buttons
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.weight(1f, fill = false)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
             // Prompt badge
             Surface(
@@ -1804,7 +1874,7 @@ private fun TerminalHeaderBar(
                 border = BorderStroke(1.dp, Color(0xFF30363D))
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -1823,67 +1893,132 @@ private fun TerminalHeaderBar(
                 }
             }
 
-            // Session pills
-            sessions.forEach { sess ->
-                val isActive = sess.id == activeSessionId
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (isActive) Color(0xFF21262D) else Color.Transparent,
-                    border = BorderStroke(
-                        1.dp,
-                        if (isActive) Color(0xFF388BFD) else Color(0xFF30363D)
-                    ),
-                    modifier = Modifier
-                        .clickable { onSelectSession(sess.id) }
-                        .testTag("terminal_session_${sess.id}")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Scrollable Session Pills with (+) Button
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(end = 6.dp)
+            ) {
+                sessions.forEach { sess ->
+                    val isActive = sess.id == activeSessionId
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (isActive) Color(0xFF21262D) else Color.Transparent,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isActive) Color(0xFF388BFD) else Color(0xFF30363D)
+                        ),
+                        modifier = Modifier
+                            .clickable { onSelectSession(sess.id) }
+                            .testTag("terminal_session_${sess.id}")
                     ) {
-                        Text(
-                            text = sess.title,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isActive) TermTextPrimary else TermTextSecondary
-                        )
-                        if (sessions.size > 1 && isActive) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Close session",
-                                tint = TermTextSecondary,
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .clickable { onCloseSession(sess.id) }
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = sess.title,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isActive) TermTextPrimary else TermTextSecondary
                             )
+                            if (sessions.size > 1 && isActive) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Close session",
+                                    tint = TermTextSecondary,
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .clickable { onCloseSession(sess.id) }
+                                )
+                            }
                         }
                     }
                 }
+
+                // New Session (+) Button
+                IconButton(
+                    onClick = onNewSession,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .background(Color(0xFF161B22), RoundedCornerShape(4.dp))
+                        .testTag("terminal_new_session")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = "New Session",
+                        tint = TermTextSecondary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
 
-            // New Session (+) Button
-            IconButton(
-                onClick = onNewSession,
-                modifier = Modifier
-                    .size(26.dp)
-                    .background(Color(0xFF161B22), RoundedCornerShape(4.dp))
-                    .testTag("terminal_new_session")
+            // Right Action Controls: Clear Screen, Fullscreen Toggle, Close
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = "New Session",
-                    tint = TermTextSecondary,
-                    modifier = Modifier.size(14.dp)
-                )
+                IconButton(
+                    onClick = onClearScreen,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .testTag("terminal_clear_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteSweep,
+                        contentDescription = "Clear Screen",
+                        tint = TermTextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = onToggleFullScreen,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .testTag("terminal_fullscreen_toggle_btn")
+                ) {
+                    Icon(
+                        imageVector = if (isFullScreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                        contentDescription = if (isFullScreen) "Dock Terminal" else "Maximize Terminal",
+                        tint = TermPromptCyan,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .testTag("terminal_close_btn")
+                ) {
+                    Icon(
+                        imageVector = if (isFullScreen) Icons.Rounded.Close else Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = "Close Terminal",
+                        tint = TermTextPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
 
-        // Right Action Controls: Agentic Mode Pill, Sandbox Group Pill, Bridge Connection Badge, Clear Screen, Fullscreen/Dock toggle, Close/Minimize
+        // SUB-BAR: Dedicated, Non-overlapping Horizontal Status & Agentic Controls
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF0D121C))
+                .border(width = 1.dp, color = Color(0xFF1B2332))
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Agentic Mode Pill Toggle
             Surface(
@@ -1895,7 +2030,7 @@ private fun TerminalHeaderBar(
                     .testTag("terminal_header_agent_badge")
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
@@ -1903,13 +2038,43 @@ private fun TerminalHeaderBar(
                             .size(6.dp)
                             .background(if (isAgenticMode) Color(0xFFA855F7) else Color(0xFF6B7280), CircleShape)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
-                        text = if (isAgenticMode) "AGENT: ON (${activePersona.badge})" else "AGENT: OFF",
+                        text = if (isAgenticMode) "AGENTIC: ON (${activePersona.badge})" else "AGENTIC: OFF",
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isAgenticMode) Color(0xFFE9D5FF) else TermTextSecondary
+                    )
+                }
+            }
+
+            // CNS Agent Dashboard Quick Launch Pill
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = Color(0xFF1E1B4B),
+                border = BorderStroke(1.dp, Color(0xFF6366F1)),
+                modifier = Modifier
+                    .clickable { onOpenAgentDashboard() }
+                    .testTag("terminal_header_dashboard_badge")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Hub,
+                        contentDescription = "Open Agent UI Dashboard",
+                        tint = Color(0xFFA5B4FC),
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "CNS DASHBOARD",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFE0E7FF)
                     )
                 }
             }
@@ -1924,20 +2089,20 @@ private fun TerminalHeaderBar(
                     .testTag("terminal_header_sandbox_badge")
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "📦 SANDBOX${if (sandboxTabCount > 0) " ($sandboxTabCount)" else ""}",
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF6EE7B7)
                     )
                 }
             }
 
-            // Bridge Connection Indicator Badge (Shows whether bridge connection is successful or not)
+            // Bridge Connection Indicator Badge
             val isBridgeOk = bridgeConnectionState == WebAppConnectionState.READY
             val bridgeBg = when (bridgeConnectionState) {
                 WebAppConnectionState.READY -> Color(0xFF064E3B)
@@ -1974,7 +2139,7 @@ private fun TerminalHeaderBar(
                     .testTag("terminal_header_bridge_badge")
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
@@ -1982,57 +2147,44 @@ private fun TerminalHeaderBar(
                             .size(6.dp)
                             .background(bridgeBorder, CircleShape)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(5.dp))
                     Text(
                         text = bridgeText,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = bridgeTextColor
                     )
                 }
             }
 
-            IconButton(
-                onClick = onClearScreen,
+            // Gemini LLM API Status Badge
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = if (isGeminiActive) Color(0xFF064E3B) else Color(0xFF451A03),
+                border = BorderStroke(1.dp, if (isGeminiActive) Color(0xFF10B981) else Color(0xFFF59E0B)),
                 modifier = Modifier
-                    .size(28.dp)
-                    .testTag("terminal_clear_btn")
+                    .clickable { onGeminiClick() }
+                    .testTag("terminal_header_gemini_badge")
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.DeleteSweep,
-                    contentDescription = "Clear Screen",
-                    tint = TermTextSecondary,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-
-            IconButton(
-                onClick = onToggleFullScreen,
-                modifier = Modifier
-                    .size(28.dp)
-                    .testTag("terminal_fullscreen_toggle_btn")
-            ) {
-                Icon(
-                    imageVector = if (isFullScreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                    contentDescription = if (isFullScreen) "Dock Terminal" else "Maximize Terminal",
-                    tint = TermPromptCyan,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            IconButton(
-                onClick = onClose,
-                modifier = Modifier
-                    .size(28.dp)
-                    .testTag("terminal_close_btn")
-            ) {
-                Icon(
-                    imageVector = if (isFullScreen) Icons.Rounded.Close else Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = "Close Terminal",
-                    tint = TermTextPrimary,
-                    modifier = Modifier.size(20.dp)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(if (isGeminiActive) Color(0xFF10B981) else Color(0xFFF59E0B), CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = if (isGeminiActive) "GEMINI: LIVE" else "GEMINI: LOCAL",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isGeminiActive) Color(0xFF6EE7B7) else Color(0xFFFDE68A)
+                    )
+                }
             }
         }
     }
@@ -2075,7 +2227,7 @@ private fun TermuxAccessoryBar(
     onKey: (String) -> Unit
 ) {
     val keys = listOf(
-        "agent", "groups", "sandbox", "ls", "cd", "cat", "tabs", "ESC", "TAB", "↑", "↓", "/", "-", "~", "|", ":", "$", "clear"
+        "dashboard", "agent", "cns", "groups", "sandbox", "ls", "cd", "cat", "tabs", "ESC", "TAB", "↑", "↓", "/", "-", "~", "|", ":", "$", "clear"
     )
 
     Row(
@@ -2091,17 +2243,36 @@ private fun TermuxAccessoryBar(
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         keys.forEach { key ->
+            val isDashboardKey = key == "dashboard" || key == "cns"
+            val isAgentKey = key == "agent"
+            val bgColor = when {
+                isDashboardKey -> Color(0xFF1E1B4B)
+                isAgentKey -> Color(0xFF3B0764)
+                else -> Color(0xFF161B22)
+            }
+            val borderColor = when {
+                isDashboardKey -> Color(0xFF6366F1)
+                isAgentKey -> Color(0xFFA855F7)
+                else -> Color(0xFF30363D)
+            }
+            val textColor = when {
+                isDashboardKey -> Color(0xFFE0E7FF)
+                isAgentKey -> Color(0xFFE9D5FF)
+                key in listOf("ESC", "TAB", "↑", "↓", "clear") -> TermPromptCyan
+                else -> TermTextPrimary
+            }
+
             Surface(
                 shape = RoundedCornerShape(5.dp),
-                color = Color(0xFF161B22),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D)),
+                color = bgColor,
+                border = BorderStroke(1.dp, borderColor),
                 modifier = Modifier
                     .clickable { onKey(key) }
                     .testTag("termux_key_$key")
             ) {
                 Text(
                     text = key,
-                    color = if (key in listOf("ESC", "TAB", "↑", "↓", "clear")) TermPromptCyan else TermTextPrimary,
+                    color = textColor,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
