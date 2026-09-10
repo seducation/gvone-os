@@ -22,8 +22,12 @@ class TerminalShellEngine(
     val agentEngine: SandboxAgentEngine
 ) {
     // Current working directory inside the sandbox filesystem
-    var currentDirectory: String = "Documents"
-        private set
+    private val _currentDirectory = kotlinx.coroutines.flow.MutableStateFlow("Documents")
+    val currentDirectoryFlow: kotlinx.coroutines.flow.StateFlow<String> = _currentDirectory
+
+    var currentDirectory: String
+        get() = _currentDirectory.value
+        private set(value) { _currentDirectory.value = value }
 
     val promptPath: String
         get() = if (currentDirectory.isBlank() || currentDirectory == "/") "~" else "~/$currentDirectory"

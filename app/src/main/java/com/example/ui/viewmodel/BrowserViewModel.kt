@@ -71,11 +71,32 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val researchWorkspaceManager = com.example.data.research.ResearchWorkspaceManager(application, fileSystem, aiService, connectorHubManager)
     val dataSaverManager = com.example.data.datasaver.DataSaverManager(application)
     val communicationHubManager = com.example.data.communication.CommunicationHubManager(application, aiService)
+    val agentEngine = com.example.agent.sandbox.SandboxAgentEngine(
+        context = application,
+        viewModel = this,
+        aiService = aiService,
+        fileSystem = fileSystem
+    )
+    val shellEngine = com.example.data.terminal.TerminalShellEngine(
+        context = application,
+        viewModel = this,
+        fileSystem = fileSystem,
+        agentEngine = agentEngine
+    )
+    val terminalCommandExecutor = com.example.data.terminal.TerminalCommandExecutor(
+        viewModel = this,
+        shellEngine = shellEngine,
+        agentEngine = agentEngine
+    )
     private val _terminalLines = MutableStateFlow<List<TerminalLine>>(emptyList())
     val terminalLines: StateFlow<List<TerminalLine>> = _terminalLines.asStateFlow()
 
     fun appendTerminalLine(text: String, type: TerminalLineType = TerminalLineType.OUTPUT) {
         appendTerminalLines(listOf(TerminalLine(text = text, type = type)))
+    }
+
+    fun appendTerminalLine(line: TerminalLine) {
+        appendTerminalLines(listOf(line))
     }
 
     fun appendTerminalLines(lines: List<TerminalLine>) {
@@ -204,6 +225,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     // Search & AI State
     private val _addressBarInput = MutableStateFlow("")
     val addressBarInput: StateFlow<String> = _addressBarInput.asStateFlow()
+
+    fun setAddressBarInput(input: String) {
+        _addressBarInput.value = input
+    }
 
     private val _aiSearchResult = MutableStateFlow<GVONEAISearchResult?>(null)
     val aiSearchResult: StateFlow<GVONEAISearchResult?> = _aiSearchResult.asStateFlow()
@@ -760,10 +785,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _webWidgetDraft.value = null
     }
 
-    fun setAddressBarInput(text: String) {
-        _addressBarInput.value = text
-    }
-
     fun setPrivateMode(isPrivate: Boolean) {
         _isPrivateMode.value = isPrivate
         val matchingTabs = _tabs.value.filter { it.isPrivate == isPrivate }
@@ -1240,6 +1261,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun navigateTo(input: String) {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return
+
+        // Unified Command Execution: Full parity between Address Bar and Terminal
+        if (terminalCommandExecutor.isCommand(trimmed)) {
+            terminalCommandExecutor.executeCommand(
+                rawInput = trimmed,
+                origin = com.example.data.terminal.CommandOrigin.ADDRESS_BAR,
+                onOpenAgentDashboard = { openAgentDashboard() }
+            )
+            return
+        }
 
         // Always log input to persistent command history and Terminal session
         terminalRepository.addCommandToHistory(trimmed)

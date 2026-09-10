@@ -131,6 +131,7 @@ fun BrowserApp(
     val isCanvasEditMode by viewModel.isCanvasEditMode.collectAsStateWithLifecycle()
     val webWidgetDraft by viewModel.webWidgetDraft.collectAsStateWithLifecycle()
     val customCommands by viewModel.customCommands.collectAsStateWithLifecycle()
+    val addressBarInput by viewModel.addressBarInput.collectAsStateWithLifecycle()
 
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
@@ -420,6 +421,8 @@ fun BrowserApp(
                 },
                 currentEnvironmentId = currentEnvironment.id,
                 currentEnvironmentName = currentEnvironment.name,
+                addressBarInput = addressBarInput,
+                onAddressBarInputChange = { viewModel.setAddressBarInput(it) },
                 modifier = Modifier
                     .align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
                     .onGloballyPositioned { coordinates ->
@@ -875,6 +878,7 @@ fun BrowserApp(
         if (activeSheet == ActiveSheet.AgentDashboard) {
             AgentDashboardSheet(
                 cns = com.example.agent.cns.CentralNervousSystem.global,
+                viewModel = viewModel,
                 onClose = { viewModel.closeSheet() }
             )
         }

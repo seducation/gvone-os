@@ -108,6 +108,8 @@ fun FloatingAddressBar(
     onOpenCommunicationHub: (() -> Unit)? = null,
     currentEnvironmentId: String = "default",
     currentEnvironmentName: String = "Default",
+    addressBarInput: String = "",
+    onAddressBarInputChange: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -148,7 +150,7 @@ fun FloatingAddressBar(
         }
     }
 
-    var inputText by remember { mutableStateOf("") }
+    var inputText by remember { mutableStateOf(addressBarInput) }
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
@@ -160,9 +162,16 @@ fun FloatingAddressBar(
         }
     }
 
+    // Synchronize with external address bar input stream (e.g. from Terminal CLI)
+    LaunchedEffect(addressBarInput) {
+        if (addressBarInput != inputText && (isFocused || isTerminalOpen || addressBarInput.startsWith("/"))) {
+            inputText = addressBarInput
+        }
+    }
+
     // Synchronize non-focused address bar input with active tab URL without wiping active user typing
     LaunchedEffect(currentTab?.url, isFocused, isBridgeActiveForCurrentPage) {
-        if (!isFocused) {
+        if (!isFocused && !isTerminalOpen && !addressBarInput.startsWith("/")) {
             val url = currentTab?.url.orEmpty()
             inputText = if (isBridgeActiveForCurrentPage || isInternalHomeUrl(url)) "" else url
         }
@@ -300,7 +309,9 @@ fun FloatingAddressBar(
                                 isFocused = false
                                 focusManager.clearFocus()
                             } else {
-                                inputText = "${suggestion.matchedTrigger} "
+                                val filled = "${suggestion.matchedTrigger} "
+                                inputText = filled
+                                onAddressBarInputChange?.invoke(filled)
                             }
                         },
                         onOpenCommandManager = onOpenCommandManager,
@@ -570,6 +581,7 @@ fun FloatingAddressBar(
                                         value = if (isFocused) inputText else (if (isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage) "" else displayHost),
                                         onValueChange = { newText ->
                                             inputText = newText
+                                            onAddressBarInputChange?.invoke(newText)
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()

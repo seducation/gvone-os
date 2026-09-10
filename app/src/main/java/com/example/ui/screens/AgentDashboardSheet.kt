@@ -1,13 +1,18 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -18,6 +23,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -25,12 +33,15 @@ import com.example.agent.cns.CentralNervousSystem
 import com.example.agent.core.Agent
 import com.example.agent.core.AgentStep
 import com.example.agent.core.StepStatus
+import com.example.data.terminal.CommandOrigin
+import com.example.ui.viewmodel.BrowserViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AgentDashboardSheet(
     cns: CentralNervousSystem,
+    viewModel: BrowserViewModel? = null,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -41,8 +52,69 @@ fun AgentDashboardSheet(
     val isFrozen by cns.reflexSystem.isFrozen.collectAsStateWithLifecycle()
     val steps by cns.logger.steps.collectAsStateWithLifecycle()
 
-    var goalInput by remember { mutableStateOf("") }
+    val currentAddressBarInput = viewModel?.addressBarInput?.collectAsStateWithLifecycle()?.value.orEmpty()
+
+    var goalInput by remember {
+        val initial = if (currentAddressBarInput.startsWith("/agent ", ignoreCase = true)) {
+            currentAddressBarInput.substring(7).trimStart()
+        } else {
+            ""
+        }
+        mutableStateOf(initial)
+    }
+
+    // Bidirectional synchronization from Address Bar into CNS mission goal input
+    LaunchedEffect(currentAddressBarInput) {
+        if (currentAddressBarInput.startsWith("/agent ", ignoreCase = true)) {
+            val extracted = currentAddressBarInput.substring(7).trimStart()
+            if (extracted != goalInput) {
+                goalInput = extracted
+            }
+        } else if (currentAddressBarInput.equals("/agent", ignoreCase = true)) {
+            if (goalInput.isNotEmpty()) {
+                goalInput = ""
+            }
+        }
+    }
+
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Overview, 1 = Agents, 2 = Steps Audit
+
+    // Function to update goal and synchronize with address bar as "/agent <goal>"
+    val updateGoal: (String) -> Unit = { newText ->
+        val clean = if (newText.startsWith("/agent ", ignoreCase = true)) {
+            newText.substring(7).trimStart()
+        } else if (newText.equals("/agent", ignoreCase = true)) {
+            ""
+        } else {
+            newText
+        }
+        goalInput = clean
+        val addressBarValue = if (clean.isBlank()) "" else "/agent $clean"
+        if (viewModel?.addressBarInput?.value != addressBarValue) {
+            viewModel?.setAddressBarInput(addressBarValue)
+        }
+    }
+
+    val executeGoal: () -> Unit = {
+        if (goalInput.isNotBlank()) {
+            val goal = goalInput.trim()
+            val command = "/agent $goal"
+            goalInput = ""
+            selectedTab = 1 // Switch to Step Audit to watch progress
+            if (viewModel != null) {
+                viewModel.setAddressBarInput("")
+                viewModel.terminalCommandExecutor.executeCommand(
+                    rawInput = command,
+                    origin = CommandOrigin.CNS_DASHBOARD,
+                    onOpenAgentDashboard = null
+                )
+            } else {
+                coroutineScope.launch {
+                    cns.orchestrateGoal(goal)
+                }
+            }
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onClose,
@@ -164,24 +236,38 @@ fun AgentDashboardSheet(
                 }
             }
 
-            // Goal Input Bar
+            // Goal Input Bar with /agent prefix & Address Bar synchronization
             OutlinedTextField(
                 value = goalInput,
-                onValueChange = { goalInput = it },
-                placeholder = { Text("Enter mission goal (e.g., 'Compare page with document')", fontSize = 13.sp, color = Color(0xFF607D8B)) },
+                onValueChange = { updateGoal(it) },
+                prefix = {
+                    Text(
+                        text = "/agent ",
+                        color = Color(0xFF00E5FF),
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                },
+                placeholder = {
+                    Text(
+                        text = "Enter mission goal (e.g., 'Compare page with document')",
+                        fontSize = 13.sp,
+                        color = Color(0xFF607D8B)
+                    )
+                },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Send,
+                    keyboardType = KeyboardType.Text
+                ),
+                keyboardActions = KeyboardActions(
+                    onSend = { executeGoal() }
+                ),
                 trailingIcon = {
                     IconButton(
-                        onClick = {
-                            if (goalInput.isNotBlank()) {
-                                val goal = goalInput
-                                goalInput = ""
-                                coroutineScope.launch {
-                                    cns.orchestrateGoal(goal)
-                                }
-                            }
-                        },
+                        onClick = { executeGoal() },
                         enabled = !isBusy && goalInput.isNotBlank()
                     ) {
                         Icon(
@@ -199,6 +285,77 @@ fun AgentDashboardSheet(
                 ),
                 shape = RoundedCornerShape(10.dp)
             )
+
+            // Address Bar Sync Status Indicator
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = "Synchronized with Address Bar",
+                        tint = Color(0xFF00E5FF),
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = "Synced with Address Bar (/agent ...)",
+                        color = Color(0xFF90A4AE),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+                if (goalInput.isNotBlank()) {
+                    Text(
+                        text = "/agent $goalInput",
+                        color = Color(0xFF00E5FF).copy(alpha = 0.85f),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 160.dp)
+                    )
+                }
+            }
+
+            // Quick Mission Goal Presets (tap to sync into goal and address bar)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val sampleGoals = listOf(
+                    "compare page with document",
+                    "auto-organize sandbox tabs",
+                    "extract key data and summarize",
+                    "verify page links and audit",
+                    "code web scraper helper"
+                )
+                sampleGoals.forEach { sample ->
+                    SuggestionChip(
+                        onClick = { updateGoal(sample) },
+                        label = {
+                            Text(
+                                text = sample,
+                                fontSize = 10.sp,
+                                color = Color(0xFFB0BEC5)
+                            )
+                        },
+                        colors = SuggestionChipDefaults.suggestionChipColors(
+                            containerColor = Color(0xFF1E2638)
+                        ),
+                        border = BorderStroke(1.dp, Color(0xFF2C3549))
+                    )
+                }
+            }
 
             // Tabs Switcher
             TabRow(
