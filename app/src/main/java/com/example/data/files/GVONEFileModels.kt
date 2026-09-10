@@ -30,10 +30,49 @@ enum class FileType(
     TEXT("Text File", "txt", Color(0xFF94A3B8)),
     JSON("JSON", "json", Color(0xFF10B981)),
     CODE("Code File", "kt", Color(0xFFA78BFA)),
+    HTML("HTML Web App", "html", Color(0xFFF97316)),
     PDF("PDF Document", "pdf", Color(0xFFEF4444)),
     IMAGE("Image", "png", Color(0xFFEC4899)),
     ARCHIVE("Archive", "zip", Color(0xFFEAB308)),
     UNKNOWN("File", "", Color(0xFF64748B))
+}
+
+/**
+ * Execution / Run capability for files in GVONE.
+ */
+enum class RunCapability(
+    val label: String,
+    val badge: String,
+    val description: String
+) {
+    HTML_RUNNER("Run in Browser", "HTML", "Renders HTML, CSS, and executes JavaScript in live browser engine"),
+    JS_RUNNER("Run JavaScript", "JS", "Executes JavaScript in sandbox runtime with console output"),
+    SHELL_RUNNER("Execute Script", "SH", "Executes shell commands in GVONE terminal engine"),
+    PYTHON_RUNNER("Run Python", "PY", "Executes python script in terminal runtime"),
+    KOTLIN_RUNNER("Run Code", "KT", "Executes / inspects program in terminal runtime"),
+    SVG_RUNNER("Render SVG", "SVG", "Renders interactive vector graphics"),
+    JSON_RUNNER("Validate & Run", "JSON", "Validates JSON structure and inspects tree"),
+    MARKDOWN_RUNNER("Render Markdown", "MD", "Renders formatted markdown document"),
+    NONE("", "", "")
+}
+
+fun getFileRunCapability(fileName: String): RunCapability {
+    val ext = fileName.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+    return when (ext) {
+        "html", "htm" -> RunCapability.HTML_RUNNER
+        "js", "mjs" -> RunCapability.JS_RUNNER
+        "sh", "bash" -> RunCapability.SHELL_RUNNER
+        "py" -> RunCapability.PYTHON_RUNNER
+        "kt", "java" -> RunCapability.KOTLIN_RUNNER
+        "svg" -> RunCapability.SVG_RUNNER
+        "json" -> RunCapability.JSON_RUNNER
+        "md", "markdown" -> RunCapability.MARKDOWN_RUNNER
+        else -> RunCapability.NONE
+    }
+}
+
+fun isRunnableFile(fileName: String): Boolean {
+    return getFileRunCapability(fileName) != RunCapability.NONE
 }
 
 /**

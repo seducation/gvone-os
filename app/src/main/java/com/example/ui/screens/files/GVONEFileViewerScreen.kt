@@ -7,10 +7,19 @@ import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.webkit.ConsoleMessage
+import android.webkit.JsResult
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -35,19 +44,26 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import com.example.data.files.FileType
 import com.example.data.files.GVONEFileItem
 import com.example.data.files.GVONEFileSystem
+import com.example.data.files.RunCapability
+import com.example.data.files.getFileRunCapability
+import com.example.data.files.isRunnableFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Universal Tab Viewer & Editor for GVONE.
- * Opens different files (PDF, Markdown, Text, JSON, Code, Images) directly inside browser tabs.
+ * Opens different files (HTML, PDF, Markdown, Text, JSON, Code, Images) directly inside browser tabs.
  */
 @Composable
 fun GVONEFileViewerScreen(
@@ -55,6 +71,7 @@ fun GVONEFileViewerScreen(
     fileSystem: GVONEFileSystem,
     onCloseTab: () -> Unit,
     onOpenTerminalWithCommand: (String) -> Unit = {},
+    onRunInBrowserTab: (url: String, title: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -67,12 +84,14 @@ fun GVONEFileViewerScreen(
     var isFavorite by remember { mutableStateOf(false) }
     var showInfoDialog by remember { mutableStateOf(false) }
     var mdEditMode by remember { mutableStateOf(false) } // For markdown: preview vs edit
+    var isRunnerActive by remember { mutableStateOf(false) } // Live Runner mode for .html & support files
     var toastMessage by remember { mutableStateOf<String?>(null) }
 
     val file = remember(fileRelativePath) { fileSystem.getFile(fileRelativePath) }
     val fileName = remember(fileRelativePath) { file.name }
     val isDir = remember(file) { file.isDirectory }
     val fileType = remember(fileName, isDir) { fileSystem.determineFileType(fileName, isDir) }
+    val runCapability = remember(fileName) { getFileRunCapability(fileName) }
 
     val hasUnsavedChanges by remember(fileContent, originalContent) {
         derivedStateOf { fileContent != originalContent }
@@ -91,7 +110,7 @@ fun GVONEFileViewerScreen(
         withContext(Dispatchers.IO) {
             isFavorite = fileSystem.isFavorite(fileRelativePath)
             if (fileType == FileType.TEXT || fileType == FileType.MARKDOWN ||
-                fileType == FileType.JSON || fileType == FileType.CODE
+                fileType == FileType.JSON || fileType == FileType.CODE || fileType == FileType.HTML
             ) {
                 val text = fileSystem.readFileContent(fileRelativePath)
                 withContext(Dispatchers.Main) {
@@ -171,6 +190,7 @@ fun GVONEFileViewerScreen(
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = when (fileType) {
+                                    FileType.HTML -> Icons.Rounded.Language
                                     FileType.MARKDOWN -> Icons.Rounded.Description
                                     FileType.TEXT -> Icons.Rounded.Article
                                     FileType.JSON -> Icons.Rounded.DataObject
@@ -219,6 +239,75 @@ fun GVONEFileViewerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    // Run Button for .html and all other runnable files (JS, SH, PY, KT, SVG, etc.)
+                    if (runCapability != RunCapability.NONE) {
+                        Button(
+                            onClick = {
+                                if (hasUnsavedChanges) saveChanges()
+                                isRunnerActive = true
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isRunnerActive) Color(0xFF059669) else Color(0xFF10B981)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .height(32.dp)
+                                .testTag("run_file_top_bar_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = "Run",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isRunnerActive) "Running" else "Run",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+
+                    // Toggle back to Code Editor if runner is active
+                    if (isRunnerActive) {
+                        OutlinedButton(
+                            onClick = { isRunnerActive = false },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .height(32.dp)
+                                .testTag("switch_to_code_button")
+                        ) {
+                            Icon(Icons.Rounded.Code, contentDescription = "Editor", tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Code", fontSize = 11.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    // Direct "Open in Browser Tab" for HTML files
+                    if (runCapability == RunCapability.HTML_RUNNER) {
+                        IconButton(
+                            onClick = {
+                                if (hasUnsavedChanges) saveChanges()
+                                onRunInBrowserTab("file://${file.absolutePath}", fileName)
+                            },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .testTag("open_html_in_browser_tab_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.OpenInBrowser,
+                                contentDescription = "Run in Browser Tab",
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
                     // Markdown Mode Toggle
                     if (fileType == FileType.MARKDOWN) {
                         IconButton(
@@ -304,69 +393,134 @@ fun GVONEFileViewerScreen(
             }
         } else {
             Box(modifier = Modifier.fillMaxSize()) {
-                when (fileType) {
-                    FileType.MARKDOWN -> {
-                        if (mdEditMode) {
+                if (isRunnerActive) {
+                    when (runCapability) {
+                        RunCapability.HTML_RUNNER -> {
+                            HtmlWebRunner(
+                                file = file,
+                                htmlContent = fileContent,
+                                onBackToEditor = { isRunnerActive = false },
+                                onOpenInBrowserTab = {
+                                    if (hasUnsavedChanges) saveChanges()
+                                    onRunInBrowserTab("file://${file.absolutePath}", fileName)
+                                }
+                            )
+                        }
+                        RunCapability.JS_RUNNER -> {
+                            JsScriptRunner(
+                                fileName = fileName,
+                                jsCode = fileContent,
+                                onBackToEditor = { isRunnerActive = false }
+                            )
+                        }
+                        RunCapability.SHELL_RUNNER -> {
+                            ShellScriptRunner(
+                                fileName = fileName,
+                                scriptContent = fileContent,
+                                onOpenTerminal = {
+                                    onOpenTerminalWithCommand("sh ${fileRelativePath}")
+                                },
+                                onBackToEditor = { isRunnerActive = false }
+                            )
+                        }
+                        else -> {
+                            GenericCodeRunner(
+                                fileName = fileName,
+                                codeContent = fileContent,
+                                runCapability = runCapability,
+                                onOpenTerminal = {
+                                    onOpenTerminalWithCommand("/cat ${fileRelativePath}")
+                                },
+                                onBackToEditor = { isRunnerActive = false }
+                            )
+                        }
+                    }
+                } else {
+                    when (fileType) {
+                        FileType.HTML -> {
+                            CodeViewerAndEditor(
+                                codeText = fileContent,
+                                extension = "html",
+                                onCodeChange = { fileContent = it },
+                                onRunInTerminal = {
+                                    onOpenTerminalWithCommand("/cat ${fileRelativePath}")
+                                },
+                                onRunFile = {
+                                    if (hasUnsavedChanges) saveChanges()
+                                    isRunnerActive = true
+                                }
+                            )
+                        }
+
+                        FileType.MARKDOWN -> {
+                            if (mdEditMode) {
+                                CodeTextEditor(
+                                    content = fileContent,
+                                    onContentChange = { fileContent = it },
+                                    language = "markdown"
+                                )
+                            } else {
+                                MarkdownPreview(markdownText = fileContent)
+                            }
+                        }
+
+                        FileType.TEXT -> {
                             CodeTextEditor(
                                 content = fileContent,
                                 onContentChange = { fileContent = it },
-                                language = "markdown"
+                                language = "text"
                             )
-                        } else {
-                            MarkdownPreview(markdownText = fileContent)
                         }
-                    }
 
-                    FileType.TEXT -> {
-                        CodeTextEditor(
-                            content = fileContent,
-                            onContentChange = { fileContent = it },
-                            language = "text"
-                        )
-                    }
+                        FileType.JSON -> {
+                            JsonViewerAndEditor(
+                                jsonText = fileContent,
+                                onJsonChange = { fileContent = it }
+                            )
+                        }
 
-                    FileType.JSON -> {
-                        JsonViewerAndEditor(
-                            jsonText = fileContent,
-                            onJsonChange = { fileContent = it }
-                        )
-                    }
-
-                    FileType.CODE -> {
-                        CodeViewerAndEditor(
-                            codeText = fileContent,
-                            extension = file.extension,
-                            onCodeChange = { fileContent = it },
-                            onRunInTerminal = {
-                                onOpenTerminalWithCommand("/cat ${fileRelativePath}")
-                            }
-                        )
-                    }
-
-                    FileType.PDF -> {
-                        PdfDocumentViewer(pdfFile = file)
-                    }
-
-                    FileType.IMAGE -> {
-                        ImageFileViewer(imageFile = file)
-                    }
-
-                    else -> {
-                        UnknownFileViewer(
-                            file = file,
-                            onOpenExternal = {
-                                try {
-                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                                        setDataAndType(uri, fileSystem.getMimeType(file.extension))
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        FileType.CODE -> {
+                            CodeViewerAndEditor(
+                                codeText = fileContent,
+                                extension = file.extension,
+                                onCodeChange = { fileContent = it },
+                                onRunInTerminal = {
+                                    onOpenTerminalWithCommand("/cat ${fileRelativePath}")
+                                },
+                                onRunFile = if (runCapability != RunCapability.NONE) {
+                                    {
+                                        if (hasUnsavedChanges) saveChanges()
+                                        isRunnerActive = true
                                     }
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
+                                } else null
+                            )
+                        }
+
+                        FileType.PDF -> {
+                            PdfDocumentViewer(pdfFile = file)
+                        }
+
+                        FileType.IMAGE -> {
+                            ImageFileViewer(imageFile = file)
+                        }
+
+                        else -> {
+                            UnknownFileViewer(
+                                file = file,
+                                onOpenExternal = {
+                                    try {
+                                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                                            setDataAndType(uri, fileSystem.getMimeType(file.extension))
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -632,7 +786,8 @@ fun CodeViewerAndEditor(
     codeText: String,
     extension: String,
     onCodeChange: (String) -> Unit,
-    onRunInTerminal: () -> Unit
+    onRunInTerminal: () -> Unit,
+    onRunFile: (() -> Unit)? = null
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Surface(
@@ -654,16 +809,35 @@ fun CodeViewerAndEditor(
                     fontWeight = FontWeight.Bold
                 )
 
-                Button(
-                    onClick = onRunInTerminal,
-                    shape = RoundedCornerShape(6.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                    modifier = Modifier.height(28.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Inspect in Terminal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (onRunFile != null) {
+                        Button(
+                            onClick = onRunFile,
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp).testTag("code_viewer_toolbar_run_button")
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Run", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Button(
+                        onClick = onRunInTerminal,
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Inspect in Terminal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -991,5 +1165,889 @@ private fun InfoRow(label: String, value: String) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Text(text = label.uppercase(), color = Color(0xFF64748B), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Text(text = value, color = Color(0xFFE2E8F0), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTML & SUPPORT FILE RUNNER ENGINES
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum class ConsoleLogLevel(val label: String, val color: Color) {
+    LOG("LOG", Color(0xFF38BDF8)),
+    INFO("INFO", Color(0xFF10B981)),
+    WARN("WARN", Color(0xFFFBBF24)),
+    ERROR("ERROR", Color(0xFFEF4444))
+}
+
+data class ConsoleLogEntry(
+    val message: String,
+    val source: String,
+    val lineNumber: Int,
+    val level: ConsoleLogLevel,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+enum class HtmlViewportMode(val label: String, val widthDp: Int?) {
+    RESPONSIVE("Responsive", null),
+    PHONE("Mobile (380dp)", 380),
+    TABLET("Tablet (680dp)", 680)
+}
+
+/**
+ * High-performance, interactive local HTML runtime with live developer console,
+ * viewport simulation, alert dialogs, and real-time JavaScript evaluation.
+ */
+@Composable
+fun HtmlWebRunner(
+    file: File,
+    htmlContent: String,
+    onBackToEditor: () -> Unit,
+    onOpenInBrowserTab: () -> Unit
+) {
+    var viewportMode by remember { mutableStateOf(HtmlViewportMode.RESPONSIVE) }
+    var showConsole by remember { mutableStateOf(false) }
+    var reloadTrigger by remember { mutableIntStateOf(0) }
+    val consoleLogs = remember { mutableStateListOf<ConsoleLogEntry>() }
+    var activeAlertMessage by remember { mutableStateOf<String?>(null) }
+    var activeJsResult by remember { mutableStateOf<JsResult?>(null) }
+    var replCommand by remember { mutableStateOf("") }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    val dateFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
+
+    // Alert dialog when JavaScript calls alert(...)
+    if (activeAlertMessage != null) {
+        AlertDialog(
+            onDismissRequest = {
+                activeJsResult?.cancel()
+                activeJsResult = null
+                activeAlertMessage = null
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Notifications, contentDescription = null, tint = Color(0xFF38BDF8))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("JavaScript Alert", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(activeAlertMessage ?: "", color = Color(0xFFE2E8F0), fontSize = 13.sp)
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        activeJsResult?.confirm()
+                        activeJsResult = null
+                        activeAlertMessage = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                ) {
+                    Text("OK")
+                }
+            },
+            containerColor = Color(0xFF1E293B)
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0B0F17))
+            .testTag("html_web_runner")
+    ) {
+        // Runner Toolbar
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFF131926),
+            border = BorderStroke(1.dp, Color(0xFF222F43))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Left: Back to Code + Status Badge
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onBackToEditor,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF475569)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Rounded.Code, contentDescription = "Editor", tint = Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Editor", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                    }
+
+                    Surface(
+                        color = Color(0xFF10B981).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(4.dp),
+                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF10B981))
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("RUNNING", color = Color(0xFF10B981), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Center: Viewport Mode Switcher
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    IconButton(
+                        onClick = { viewportMode = HtmlViewportMode.RESPONSIVE },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Fullscreen,
+                            contentDescription = "Responsive View",
+                            tint = if (viewportMode == HtmlViewportMode.RESPONSIVE) Color(0xFF38BDF8) else Color(0xFF64748B),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { viewportMode = HtmlViewportMode.PHONE },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Smartphone,
+                            contentDescription = "Phone View",
+                            tint = if (viewportMode == HtmlViewportMode.PHONE) Color(0xFF38BDF8) else Color(0xFF64748B),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { viewportMode = HtmlViewportMode.TABLET },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Tablet,
+                            contentDescription = "Tablet View",
+                            tint = if (viewportMode == HtmlViewportMode.TABLET) Color(0xFF38BDF8) else Color(0xFF64748B),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+                }
+
+                // Right: Reload, Console Toggle, Open in dedicated Tab
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    IconButton(
+                        onClick = {
+                            reloadTrigger++
+                            consoleLogs.add(
+                                ConsoleLogEntry("Page reloaded", "system", 0, ConsoleLogLevel.INFO)
+                            )
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "Reload", tint = Color(0xFFE2E8F0), modifier = Modifier.size(16.dp))
+                    }
+
+                    // Console button with log count badge
+                    Button(
+                        onClick = { showConsole = !showConsole },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (showConsole) Color(0xFF1E293B) else Color(0xFF0F172A)
+                        ),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, if (showConsole) Color(0xFF38BDF8) else Color(0xFF334155)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Console", fontSize = 11.sp, color = Color.White)
+                        if (consoleLogs.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("(${consoleLogs.size})", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Open in Browser Tab
+                    Button(
+                        onClick = onOpenInBrowserTab,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Rounded.OpenInBrowser, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Open Tab", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Web Viewer Canvas Area
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(Color(0xFF0B0F17)),
+            contentAlignment = Alignment.Center
+        ) {
+            val frameModifier = if (viewportMode.widthDp != null) {
+                Modifier
+                    .width(viewportMode.widthDp!!.dp)
+                    .fillMaxHeight()
+                    .padding(vertical = 12.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(2.dp, Color(0xFF334155), RoundedCornerShape(12.dp))
+            } else {
+                Modifier.fillMaxSize()
+            }
+
+            Box(modifier = frameModifier.background(Color.White)) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                databaseEnabled = true
+                                allowFileAccess = true
+                                allowContentAccess = true
+                                @Suppress("DEPRECATION")
+                                allowFileAccessFromFileURLs = true
+                                @Suppress("DEPRECATION")
+                                allowUniversalAccessFromFileURLs = true
+                                useWideViewPort = true
+                                loadWithOverviewMode = true
+                                setSupportZoom(true)
+                                builtInZoomControls = true
+                                displayZoomControls = false
+                            }
+
+                            webChromeClient = object : WebChromeClient() {
+                                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                                    consoleMessage?.let {
+                                        val entry = ConsoleLogEntry(
+                                            message = it.message(),
+                                            source = it.sourceId().substringAfterLast('/'),
+                                            lineNumber = it.lineNumber(),
+                                            level = when (it.messageLevel()) {
+                                                ConsoleMessage.MessageLevel.ERROR -> ConsoleLogLevel.ERROR
+                                                ConsoleMessage.MessageLevel.WARNING -> ConsoleLogLevel.WARN
+                                                ConsoleMessage.MessageLevel.TIP -> ConsoleLogLevel.INFO
+                                                else -> ConsoleLogLevel.LOG
+                                            }
+                                        )
+                                        consoleLogs.add(entry)
+                                    }
+                                    return true
+                                }
+
+                                override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                                    activeAlertMessage = message
+                                    activeJsResult = result
+                                    return true
+                                }
+                            }
+
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                    return false // Keep navigation inside web runner
+                                }
+                            }
+
+                            loadDataWithBaseURL(
+                                "file://${file.parentFile?.absolutePath}/",
+                                htmlContent,
+                                "text/html",
+                                "UTF-8",
+                                null
+                            )
+                            webViewRef = this
+                        }
+                    },
+                    update = { wv ->
+                        webViewRef = wv
+                        // Trigger reload when requested
+                        if (reloadTrigger > 0) {
+                            wv.loadDataWithBaseURL(
+                                "file://${file.parentFile?.absolutePath}/",
+                                htmlContent,
+                                "text/html",
+                                "UTF-8",
+                                null
+                            )
+                        }
+                    }
+                )
+            }
+        }
+
+        // Developer Console Drawer
+        if (showConsole) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp),
+                color = Color(0xFF090D16),
+                border = BorderStroke(1.dp, Color(0xFF1E293B))
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Console Header Bar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF111726))
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("JavaScript Console", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("${consoleLogs.size} logs", color = Color(0xFF64748B), fontSize = 10.sp)
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                onClick = { consoleLogs.clear() },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                modifier = Modifier.height(24.dp)
+                            ) {
+                                Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("Clear", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                            }
+
+                            IconButton(
+                                onClick = { showConsole = false },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = "Close", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+
+                    // Console Logs List
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (consoleLogs.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "Console is empty. Logs from console.log(), console.warn(), and console.error() appear here.",
+                                    color = Color(0xFF475569),
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(vertical = 12.dp)
+                                )
+                            }
+                        } else {
+                            items(consoleLogs) { log ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            when (log.level) {
+                                                ConsoleLogLevel.ERROR -> Color(0xFFEF4444).copy(alpha = 0.12f)
+                                                ConsoleLogLevel.WARN -> Color(0xFFFBBF24).copy(alpha = 0.12f)
+                                                else -> Color.Transparent
+                                            },
+                                            RoundedCornerShape(4.dp)
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Text(
+                                        text = "[${log.level.name}]",
+                                        color = log.level.color,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        modifier = Modifier.width(48.dp)
+                                    )
+
+                                    Text(
+                                        text = log.message,
+                                        color = Color(0xFFE2E8F0),
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    if (log.source.isNotEmpty()) {
+                                        Text(
+                                            text = "${log.source}:${log.lineNumber}",
+                                            color = Color(0xFF64748B),
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // REPL Interactive Evaluation Bar
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color(0xFF141C2B),
+                        border = BorderStroke(1.dp, Color(0xFF222F43))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(">", color = Color(0xFF38BDF8), fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            BasicTextField(
+                                value = replCommand,
+                                onValueChange = { replCommand = it },
+                                textStyle = TextStyle(color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
+                                cursorBrush = SolidColor(Color(0xFF38BDF8)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("html_runner_repl_input"),
+                                decorationBox = { innerTextField ->
+                                    if (replCommand.isEmpty()) {
+                                        Text("evaluate JavaScript (e.g. document.title)...", color = Color(0xFF475569), fontSize = 11.sp)
+                                    }
+                                    innerTextField()
+                                }
+                            )
+
+                            Button(
+                                onClick = {
+                                    val cmd = replCommand.trim()
+                                    if (cmd.isNotEmpty()) {
+                                        replCommand = ""
+                                        consoleLogs.add(ConsoleLogEntry("> $cmd", "input", 1, ConsoleLogLevel.LOG))
+                                        webViewRef?.evaluateJavascript(cmd) { result ->
+                                            val formatted = if (result == "null" || result == null) "undefined" else result
+                                            consoleLogs.add(ConsoleLogEntry("<- $formatted", "eval", 1, ConsoleLogLevel.INFO))
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(4.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(24.dp)
+                            ) {
+                                Text("Eval", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Direct JavaScript execution runner that runs JS in an isolated WebView instance
+ * and captures all console output, measurement times, and return values.
+ */
+@Composable
+fun JsScriptRunner(
+    fileName: String,
+    jsCode: String,
+    onBackToEditor: () -> Unit
+) {
+    val logs = remember { mutableStateListOf<ConsoleLogEntry>() }
+    var executionDuration by remember { mutableLongStateOf(0L) }
+    var isRunning by remember { mutableStateOf(false) }
+    var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+    val context = LocalContext.current
+
+    fun executeScript(wv: WebView) {
+        logs.clear()
+        isRunning = true
+        logs.add(ConsoleLogEntry("Executing $fileName...", "runner", 1, ConsoleLogLevel.INFO))
+
+        val startTime = System.currentTimeMillis()
+        val wrappedCode = """
+            (function() {
+                try {
+                    $jsCode
+                } catch(err) {
+                    console.error(err.toString());
+                }
+            })();
+        """.trimIndent()
+
+        wv.evaluateJavascript(wrappedCode) { result ->
+            executionDuration = System.currentTimeMillis() - startTime
+            isRunning = false
+            logs.add(ConsoleLogEntry("Returned: $result (in ${executionDuration}ms)", "runner", 1, ConsoleLogLevel.INFO))
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0B0F17))
+            .testTag("js_script_runner")
+    ) {
+        // Hidden WebView engine for JS evaluation
+        AndroidView(
+            modifier = Modifier.size(0.dp),
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    settings.javaScriptEnabled = true
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                            consoleMessage?.let {
+                                logs.add(
+                                    ConsoleLogEntry(
+                                        message = it.message(),
+                                        source = fileName,
+                                        lineNumber = it.lineNumber(),
+                                        level = when (it.messageLevel()) {
+                                            ConsoleMessage.MessageLevel.ERROR -> ConsoleLogLevel.ERROR
+                                            ConsoleMessage.MessageLevel.WARNING -> ConsoleLogLevel.WARN
+                                            ConsoleMessage.MessageLevel.TIP -> ConsoleLogLevel.INFO
+                                            else -> ConsoleLogLevel.LOG
+                                        }
+                                    )
+                                )
+                            }
+                            return true
+                        }
+                    }
+                    webViewInstance = this
+                    executeScript(this)
+                }
+            }
+        )
+
+        // Top bar
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFF131926),
+            border = BorderStroke(1.dp, Color(0xFF222F43))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onBackToEditor,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF475569)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Rounded.Code, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Editor", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                    }
+
+                    Text("JavaScript Runner", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (executionDuration > 0) {
+                        Text("${executionDuration}ms", color = Color(0xFF10B981), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
+
+                    Button(
+                        onClick = { webViewInstance?.let { executeScript(it) } },
+                        enabled = !isRunning,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (isRunning) "Running..." else "Re-run", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Terminal-style output
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(16.dp),
+            color = Color(0xFF090D16),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0xFF1E293B))
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(logs) { entry ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = "[${entry.level.name}]",
+                            color = entry.level.color,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.width(52.dp)
+                        )
+                        Text(
+                            text = entry.message,
+                            color = Color(0xFFE2E8F0),
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Shell script runner supporting script inspection, line execution, and seamless terminal handoff.
+ */
+@Composable
+fun ShellScriptRunner(
+    fileName: String,
+    scriptContent: String,
+    onOpenTerminal: () -> Unit,
+    onBackToEditor: () -> Unit
+) {
+    val scriptLines = remember(scriptContent) { scriptContent.lines() }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0B0F17))
+            .testTag("shell_script_runner")
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFF131926),
+            border = BorderStroke(1.dp, Color(0xFF222F43))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onBackToEditor,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF475569)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Rounded.Code, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Editor", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                    }
+
+                    Text("Shell Runner: $fileName", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = onOpenTerminal,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Execute in Terminal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // Script contents preview with command indicators
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(16.dp),
+            color = Color(0xFF090D16),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0xFF1E293B))
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                item {
+                    Text("# Shell Script Inspection Mode", color = Color(0xFF64748B), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+                items(scriptLines.size) { index ->
+                    val line = scriptLines[index]
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "${index + 1}".padStart(3, ' '),
+                            color = Color(0xFF475569),
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.width(36.dp)
+                        )
+                        Text(
+                            text = line,
+                            color = when {
+                                line.startsWith("#") -> Color(0xFF64748B)
+                                line.startsWith("echo") -> Color(0xFF38BDF8)
+                                line.contains("=") -> Color(0xFFA78BFA)
+                                else -> Color(0xFFE2E8F0)
+                            },
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Generic code runner for other support files (.py, .kt, .java, etc.)
+ */
+@Composable
+fun GenericCodeRunner(
+    fileName: String,
+    codeContent: String,
+    runCapability: RunCapability,
+    onOpenTerminal: () -> Unit,
+    onBackToEditor: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0B0F17))
+            .testTag("generic_code_runner")
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFF131926),
+            border = BorderStroke(1.dp, Color(0xFF222F43))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onBackToEditor,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF475569)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Rounded.Code, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Editor", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                    }
+
+                    Text("${runCapability.label}: $fileName", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = onOpenTerminal,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Inspect in Terminal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(16.dp),
+            color = Color(0xFF090D16),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0xFF1E293B))
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp)
+            ) {
+                item {
+                    Text(
+                        text = "Ready to run with ${runCapability.label}.\nUse 'Inspect in Terminal' to run or execute commands against this file.",
+                        color = Color(0xFF38BDF8),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = codeContent,
+                        color = Color(0xFFE2E8F0),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
     }
 }
