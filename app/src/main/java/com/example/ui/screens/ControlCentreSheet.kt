@@ -37,6 +37,7 @@ fun ControlCentreSheet(
     onOpenTerminal: () -> Unit = {},
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenPermissions: () -> Unit = {},
     onToggleDesktop: () -> Unit,
     onFindInPage: () -> Unit,
     onToggleTor: () -> Unit,
@@ -154,6 +155,55 @@ fun ControlCentreSheet(
             }
 
             Spacer(modifier = Modifier.height(20.dp))
+
+            // Permissions & Safety Gate button
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onOpenPermissions() }
+                    .testTag("open_permissions_button"),
+                color = Color(0xFF1E2636),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E3B50))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.Security,
+                            contentDescription = "Permissions",
+                            tint = GVONEPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Permissions & Safety Gate",
+                                color = GVONETextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Filesystem, Shell, DOM & Network policies",
+                                color = GVONETextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Icon(
+                        imageVector = Icons.Rounded.ChevronRight,
+                        contentDescription = "Open Permissions",
+                        tint = GVONETextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Settings button matching Screenshot 1 red marker N
             Surface(

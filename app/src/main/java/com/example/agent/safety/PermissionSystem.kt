@@ -6,8 +6,11 @@ import com.example.agent.core.StepLogger
 import com.example.agent.core.StepStatus
 import com.example.agent.core.StepType
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -18,6 +21,24 @@ data class PermissionRequest(
     val description: String,
     val risk: String,
     val timestamp: Long = System.currentTimeMillis()
+)
+
+data class PermissionDescriptor(
+    val key: String,
+    val title: String,
+    val category: String,
+    val description: String,
+    val riskLevel: String, // "LOW", "HIGH", "CRITICAL"
+    val defaultPolicy: PermissionPolicy
+)
+
+data class PermissionAuditEvent(
+    val id: String = UUID.randomUUID().toString(),
+    val timestamp: Long = System.currentTimeMillis(),
+    val permission: String,
+    val caller: String,
+    val action: String,
+    val outcome: String
 )
 
 enum class PermissionStatus {
@@ -66,6 +87,97 @@ class PermissionSystem(
         const val SCOPE_NETWORK = "network.*"
         const val SCOPE_EXTERNAL = "external.*"
 
+        val ALL_DESCRIPTORS = listOf(
+            PermissionDescriptor(
+                key = PERM_FILESYSTEM_READ,
+                title = "Filesystem Read",
+                category = "Filesystem",
+                description = "Read files, sandbox workspaces, and inspect directory hierarchies.",
+                riskLevel = "LOW",
+                defaultPolicy = PermissionPolicy.ALLOW
+            ),
+            PermissionDescriptor(
+                key = PERM_FILESYSTEM_WRITE,
+                title = "Filesystem Write",
+                category = "Filesystem",
+                description = "Create, modify, append, and edit files within the sandbox filesystem.",
+                riskLevel = "HIGH",
+                defaultPolicy = PermissionPolicy.ALLOW
+            ),
+            PermissionDescriptor(
+                key = PERM_FILESYSTEM_DELETE,
+                title = "Filesystem Delete",
+                category = "Filesystem",
+                description = "Permanently remove files and purge directories within the filesystem.",
+                riskLevel = "CRITICAL",
+                defaultPolicy = PermissionPolicy.ASK
+            ),
+            PermissionDescriptor(
+                key = PERM_BROWSER_NAVIGATE,
+                title = "Browser Navigation",
+                category = "Browser",
+                description = "Navigate web views to new domains, URLs, and follow link redirects.",
+                riskLevel = "LOW",
+                defaultPolicy = PermissionPolicy.ALLOW
+            ),
+            PermissionDescriptor(
+                key = PERM_BROWSER_READ,
+                title = "Browser DOM Read",
+                category = "Browser",
+                description = "Inspect web page DOM structure, read text content, headings, and metadata.",
+                riskLevel = "LOW",
+                defaultPolicy = PermissionPolicy.ALLOW
+            ),
+            PermissionDescriptor(
+                key = PERM_BROWSER_INTERACT,
+                title = "Browser Interaction",
+                category = "Browser",
+                description = "Simulate user clicks, fill out input fields, and submit web forms.",
+                riskLevel = "HIGH",
+                defaultPolicy = PermissionPolicy.ALLOW
+            ),
+            PermissionDescriptor(
+                key = PERM_SHELL_EXECUTE,
+                title = "Shell Execution",
+                category = "System & Shell",
+                description = "Execute command-line scripts, shell utilities, and terminal subprocesses.",
+                riskLevel = "CRITICAL",
+                defaultPolicy = PermissionPolicy.ASK
+            ),
+            PermissionDescriptor(
+                key = PERM_GIT_READ,
+                title = "Git Repository Read",
+                category = "Version Control",
+                description = "Read Git status, branch commits, diffs, and repository history.",
+                riskLevel = "LOW",
+                defaultPolicy = PermissionPolicy.ALLOW
+            ),
+            PermissionDescriptor(
+                key = PERM_GIT_WRITE,
+                title = "Git Commit & Branch",
+                category = "Version Control",
+                description = "Stage files, create git commits, switch branches, and write repository state.",
+                riskLevel = "HIGH",
+                defaultPolicy = PermissionPolicy.ALLOW
+            ),
+            PermissionDescriptor(
+                key = PERM_NETWORK_REQUEST,
+                title = "Network & Tor Requests",
+                category = "Network",
+                description = "Send outbound HTTP/SOCKS5 requests, API calls, and onion-routed packets.",
+                riskLevel = "HIGH",
+                defaultPolicy = PermissionPolicy.ALLOW
+            ),
+            PermissionDescriptor(
+                key = PERM_EXTERNAL_API,
+                title = "External API Calls",
+                category = "Integrations",
+                description = "Dispatch requests to external cloud services, remote LLM endpoints, and webhooks.",
+                riskLevel = "CRITICAL",
+                defaultPolicy = PermissionPolicy.ASK
+            )
+        )
+
         val global = PermissionSystem()
     }
 
@@ -85,7 +197,47 @@ class PermissionSystem(
     private val _pendingRequests = MutableSharedFlow<PermissionRequest>(extraBufferCapacity = 32)
     val pendingRequests: SharedFlow<PermissionRequest> = _pendingRequests.asSharedFlow()
 
+    private val _grantedPermissionsFlow = MutableStateFlow<Set<String>>(emptySet())
+    val grantedPermissionsFlow: StateFlow<Set<String>> = _grantedPermissionsFlow.asStateFlow()
+
+    private val _scopePoliciesFlow = MutableStateFlow<Map<String, PermissionPolicy>>(emptyMap())
+    val scopePoliciesFlow: StateFlow<Map<String, PermissionPolicy>> = _scopePoliciesFlow.asStateFlow()
+
+    private val _activePrompt = MutableStateFlow<PermissionRequest?>(null)
+    val activePromptFlow: StateFlow<PermissionRequest?> = _activePrompt.asStateFlow()
+
+    private val _auditLogs = MutableStateFlow<List<PermissionAuditEvent>>(emptyList())
+    val auditLogFlow: StateFlow<List<PermissionAuditEvent>> = _auditLogs.asStateFlow()
+
+    private fun syncFlows() {
+        _grantedPermissionsFlow.value = grantedPermissions.toSet()
+        _scopePoliciesFlow.value = HashMap(scopePolicies)
+    }
+
+    private fun recordAuditEvent(permission: String, caller: String, action: String, outcome: String) {
+        val event = PermissionAuditEvent(
+            permission = canonicalPermission(permission),
+            caller = caller,
+            action = action,
+            outcome = outcome
+        )
+        val current = _auditLogs.value.toMutableList()
+        current.add(0, event)
+        if (current.size > 100) {
+            _auditLogs.value = current.take(100)
+        } else {
+            _auditLogs.value = current
+        }
+    }
+
     init {
+        initDefaults()
+    }
+
+    private fun initDefaults() {
+        grantedPermissions.clear()
+        scopePolicies.clear()
+
         // Safe default permissions
         grantedPermissions.add(PERM_FILESYSTEM_READ)
         grantedPermissions.add(PERM_BROWSER_NAVIGATE)
@@ -113,6 +265,8 @@ class PermissionSystem(
         scopePolicies[PERM_SHELL_EXECUTE] = PermissionPolicy.ASK
         scopePolicies["shell.execute"] = PermissionPolicy.ASK
         scopePolicies[SCOPE_EXTERNAL] = PermissionPolicy.ASK
+
+        syncFlows()
     }
 
     fun canonicalPermission(permission: String): String {
@@ -127,6 +281,8 @@ class PermissionSystem(
     fun setPolicy(scopeOrPermission: String, policy: PermissionPolicy) {
         val canonical = canonicalPermission(scopeOrPermission)
         scopePolicies[canonical] = policy
+        syncFlows()
+        recordAuditEvent(canonical, "UserOrSystem", "SET_POLICY", policy.name)
         logger.logInstant(
             agentName = "PermissionSystem",
             action = StepType.MODIFY,
@@ -178,6 +334,7 @@ class PermissionSystem(
 
         when (policy) {
             PermissionPolicy.DENY -> {
+                recordAuditEvent(canonical, agentName, "CHECK_PERMISSION", "DENIED")
                 return PermissionCheckResult(
                     PermissionStatus.DENIED,
                     canonical,
@@ -185,19 +342,23 @@ class PermissionSystem(
                 )
             }
             PermissionPolicy.ALLOW -> {
+                recordAuditEvent(canonical, agentName, "CHECK_PERMISSION", "ALLOWED")
                 return PermissionCheckResult(PermissionStatus.GRANTED, canonical)
             }
             PermissionPolicy.ASK -> {
                 if (hasPermission(canonical)) {
+                    recordAuditEvent(canonical, agentName, "CHECK_PERMISSION", "GRANTED_PREVIOUSLY")
                     return PermissionCheckResult(PermissionStatus.GRANTED, canonical)
                 }
                 if (isHeadless) {
+                    recordAuditEvent(canonical, agentName, "CHECK_PERMISSION", "DENIED_HEADLESS")
                     return PermissionCheckResult(
                         PermissionStatus.DENIED,
                         canonical,
                         "Destructive action requires confirmation (ASK policy), but runtime is headless."
                     )
                 }
+                recordAuditEvent(canonical, agentName, "CHECK_PERMISSION", "PROMPT_REQUIRED")
                 return PermissionCheckResult(
                     PermissionStatus.REQUIRES_CONFIRMATION,
                     canonical,
@@ -214,6 +375,8 @@ class PermissionSystem(
         if (canonical.startsWith("file.")) {
             grantedPermissions.add(canonical.replace("file.", "filesystem."))
         }
+        syncFlows()
+        recordAuditEvent(canonical, "User", "GRANT_PERMISSION", "SUCCESS")
         logger.logInstant(
             agentName = "PermissionSystem",
             action = StepType.VALIDATE,
@@ -228,12 +391,77 @@ class PermissionSystem(
         if (canonical.startsWith("file.")) {
             grantedPermissions.remove(canonical.replace("file.", "filesystem."))
         }
+        syncFlows()
+        recordAuditEvent(canonical, "User", "REVOKE_PERMISSION", "SUCCESS")
         logger.logInstant(
             agentName = "PermissionSystem",
             action = StepType.MODIFY,
             target = "Permission revoked: $canonical",
             status = StepStatus.SUCCESS
         )
+    }
+
+    fun revokeAll() {
+        grantedPermissions.clear()
+        syncFlows()
+        recordAuditEvent("*", "User", "REVOKE_ALL", "SUCCESS")
+    }
+
+    fun resetToDefaults() {
+        initDefaults()
+        recordAuditEvent("*", "User", "RESET_DEFAULTS", "SUCCESS")
+    }
+
+    fun clearAuditLogs() {
+        _auditLogs.value = emptyList()
+    }
+
+    /**
+     * Responds to an interactive UI permission prompt.
+     */
+    fun respondToRequest(requestId: String, approved: Boolean, rememberPolicy: Boolean = false) {
+        val currentPrompt = _activePrompt.value
+        val perm = currentPrompt?.permission
+        val agent = currentPrompt?.agentName ?: "UserPrompt"
+
+        if (approved && perm != null) {
+            grantPermission(perm)
+            if (rememberPolicy) {
+                setPolicy(perm, PermissionPolicy.ALLOW)
+            }
+            recordAuditEvent(perm, agent, "USER_PROMPT_RESPONSE", if (rememberPolicy) "APPROVED_ALWAYS" else "APPROVED_ONCE")
+        } else if (!approved && perm != null) {
+            if (rememberPolicy) {
+                setPolicy(perm, PermissionPolicy.DENY)
+            }
+            recordAuditEvent(perm, agent, "USER_PROMPT_RESPONSE", if (rememberPolicy) "DENIED_PERMANENTLY" else "DENIED_ONCE")
+        }
+
+        if (_activePrompt.value?.id == requestId || requestId.isBlank()) {
+            _activePrompt.value = null
+        }
+    }
+
+    fun dismissPendingRequest(requestId: String) {
+        if (_activePrompt.value?.id == requestId || requestId.isBlank()) {
+            _activePrompt.value = null
+        }
+    }
+
+    fun triggerTestPrompt(
+        permission: String = PERM_FILESYSTEM_DELETE,
+        agentName: String = "FileAgent",
+        description: String = "Requested deletion of sandbox directory /workspace/temp_build/"
+    ) {
+        val canonical = canonicalPermission(permission)
+        val req = PermissionRequest(
+            agentName = agentName,
+            permission = canonical,
+            description = description,
+            risk = if (highRiskPermissions.contains(canonical)) "CRITICAL" else "HIGH"
+        )
+        _activePrompt.value = req
+        _pendingRequests.tryEmit(req)
     }
 
     /**
@@ -264,6 +492,7 @@ class PermissionSystem(
             description = description,
             risk = if (highRiskPermissions.contains(canonical)) "CRITICAL" else "HIGH"
         )
+        _activePrompt.value = req
         _pendingRequests.emit(req)
     }
 }

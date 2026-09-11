@@ -154,12 +154,27 @@ fun AgentDashboardSheet(
                     )
                 }
 
-                IconButton(onClick = onClose) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = Color(0xFF90A4AE)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            onClose()
+                            viewModel?.openPermissions()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = "Permissions & Safety Gate",
+                            tint = Color(0xFF00E5FF)
+                        )
+                    }
+
+                    IconButton(onClick = onClose) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color(0xFF90A4AE)
+                        )
+                    }
                 }
             }
 

@@ -46,6 +46,7 @@ fun SettingsScreen(
     onOpenCustomCommands: () -> Unit = {},
     onOpenFiles: () -> Unit = {},
     onOpenWebsiteConnectors: () -> Unit = {},
+    onOpenPermissions: () -> Unit = {},
     onSettingsChanged: (BrowserSettings) -> Unit,
     onClearBrowsingData: () -> Unit,
     onBack: () -> Unit,
@@ -414,6 +415,26 @@ fun SettingsScreen(
                     title = "Cookies & Active Sessions",
                     subtitle = "Inspect active session tokens, cookie counts & clear per-domain cookies",
                     onClick = onOpenWebsiteConnectors
+                )
+            }
+
+            // Section: Agent Safety & Permissions
+            item {
+                Text(
+                    text = "Agent Safety & Permissions",
+                    color = GVONEPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp)
+                )
+            }
+
+            item {
+                SettingsRowItem(
+                    icon = Icons.Rounded.Security,
+                    title = "Permissions & Safety Gate",
+                    subtitle = "Manage allow/ask/block policies and audit logs for agent capabilities",
+                    onClick = onOpenPermissions
                 )
             }
 

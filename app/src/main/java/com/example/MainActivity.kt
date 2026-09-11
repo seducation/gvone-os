@@ -35,6 +35,7 @@ import com.example.data.tor.TorConnectionState
 import com.example.ui.components.CustomCommandManagerSheet
 import com.example.ui.components.FloatingAddressBar
 import com.example.ui.components.GVONEWebView
+import com.example.ui.components.PermissionPromptDialog
 import com.example.ui.components.ShortsAudioPill
 import com.example.ui.contextmenu.LinkContextMenuBottomSheet
 import com.example.ui.contextmenu.PagePreviewSheet
@@ -485,6 +486,7 @@ fun BrowserApp(
                 onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
                 onOpenDownloads = { viewModel.openSheet(ActiveSheet.Downloads) },
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
+                onOpenPermissions = { viewModel.openPermissions() },
                 onToggleDesktop = { viewModel.toggleDesktopMode() },
                 onFindInPage = { viewModel.openSheet(ActiveSheet.FindInPage) },
                 onToggleTor = { viewModel.toggleTor() },
@@ -507,6 +509,7 @@ fun BrowserApp(
                 onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
                 onOpenFiles = { viewModel.openSheet(ActiveSheet.Files) },
                 onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
+                onOpenPermissions = { viewModel.openPermissions() },
                 onSettingsChanged = { viewModel.updateSettings(it) },
                 onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onBack = { viewModel.closeSheet() }
@@ -880,6 +883,54 @@ fun BrowserApp(
                 cns = com.example.agent.cns.CentralNervousSystem.global,
                 viewModel = viewModel,
                 onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // Autonomous Agent Safety & Permissions Manager Sheet
+        if (activeSheet == ActiveSheet.Permissions) {
+            PermissionsManagerSheet(
+                permissionSystem = com.example.agent.safety.PermissionSystem.global,
+                onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // Real-time Interactive Permission Request Prompt Dialog
+        val activePermissionPrompt by com.example.agent.safety.PermissionSystem.global.activePromptFlow.collectAsStateWithLifecycle()
+        if (activePermissionPrompt != null) {
+            val prompt = activePermissionPrompt!!
+            PermissionPromptDialog(
+                request = prompt,
+                onAllowOnce = {
+                    com.example.agent.safety.PermissionSystem.global.respondToRequest(
+                        prompt.id,
+                        approved = true,
+                        rememberPolicy = false
+                    )
+                },
+                onAlwaysAllow = {
+                    com.example.agent.safety.PermissionSystem.global.respondToRequest(
+                        prompt.id,
+                        approved = true,
+                        rememberPolicy = true
+                    )
+                },
+                onDeny = {
+                    com.example.agent.safety.PermissionSystem.global.respondToRequest(
+                        prompt.id,
+                        approved = false,
+                        rememberPolicy = false
+                    )
+                },
+                onBlockAlways = {
+                    com.example.agent.safety.PermissionSystem.global.respondToRequest(
+                        prompt.id,
+                        approved = false,
+                        rememberPolicy = true
+                    )
+                },
+                onDismiss = {
+                    com.example.agent.safety.PermissionSystem.global.dismissPendingRequest(prompt.id)
+                }
             )
         }
 

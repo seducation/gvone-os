@@ -57,6 +57,7 @@ sealed interface ActiveSheet {
     object DataSaver : ActiveSheet
     object CommunicationHub : ActiveSheet
     object AgentDashboard : ActiveSheet
+    object Permissions : ActiveSheet
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -775,6 +776,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun openDataSaver() { openSheet(ActiveSheet.DataSaver) }
     fun openCommunicationHub() { openSheet(ActiveSheet.CommunicationHub) }
     fun openAgentDashboard() { openSheet(ActiveSheet.AgentDashboard) }
+    fun openPermissions() { openSheet(ActiveSheet.Permissions) }
 
     fun saveCurrentPageToResearchWorkspace() {
         val tab = currentTab.value ?: return
@@ -1394,6 +1396,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                             BrowserActionType.READER_MODE -> openSheet(ActiveSheet.ReaderMode)
                             BrowserActionType.TERMINAL -> openSheet(ActiveSheet.Terminal)
                             BrowserActionType.AGENT_DASHBOARD -> openAgentDashboard()
+                            BrowserActionType.PERMISSIONS -> openPermissions()
                             BrowserActionType.CLEAR_DATA -> {
                                 clearBrowsingData()
                                 Toast.makeText(getApplication(), "Browsing data cleared", Toast.LENGTH_SHORT).show()

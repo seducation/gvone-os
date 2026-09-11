@@ -218,6 +218,13 @@ class TerminalCommandExecutor(
                 return
             }
 
+            "/permissions", "/permission", "/security" -> {
+                outputLines.add(TerminalLine("[PERMISSIONS] Opening Permission & Safety Gate...", TerminalLineType.SUCCESS))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = false)
+                viewModel.openPermissions()
+                return
+            }
+
             "/help", "/?" -> {
                 val allCommands = CommandEngine.mergeWithBuiltIns(viewModel.customCommands.value)
                 outputLines.addAll(generateHelpOutput(allCommands))
@@ -1390,6 +1397,7 @@ class TerminalCommandExecutor(
                         BrowserActionType.AGENT_DASHBOARD -> {
                             if (onOpenAgentDashboard != null) onOpenAgentDashboard() else viewModel.openAgentDashboard()
                         }
+                        BrowserActionType.PERMISSIONS -> viewModel.openPermissions()
                     }
                     outputLines.add(
                         TerminalLine(
