@@ -140,7 +140,7 @@ data class BrowserSettings(
     val autoLoadTargetOnFocus: Boolean = false,
     val autoLoadTargetUrl: String = ADDRESS_BAR_TARGET_URL,
     val bidirectionalBridgeEnabled: Boolean = true,
-    val bridgeApplyToAllWebsites: Boolean = false,
+    val bridgeApplyToAllWebsites: Boolean = true,
     val terminalAutoAppearOnAddressBar: Boolean = false,
     val terminalHeightFraction: Float = 0.85f,
     val shortsAudioMode: ShortsAudioMode = ShortsAudioMode.ALWAYS_UNMUTED,

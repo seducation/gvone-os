@@ -41,8 +41,8 @@ enum class ModePriority(val displayName: String) {
  */
 data class RuntimeMode(
     val interaction: InteractionType = InteractionType.TEXT,
-    val execution: ExecutionType = ExecutionType.CHAT,
-    val priority: ModePriority = ModePriority.INTERACTION,
+    val execution: ExecutionType = ExecutionType.AGENT,
+    val priority: ModePriority = ModePriority.EXECUTION,
     val activeTaskId: String? = null,
     val isDebugEnabled: Boolean = false,
     val isVoiceActive: Boolean = false

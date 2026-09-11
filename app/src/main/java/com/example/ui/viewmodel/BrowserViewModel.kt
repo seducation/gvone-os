@@ -649,6 +649,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _currentTabId.value = initialActiveTabs.first().id
         _activeGroupId.value = initialActiveTabs.first().tabGroupId
         _addressBarInput.value = if (isInternalHomeUrl(initialActiveTabs.first().url)) "" else initialActiveTabs.first().url
+        if (isInternalHomeUrl(initialActiveTabs.first().url)) {
+            webAppBridge.setConnectionState(WebAppConnectionState.READY)
+        }
 
         // Restore tab groups and tabs from Room database asynchronously
         viewModelScope.launch {
@@ -711,7 +714,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val autoLoad = prefs.getBoolean("auto_load_target_on_focus", false)
         val autoTargetUrl = prefs.getString("auto_load_target_url", ADDRESS_BAR_TARGET_URL) ?: ADDRESS_BAR_TARGET_URL
         val bridgeEnabled = prefs.getBoolean("bidirectional_bridge_enabled", true)
-        val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", false)
+        val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", true)
         val termAutoAppear = prefs.getBoolean("terminal_auto_appear_address_bar", false)
         val termHeight = prefs.getFloat("terminal_height_fraction", 0.85f)
         val shortsModeName = prefs.getString("shorts_audio_mode", ShortsAudioMode.ALWAYS_UNMUTED.name) ?: ShortsAudioMode.ALWAYS_UNMUTED.name
@@ -836,6 +839,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             _isPrivateMode.value = tab.isPrivate
             _activeGroupId.value = tab.tabGroupId
             _addressBarInput.value = if (isInternalHomeUrl(tab.url)) "" else tab.url
+            if (isInternalHomeUrl(tab.url)) {
+                webAppBridge.setConnectionState(WebAppConnectionState.READY)
+            }
             persistTabsAndActiveState()
             closeSheet()
         }
@@ -869,6 +875,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             _currentTabId.value = newTab.id
             _activeGroupId.value = groupId
             _addressBarInput.value = if (isInternalHomeUrl(targetUrl)) "" else targetUrl
+            if (isInternalHomeUrl(targetUrl)) {
+                webAppBridge.setConnectionState(WebAppConnectionState.READY)
+            }
             closeSheet()
         }
         persistTabsAndActiveState()

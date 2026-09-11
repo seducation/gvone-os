@@ -70,7 +70,7 @@ class SandboxAgentEngine(
     private val fileSystem: GVONEFileSystem
 ) {
     var activePersona: AgentPersona = AgentPersona.AUTO
-    var isAgenticModeEnabled: Boolean = false
+    var isAgenticModeEnabled: Boolean = true
     var activeSandboxGroupId: String? = null
 
     /**

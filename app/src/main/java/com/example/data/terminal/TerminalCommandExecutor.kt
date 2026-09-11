@@ -46,6 +46,18 @@ class TerminalCommandExecutor(
     private val _activePersona = MutableStateFlow(agentEngine.activePersona)
     val activePersona: StateFlow<AgentPersona> = _activePersona.asStateFlow()
 
+    init {
+        viewModel.viewModelScope.launch {
+            com.example.agent.runtime.RuntimeStateManager.global.runtimeMode.collect { mode ->
+                val isAgent = mode.execution == com.example.agent.runtime.ExecutionType.AGENT
+                if (_isAgenticMode.value != isAgent) {
+                    _isAgenticMode.value = isAgent
+                    agentEngine.isAgenticModeEnabled = isAgent
+                }
+            }
+        }
+    }
+
     companion object {
         val SHELL_COMMAND_KEYWORDS = setOf(
             "clear", "cls", "exit", "quit", "q", "help", "?",
@@ -65,6 +77,13 @@ class TerminalCommandExecutor(
     fun setAgenticMode(enabled: Boolean) {
         _isAgenticMode.value = enabled
         agentEngine.isAgenticModeEnabled = enabled
+        val runtimeState = com.example.agent.runtime.RuntimeStateManager.global
+        val isCurrentAgent = runtimeState.runtimeMode.value.execution == com.example.agent.runtime.ExecutionType.AGENT
+        if (enabled && !isCurrentAgent) {
+            runtimeState.activateAgentOnly()
+        } else if (!enabled && isCurrentAgent) {
+            runtimeState.resetToTextChat()
+        }
     }
 
     fun setPersona(persona: AgentPersona) {
@@ -406,13 +425,9 @@ class TerminalCommandExecutor(
                         return
                     }
                     queryArg.isBlank() -> {
-                        val newMode = !_isAgenticMode.value
+                        val currentlyActive = _isAgenticMode.value && (runtimeState.runtimeMode.value.execution == com.example.agent.runtime.ExecutionType.AGENT)
+                        val newMode = !currentlyActive
                         setAgenticMode(newMode)
-                        if (newMode) {
-                            runtimeState.activateAgentOnly()
-                        } else {
-                            runtimeState.resetToTextChat()
-                        }
                         outputLines.add(
                             TerminalLine(
                                 "[AGENTIC MODE] " + (if (newMode) "ACTIVATED (${_activePersona.value.displayName}). Type any goal/instruction to execute autonomously." else "DEACTIVATED. Standard bash shell active."),
@@ -428,13 +443,11 @@ class TerminalCommandExecutor(
                     }
                     queryArg.equals("on", ignoreCase = true) || queryArg.equals("start", ignoreCase = true) || queryArg.equals("enable", ignoreCase = true) -> {
                         setAgenticMode(true)
-                        runtimeState.activateAgentOnly()
                         outputLines.add(TerminalLine("[AGENTIC MODE] ACTIVATED. Persona: ${_activePersona.value.displayName}", TerminalLineType.SUCCESS))
                         outputLines.add(TerminalLine("Interactive agent prompt active. Use '/agent persona <atlas|comet|dia|auto>' or '/agent off' to exit.", TerminalLineType.INFO))
                     }
                     queryArg.equals("off", ignoreCase = true) || queryArg.equals("stop", ignoreCase = true) || queryArg.equals("disable", ignoreCase = true) -> {
                         setAgenticMode(false)
-                        runtimeState.resetToTextChat()
                         outputLines.add(TerminalLine("[AGENTIC MODE] DEACTIVATED. Standard bash shell active.", TerminalLineType.WARNING))
                     }
                     queryArg.startsWith("persona", ignoreCase = true) -> {
@@ -958,35 +971,60 @@ class TerminalCommandExecutor(
             }
 
             "/bridge" -> {
-                val state = viewModel.webAppBridge.connectionState.value
-                val isSuccess = state == WebAppConnectionState.READY
+                val subArg = queryArg.trim().lowercase(Locale.ROOT)
                 val bridgeEnabled = viewModel.settings.value.bidirectionalBridgeEnabled
                 val applyAll = viewModel.settings.value.bridgeApplyToAllWebsites
+                val currentTabId = viewModel.currentTab.value?.id
                 val currentUrl = viewModel.currentTab.value?.url.orEmpty()
                 val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
 
-                outputLines.add(TerminalLine("── GVONE WEB APP BRIDGE REPORT ──", TerminalLineType.SYSTEM))
-                outputLines.add(
-                    TerminalLine(
-                        "● Bridge Handshake: " + (if (isSuccess) "SUCCESSFUL (Connected & Ready)" else "NOT CONNECTED (State: ${state.name})"),
-                        if (isSuccess) TerminalLineType.SUCCESS else TerminalLineType.ERROR
-                    )
-                )
-                outputLines.add(TerminalLine("● Target Endpoint: $host", TerminalLineType.INFO))
-                outputLines.add(TerminalLine("● Bidirectional Channel: " + (if (bridgeEnabled) "ENABLED" else "DISABLED"), if (bridgeEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
-                outputLines.add(TerminalLine("● Scope: " + (if (applyAll) "Universal (All Websites)" else "GVONE Web Apps Only"), TerminalLineType.OUTPUT))
-                outputLines.add(
-                    TerminalLine(
-                        "● Address Bar Link: CONNECTED & SYNCHRONIZED",
-                        TerminalLineType.SUCCESS
-                    )
-                )
-                outputLines.add(
-                    TerminalLine(
-                        "● Verification: " + (if (isSuccess) "Success - bidirectional commands and address bar inputs are streaming." else "Inactive - verify target page supports GVONE bridge."),
-                        if (isSuccess) TerminalLineType.SUCCESS else TerminalLineType.INFO
-                    )
-                )
+                when {
+                    subArg == "on" || subArg == "enable" || subArg == "start" -> {
+                        viewModel.updateSettings(viewModel.settings.value.copy(bidirectionalBridgeEnabled = true))
+                        viewModel.webAppBridge.setConnectionState(WebAppConnectionState.READY)
+                        outputLines.add(TerminalLine("[BRIDGE] Bidirectional Web App Bridge ENABLED.", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("Target: $host | State: READY", TerminalLineType.INFO))
+                    }
+                    subArg == "off" || subArg == "disable" || subArg == "stop" -> {
+                        viewModel.updateSettings(viewModel.settings.value.copy(bidirectionalBridgeEnabled = false))
+                        viewModel.webAppBridge.setConnectionState(WebAppConnectionState.UNAVAILABLE)
+                        outputLines.add(TerminalLine("[BRIDGE] Bidirectional Web App Bridge DISABLED.", TerminalLineType.WARNING))
+                    }
+                    subArg == "toggle" -> {
+                        val next = !bridgeEnabled
+                        viewModel.updateSettings(viewModel.settings.value.copy(bidirectionalBridgeEnabled = next))
+                        viewModel.webAppBridge.setConnectionState(if (next) WebAppConnectionState.READY else WebAppConnectionState.UNAVAILABLE)
+                        outputLines.add(TerminalLine("[BRIDGE] Bidirectional Bridge toggled: " + (if (next) "ENABLED" else "DISABLED"), if (next) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
+                    }
+                    subArg == "all" || subArg == "universal" -> {
+                        val next = !applyAll
+                        viewModel.updateSettings(viewModel.settings.value.copy(bridgeApplyToAllWebsites = next))
+                        outputLines.add(TerminalLine("[BRIDGE] Universal Scope (All Websites): " + (if (next) "ENABLED" else "DISABLED (GVONE Web Apps only)"), TerminalLineType.INFO))
+                    }
+                    subArg == "test" || subArg == "ping" -> {
+                        val activeWv = viewModel.getActiveWebView(currentTabId)
+                        val delivered = viewModel.webAppBridge.deliverAddressBarInput(activeWv, "GVONE_BRIDGE_PING_TEST", "submit")
+                        viewModel.webAppBridge.setConnectionState(WebAppConnectionState.READY)
+                        outputLines.add(TerminalLine("[BRIDGE] Ping test dispatched to $host: " + (if (delivered) "DELIVERED (READY)" else "STANDBY / READY"), TerminalLineType.SUCCESS))
+                    }
+                    else -> {
+                        // Status report
+                        val state = viewModel.webAppBridge.connectionState.value
+                        val isSuccess = state == WebAppConnectionState.READY
+                        outputLines.add(TerminalLine("── GVONE WEB APP BRIDGE REPORT ──", TerminalLineType.SYSTEM))
+                        outputLines.add(
+                            TerminalLine(
+                                "● Bridge Handshake: " + (if (isSuccess) "SUCCESSFUL (Connected & Ready)" else "STATUS: ${state.name}"),
+                                if (isSuccess) TerminalLineType.SUCCESS else TerminalLineType.INFO
+                            )
+                        )
+                        outputLines.add(TerminalLine("● Target Endpoint: $host", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Bidirectional Channel: " + (if (bridgeEnabled) "ENABLED" else "DISABLED"), if (bridgeEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("● Scope: " + (if (applyAll) "Universal (All Websites)" else "GVONE Web Apps Only"), TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("● Address Bar Link: CONNECTED & SYNCHRONIZED", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("Usage: /bridge on | off | toggle | all | test", TerminalLineType.INFO))
+                    }
+                }
                 commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                 return
             }
@@ -1398,11 +1436,23 @@ class TerminalCommandExecutor(
             return
         }
 
-        // Autonomous Goal Fallback: Execute through Agentic Runtime
-        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-        scope.launch {
-            agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
-                viewModel.appendTerminalLine(line)
+        // Autonomous Goal Fallback: Execute through Agentic Runtime ONLY if Agentic Mode is enabled
+        val isAgentActive = _isAgenticMode.value && (com.example.agent.runtime.RuntimeStateManager.global.runtimeMode.value.execution == com.example.agent.runtime.ExecutionType.AGENT)
+        if (isAgentActive) {
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+            scope.launch {
+                agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
+                    viewModel.appendTerminalLine(line)
+                }
+            }
+        } else {
+            if (origin == CommandOrigin.ADDRESS_BAR) {
+                val searchUrl = viewModel.resolveUrlOrSearch(trimmed)
+                viewModel.loadUrlInCurrentTab(searchUrl, keepTerminalOpen = false)
+            } else {
+                val cmdName = trimmed.split(" ").firstOrNull().orEmpty()
+                outputLines.add(TerminalLine("bash: $cmdName: command not found (Agentic mode is OFF. Type '/agent' to enable).", TerminalLineType.ERROR))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
             }
         }
     }

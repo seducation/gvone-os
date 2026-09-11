@@ -191,6 +191,16 @@ object InputRouter {
             return InputDestination.UNIVERSAL_SEARCH
         }
 
+        // Check if internal browser page (e.g. gvone://newtab, about:blank, etc.)
+        val isInternalPage = currentTabUrl.isNullOrBlank() ||
+                currentTabUrl == "gvone://newtab" ||
+                currentTabUrl == "about:blank" ||
+                currentTabUrl.startsWith("gvone://") ||
+                currentTabUrl.startsWith("gvone-file://")
+        if (isInternalPage) {
+            return InputDestination.UNIVERSAL_SEARCH
+        }
+
         // 2. Deliver directly to Web App if current active page is a trusted GVONE origin, YouTube, or if apply to all websites is enabled
         val isGVONEActive = PageContextDetector.isTrustedGVONEOrigin(currentTabUrl)
         val isYouTubeActive = PageContextDetector.isYouTubeOrigin(currentTabUrl)
@@ -379,6 +389,15 @@ class GVONEWebAppBridge(
     }
 
     /**
+     * Explicitly update the bridge connection state from native browser lifecycle events.
+     */
+    fun setConnectionState(newState: WebAppConnectionState) {
+        mainHandler.post {
+            updateState(newState)
+        }
+    }
+
+    /**
      * Injects the standard GVONE bridge runtime into the page.
      * Sets up window.postMessage listener, custom event listener, and DOM helper.
      */
@@ -404,7 +423,21 @@ class GVONEWebAppBridge(
 
         val injectionJs = """
             (function() {
-                if (window.__GVONE_BRIDGE_INSTALLED__) return;
+                function sendReadySignal() {
+                    try {
+                        if (window.GVONEBrowserBridge && typeof window.GVONEBrowserBridge.notifyReady === 'function') {
+                            var host = (window.location && window.location.hostname) ? window.location.hostname : 'gvone_web_app';
+                            window.GVONEBrowserBridge.notifyReady(host, '1.1');
+                            return true;
+                        }
+                    } catch(e) {}
+                    return false;
+                }
+
+                if (window.__GVONE_BRIDGE_INSTALLED__) {
+                    sendReadySignal();
+                    return;
+                }
                 window.__GVONE_BRIDGE_INSTALLED__ = true;
                 var isTrustedOrigin = $isTrustedOrigin;
                 var isYouTubeOrigin = $isYouTubeOrigin || (window.location && (window.location.hostname.indexOf('youtube.com') !== -1 || window.location.hostname.indexOf('youtu.be') !== -1));
@@ -421,6 +454,36 @@ class GVONEWebAppBridge(
                         window.GVONEBrowserBridge.notifyState(state);
                     }
                 };
+
+                // Expose direct bidirectional sendToBrowser / postMessage API
+                window.GVONE.sendToBrowser = function(payload) {
+                    if (window.GVONEBrowserBridge && typeof window.GVONEBrowserBridge.postMessageToBrowser === 'function') {
+                        var str = typeof payload === 'string' ? payload : JSON.stringify(payload);
+                        window.GVONEBrowserBridge.postMessageToBrowser(str);
+                    }
+                };
+                window.GVONE.postMessage = window.GVONE.sendToBrowser;
+
+                // Forward standard Web App window.postMessage events to native Android bridge
+                window.addEventListener('message', function(event) {
+                    if (!event.data) return;
+                    try {
+                        var data = event.data;
+                        if (typeof data === 'string') {
+                            try { data = JSON.parse(data); } catch(e) {}
+                        }
+                        if (typeof data === 'object' && data !== null) {
+                            if (data.source === 'gvone_browser' || data.type === 'INPUT_FROM_BROWSER') {
+                                return; // Avoid echoing browser's own messages
+                            }
+                            if (window.GVONEBrowserBridge && typeof window.GVONEBrowserBridge.postMessageToBrowser === 'function') {
+                                window.GVONEBrowserBridge.postMessageToBrowser(typeof data === 'string' ? data : JSON.stringify(data));
+                            }
+                        }
+                    } catch(err) {
+                        console.error('[GVONE Bridge] Error forwarding postMessage:', err);
+                    }
+                });
 
                 // Submission state and deduplication tracking
                 window.__GVONE_SUBMIT_STATE__ = {
@@ -909,9 +972,19 @@ class GVONEWebAppBridge(
                     }
                 }
 
-                // Notify native browser that page is ready
-                if (window.GVONEBrowserBridge && window.GVONEBrowserBridge.notifyReady) {
-                    window.GVONEBrowserBridge.notifyReady('gvone_web_app', '1.1');
+                // Resilient handshake with native bridge
+                if (!sendReadySignal()) {
+                    var attempts = 0;
+                    var retryInterval = setInterval(function() {
+                        attempts++;
+                        if (sendReadySignal() || attempts >= 20) {
+                            clearInterval(retryInterval);
+                        }
+                    }, 150);
+                    if (document.readyState === 'loading') {
+                        document.addEventListener('DOMContentLoaded', sendReadySignal, { once: true });
+                        window.addEventListener('load', sendReadySignal, { once: true });
+                    }
                 }
             })();
         """.trimIndent()
