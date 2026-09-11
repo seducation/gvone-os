@@ -148,7 +148,7 @@ fun TerminalScreen(
             agentEngine = agentEngine
         )
     }
-    var isAgenticMode by remember { mutableStateOf(false) }
+    val isAgenticMode by viewModel.terminalCommandExecutor.isAgenticMode.collectAsStateWithLifecycle()
     var currentCwd by remember { mutableStateOf(shellEngine.promptPath) }
     var activePersona by remember { mutableStateOf(agentEngine.activePersona) }
 
@@ -159,8 +159,10 @@ fun TerminalScreen(
     var isTaskCardExpanded by remember { mutableStateOf(true) }
 
     LaunchedEffect(runtimeMode.execution) {
-        isAgenticMode = runtimeMode.execution == ExecutionType.AGENT
-        agentEngine.isAgenticModeEnabled = isAgenticMode
+        val isAgent = runtimeMode.execution == ExecutionType.AGENT
+        if (viewModel.terminalCommandExecutor.isAgenticMode.value != isAgent) {
+            viewModel.terminalCommandExecutor.setAgenticMode(isAgent)
+        }
     }
 
     // 3-Level Collapsible Conversation Tree & CNS Dashboard states
@@ -529,6 +531,16 @@ fun TerminalScreen(
                     activeSessionId = activeSessionId,
                     isTorActive = isTorActive,
                     isFullScreen = isFullScreen,
+                    isPinned = settings.terminalAutoAppearOnAddressBar,
+                    onTogglePin = {
+                        val newPinned = !settings.terminalAutoAppearOnAddressBar
+                        viewModel.updateSettings(settings.copy(terminalAutoAppearOnAddressBar = newPinned))
+                        Toast.makeText(
+                            context,
+                            if (newPinned) "Terminal Pinned (Always appears on address bar tap)" else "Terminal Unpinned (Disappears on address bar tap)",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
                     terminalHeightFraction = terminalHeightFraction,
                     onAdjustHeight = {
                         val next = when {
@@ -869,8 +881,17 @@ fun TerminalScreen(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .padding(end = 4.dp)
+                            .padding(end = 4.dp),
+                        contentAlignment = Alignment.CenterStart
                     ) {
+                        if (inputText.text.isEmpty()) {
+                            Text(
+                                text = if (isAgenticMode) "Type autonomous goal (Agent is ON)..." else "Type command or /help (Agent is OFF)...",
+                                color = Color(0xFF555D68),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.5.sp
+                            )
+                        }
                         BasicTextField(
                             value = inputText,
                             onValueChange = { inputText = it },
@@ -1060,6 +1081,8 @@ private fun TerminalHeaderBar(
     activeSessionId: String,
     isTorActive: Boolean,
     isFullScreen: Boolean,
+    isPinned: Boolean = false,
+    onTogglePin: (() -> Unit)? = null,
     terminalHeightFraction: Float = 0.85f,
     onAdjustHeight: (() -> Unit)? = null,
     onToggleFullScreen: () -> Unit,
@@ -1180,6 +1203,22 @@ private fun TerminalHeaderBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
+            if (onTogglePin != null) {
+                IconButton(
+                    onClick = onTogglePin,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("terminal_pin_toggle_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PushPin,
+                        contentDescription = if (isPinned) "Unpin Terminal (Auto-appear off)" else "Pin Terminal (Always appear on tap)",
+                        tint = if (isPinned) Color(0xFF38BDF8) else TermTextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
             if (!isFullScreen && onAdjustHeight != null) {
                 IconButton(
                     onClick = onAdjustHeight,

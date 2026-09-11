@@ -5,6 +5,7 @@ import com.example.agent.cns.CentralNervousSystem
 import com.example.agent.command.CommandRegistry
 import com.example.agent.memory.ContextRouter
 import com.example.agent.nodal.NodalEngine
+import com.example.agent.runtime.ExecutionType
 import com.example.agent.runtime.RuntimeStateManager
 import com.example.agent.sandbox.AgentPersona
 import com.example.agent.sandbox.SandboxAgentEngine
@@ -41,11 +42,26 @@ class TerminalCommandExecutor(
     val shellEngine: TerminalShellEngine,
     val agentEngine: SandboxAgentEngine
 ) {
-    private val _isAgenticMode = MutableStateFlow(true)
+    private val _isAgenticMode = MutableStateFlow(
+        RuntimeStateManager.global.runtimeMode.value.execution == ExecutionType.AGENT
+    )
     val isAgenticMode: StateFlow<Boolean> = _isAgenticMode.asStateFlow()
 
     private val _activePersona = MutableStateFlow(agentEngine.activePersona)
     val activePersona: StateFlow<AgentPersona> = _activePersona.asStateFlow()
+
+    init {
+        // Keep agentic mode in perfect synchronization with the global runtime state
+        viewModel.viewModelScope.launch {
+            RuntimeStateManager.global.runtimeMode.collect { mode ->
+                val isAgent = mode.execution == ExecutionType.AGENT
+                if (_isAgenticMode.value != isAgent) {
+                    _isAgenticMode.value = isAgent
+                    agentEngine.isAgenticModeEnabled = isAgent
+                }
+            }
+        }
+    }
 
     companion object {
         val SHELL_COMMAND_KEYWORDS = setOf(
@@ -66,6 +82,11 @@ class TerminalCommandExecutor(
     fun setAgenticMode(enabled: Boolean) {
         _isAgenticMode.value = enabled
         agentEngine.isAgenticModeEnabled = enabled
+        if (enabled) {
+            RuntimeStateManager.global.activateAgentOnly()
+        } else {
+            RuntimeStateManager.global.resetToTextChat()
+        }
     }
 
     fun setPersona(persona: AgentPersona) {
@@ -86,8 +107,8 @@ class TerminalCommandExecutor(
         // Natural language task switching detection ("Stop that and search news")
         if (trimmed.matches(Regex("(?i)^(stop|cancel|abort)\\s+(that|current\\s+task|this)\\s+and\\s+.*"))) return true
 
-        // If the terminal sheet is actively displayed, treat direct inputs as terminal commands
-        if (viewModel.activeSheet.value == ActiveSheet.Terminal) return true
+        // If the terminal sheet is actively displayed AND agentic mode is enabled, treat direct inputs as autonomous agent commands
+        if (viewModel.activeSheet.value == ActiveSheet.Terminal && _isAgenticMode.value) return true
 
         val spaceIdx = trimmed.indexOf(' ')
         val firstToken = (if (spaceIdx != -1) trimmed.substring(0, spaceIdx) else trimmed).lowercase()
@@ -1468,12 +1489,31 @@ class TerminalCommandExecutor(
             return
         }
 
-        // Autonomous Goal Fallback: Execute through Agentic Runtime
-        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-        scope.launch {
-            agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
-                viewModel.appendTerminalLine(line)
+        // Autonomous Goal Fallback: Execute through Agentic Runtime ONLY IF AGENTIC MODE IS ACTIVATED!
+        if (_isAgenticMode.value) {
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+            scope.launch {
+                agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
+                    viewModel.appendTerminalLine(line)
+                }
             }
+            return
+        }
+
+        // Agentic mode is OFF: Strictly prevent triggering autonomous agent workflow!
+        if (origin == CommandOrigin.ADDRESS_BAR) {
+            val searchUrl = "https://duckduckgo.com/?q=${URLEncoder.encode(trimmed, "UTF-8")}"
+            viewModel.loadUrlInCurrentTab(searchUrl, keepTerminalOpen = true)
+            outputLines.add(TerminalLine("[SEARCH] Web query: $trimmed", TerminalLineType.SUCCESS))
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+        } else {
+            outputLines.add(
+                TerminalLine(
+                    "gvone: command not found: $trimmed. Type '/help' for manual, or '/agent on' to enable autonomous agent execution.",
+                    TerminalLineType.ERROR
+                )
+            )
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
         }
     }
 
