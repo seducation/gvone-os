@@ -64,14 +64,14 @@ import com.example.agent.registry.AgentRegistry
 import com.example.agent.cns.CentralNervousSystem
 import com.example.ui.components.RuntimeStatusPillRow
 import com.example.ui.components.ExpandableAgentTaskCard
+import com.example.ui.components.ConversationHierarchyTreeView
+import com.example.ui.components.Level1TaskItem
+import com.example.ui.components.CnsDashboardSheet
 import com.example.data.command.CommandEngine
 import com.example.data.files.GVONEFileSystem
 import com.example.data.model.*
 import com.example.data.sync.WebAppConnectionState
-import com.example.data.terminal.TerminalLine
-import com.example.data.terminal.TerminalLineType
-import com.example.data.terminal.TerminalSession
-import com.example.data.terminal.TerminalShellEngine
+import com.example.data.terminal.*
 import com.example.data.tor.TorConnectionState
 import com.example.ui.viewmodel.ActiveSheet
 import com.example.ui.viewmodel.BrowserViewModel
@@ -157,6 +157,10 @@ fun TerminalScreen(
     val runtimeMode by runtimeStateManager.runtimeMode.collectAsStateWithLifecycle()
     val activeTask by runtimeStateManager.activeTask.collectAsStateWithLifecycle()
     var isTaskCardExpanded by remember { mutableStateOf(true) }
+
+    // 3-Level Collapsible Conversation Tree & CNS Dashboard states
+    val conversationTreeManager = remember { ConversationTreeManager.global }
+    var showCnsDashboard by remember { mutableStateOf(false) }
 
     // Multi-session management
     var sessions by remember {
@@ -329,6 +333,62 @@ fun TerminalScreen(
                 return
             }
 
+            "/tree", "/hierarchy", "/convos" -> {
+                when {
+                    queryArg.equals("expand", ignoreCase = true) || queryArg.equals("open", ignoreCase = true) || queryArg.equals("all", ignoreCase = true) -> {
+                        conversationTreeManager.expandAll()
+                        outputLines.add(TerminalLine("🌳 [TREE EXPANDED] Expanded all 3-level conversation task branches in the stream log.", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("collapse", ignoreCase = true) || queryArg.equals("close", ignoreCase = true) -> {
+                        conversationTreeManager.collapseAll()
+                        outputLines.add(TerminalLine("🌳 [TREE COLLAPSED] Collapsed all conversation task branches into compact rows in stream log.", TerminalLineType.WARNING))
+                    }
+                    else -> {
+                        val allTasks = conversationTreeManager.tasks.value
+                        outputLines.add(TerminalLine("── 3-LEVEL CONVERSATION STREAM TREE ──", TerminalLineType.SYSTEM))
+                        outputLines.add(TerminalLine("The stream log embeds a native 3-level expandable task tree:", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("  Level 1: Conversation / Task  (▸ 🎵 YouTube, ▾ 💻 Coding)", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("  Level 2: Agent Sessions       (▾ 🤖 CodingAgent, ▸ 🌐 BrowserAgent)", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("  Level 3: Steps, Tools, Reasoning & Results (expandable tool output)", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("Total conversation tasks tracked: ${allTasks.size}", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("💡 Tip: Click any task or agent directly in the stream log to expand/collapse.", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("Commands: '/tree expand' (expand all) | '/tree collapse' (collapse all)", TerminalLineType.OUTPUT))
+                    }
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/cns", "/dashboard", "/brain" -> {
+                if (queryArg.isNotBlank()) {
+                    val treeTask = conversationTreeManager.createTask(
+                        title = queryArg,
+                        category = TaskCategory.GENERAL,
+                        commandPrompt = "/cns $queryArg",
+                        interactionType = InteractionType.TEXT,
+                        executionType = ExecutionType.AGENT
+                    )
+                    outputLines.add(TerminalLine(treeTask.title, TerminalLineType.EXPANDABLE_TASK, taskId = treeTask.id))
+                    outputLines.add(TerminalLine("[CNS ORCHESTRATION] Deploying neural cognitive goal: \"$queryArg\"...", TerminalLineType.AGENT_PLAN))
+                    commitLines(outputLines)
+                    coroutineScope.launch {
+                        val res = CentralNervousSystem.global.orchestrateGoal(queryArg)
+                        appendLines(listOf(TerminalLine(res.synthesis, TerminalLineType.SUCCESS))) { newLines ->
+                            sessions = sessions.map {
+                                if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                            }
+                        }
+                    }
+                } else {
+                    showCnsDashboard = true
+                    outputLines.add(TerminalLine("[CNS DASHBOARD] Opened sovereign Central Nervous System console.", TerminalLineType.SUCCESS))
+                    commitLines(outputLines)
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
             "/voice" -> {
                 when {
                     queryArg.isBlank() -> {
@@ -461,6 +521,13 @@ fun TerminalScreen(
 
             "/yt", "/youtube" -> {
                 if (queryArg.isNotBlank()) {
+                    val treeTask = conversationTreeManager.createTask(
+                        title = "YouTube: \"$queryArg\"",
+                        category = TaskCategory.MEDIA,
+                        commandPrompt = "/yt $queryArg",
+                        interactionType = InteractionType.TEXT
+                    )
+                    outputLines.add(TerminalLine(treeTask.title, TerminalLineType.EXPANDABLE_TASK, taskId = treeTask.id))
                     outputLines.add(TerminalLine("[YOUTUBE AGENT] Launching autonomous YouTube playback for: \"$queryArg\"...", TerminalLineType.AGENT_PLAN))
                     commitLines(outputLines)
                     coroutineScope.launch {
@@ -571,6 +638,14 @@ fun TerminalScreen(
                         return
                     }
                     else -> {
+                        val treeTask = conversationTreeManager.createTask(
+                            title = queryArg,
+                            category = TaskCategory.CODING,
+                            commandPrompt = "/agent $queryArg",
+                            interactionType = InteractionType.TEXT,
+                            executionType = ExecutionType.AGENT
+                        )
+                        outputLines.add(TerminalLine(treeTask.title, TerminalLineType.EXPANDABLE_TASK, taskId = treeTask.id))
                         commitLines(outputLines)
                         coroutineScope.launch {
                             agentEngine.runAgenticWorkflow(queryArg, shellEngine.currentDirectory) { line ->
@@ -1681,6 +1756,9 @@ fun TerminalScreen(
                     bridgeConnectionState = bridgeConnectionState,
                     onBridgeClick = {
                         executeCommand("/bridge")
+                    },
+                    onCnsClick = {
+                        showCnsDashboard = true
                     }
                 )
 
@@ -1695,38 +1773,76 @@ fun TerminalScreen(
                     )
                 }
 
-            // 2. TERMINAL OUTPUT LOG (Scrollable monospace display)
-            SelectionContainer(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        focusRequester.requestFocus()
-                        keyboardController?.show()
-                    }
-            ) {
-                LazyColumn(
-                    state = listState,
+                // 2. MAIN CLI STREAM LOG (With 3-Level Collapsible Items inline: Task ➜ Agents ➜ Steps)
+                val treeTasks by conversationTreeManager.tasks.collectAsState()
+                val activeTaskIdTree by conversationTreeManager.activeTaskId.collectAsState()
+
+                SelectionContainer(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            focusRequester.requestFocus()
+                            keyboardController?.show()
+                        }
                 ) {
-                    items(activeSession.lines, key = { it.id }) { line ->
-                        TerminalLineItem(
-                            line = line,
-                            onCopy = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", line.text))
-                                Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(activeSession.lines, key = { it.id }) { line ->
+                            if (line.type == TerminalLineType.EXPANDABLE_TASK) {
+                                val task = treeTasks.find { it.id == line.taskId }
+                                if (task != null) {
+                                    Level1TaskItem(
+                                        task = task,
+                                        isActive = activeTaskIdTree == task.id,
+                                        onToggleExpand = {
+                                            conversationTreeManager.toggleTaskExpansion(task.id)
+                                        },
+                                        onToggleAgentExpand = { agentId ->
+                                            conversationTreeManager.toggleAgentExpansion(task.id, agentId)
+                                        },
+                                        onContinue = {
+                                            executeCommand(task.commandPrompt.ifBlank { "/agent ${task.title}" })
+                                        },
+                                        onInspect = {
+                                            executeCommand("/status")
+                                        },
+                                        onRemove = {
+                                            conversationTreeManager.removeTask(task.id)
+                                        },
+                                        modifier = Modifier.padding(vertical = 3.dp)
+                                    )
+                                } else {
+                                    TerminalLineItem(
+                                        line = line,
+                                        onCopy = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", line.text))
+                                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            } else {
+                                TerminalLineItem(
+                                    line = line,
+                                    onCopy = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", line.text))
+                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
                             }
-                        )
+                        }
                     }
                 }
-            }
 
             // 3. AUTOCOMPLETE SUGGESTION CHIPS (Visible when typing)
             if (suggestions.isNotEmpty()) {
@@ -1977,6 +2093,16 @@ fun TerminalScreen(
             )
         }
     }
+
+    // Sovereign CNS Dashboard Modal Sheet
+    if (showCnsDashboard) {
+        CnsDashboardSheet(
+            onDismiss = { showCnsDashboard = false },
+            onExecuteGoal = { goal ->
+                executeCommand(goal)
+            }
+        )
+    }
 }
 }
 
@@ -2167,6 +2293,7 @@ private fun TerminalLineItem(
         TerminalLineType.AGENT_STEP -> Color(0xFF38BDF8) // Cyan
         TerminalLineType.AGENT_THOUGHT -> Color(0xFFFBBF24) // Amber
         TerminalLineType.AGENT_TOOL -> Color(0xFF34D399) // Emerald
+        TerminalLineType.EXPANDABLE_TASK -> Color(0xFFA855F7) // Purple
     }
 
     Text(
@@ -2224,26 +2351,57 @@ private fun TermuxAccessoryBar(
 }
 
 private fun createInitialBanner(bridgeStatus: String = "IDLE", isBridgeSuccess: Boolean = false): List<TerminalLine> {
-    return listOf(
+    val lines = mutableListOf<TerminalLine>()
+    lines.add(
         TerminalLine(
             text = """
 ================================================================
  GVONE UNIVERSAL BROWSER CLI [v2.4] - aarch64-linux-android
  Built-in Centralized Command Engine & Browser Shell
- Type 'help' for command manual | 'bridge' for connection status
+ Type 'help' for command manual | 'cns' for neural dashboard
 ================================================================
             """.trimIndent(),
             type = TerminalLineType.SYSTEM
-        ),
+        )
+    )
+    lines.add(
         TerminalLine(
             text = "Connected to Browser Core. Address bar & command dispatcher ready.",
             type = TerminalLineType.INFO
-        ),
+        )
+    )
+    lines.add(
         TerminalLine(
             text = "Bridge Status: $bridgeStatus (" + (if (isBridgeSuccess) "SUCCESSFUL - Connected" else "NOT CONNECTED") + ")",
             type = if (isBridgeSuccess) TerminalLineType.SUCCESS else TerminalLineType.WARNING
         )
     )
+    lines.add(
+        TerminalLine(
+            text = "── RECENT CONVERSATIONS (3-Level Expandable Stream Log) ──",
+            type = TerminalLineType.SYSTEM
+        )
+    )
+
+    // Seed the conversation tasks as live expandable blocks directly in the stream
+    ConversationTreeManager.global.tasks.value.forEach { task ->
+        lines.add(
+            TerminalLine(
+                text = task.title,
+                type = TerminalLineType.EXPANDABLE_TASK,
+                taskId = task.id
+            )
+        )
+    }
+
+    lines.add(
+        TerminalLine(
+            text = "💡 Tap any [TASK] above to expand Agents (Level 2) and Steps/Tools (Level 3).",
+            type = TerminalLineType.INFO
+        )
+    )
+
+    return lines
 }
 
 private fun generateHelpOutput(commands: List<CustomCommandEntity>): List<TerminalLine> {

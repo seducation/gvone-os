@@ -14,14 +14,16 @@ enum class TerminalLineType {
     AGENT_PLAN,     // Agent plan header / breakdown
     AGENT_STEP,     // Active agent step execution
     AGENT_THOUGHT,  // Agent internal reasoning / thought
-    AGENT_TOOL      // Agent tool execution / observation
+    AGENT_TOOL,     // Agent tool execution / observation
+    EXPANDABLE_TASK // 3-Level Expandable Task in stream log (Task ➜ Agents ➜ Details)
 }
 
 data class TerminalLine(
     val text: String,
     val type: TerminalLineType = TerminalLineType.OUTPUT,
     val id: String = UUID.randomUUID().toString(),
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val taskId: String? = null
 )
 
 data class TerminalSession(

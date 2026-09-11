@@ -15,6 +15,7 @@ import com.example.agent.ui.AgentUiBridge
 import com.example.agent.ui.AgentUiEvent
 import com.example.agent.world.WorldEntity
 import com.example.agent.world.WorldState
+import com.example.data.terminal.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +26,7 @@ import java.util.UUID
  */
 data class CnsWorkflowResult(
     val workflowId: String,
+    val taskId: String = "",
     val userGoal: String,
     val success: Boolean,
     val synthesis: String,
@@ -91,10 +93,25 @@ class CentralNervousSystem(
         _activeMission.value = userGoal
         worldState.setActiveGoal(userGoal)
 
-        // 1. Create strictly isolated task in RuntimeStateManager
+        // 1. Create strictly isolated task in RuntimeStateManager & ConversationTreeManager
         val currentInteraction = runtimeState.runtimeMode.value.interaction
         val task = runtimeState.createTask(userGoal, currentInteraction)
         val taskContext = contextRouter.getOrCreateTaskContext(task)
+
+        val taskCat = when {
+            userGoal.contains("code", ignoreCase = true) || userGoal.contains("auth", ignoreCase = true) || userGoal.contains("bug", ignoreCase = true) -> TaskCategory.CODING
+            userGoal.contains("yt", ignoreCase = true) || userGoal.contains("youtube", ignoreCase = true) || userGoal.contains("song", ignoreCase = true) -> TaskCategory.MEDIA
+            userGoal.contains("news", ignoreCase = true) || userGoal.contains("search", ignoreCase = true) -> TaskCategory.SEARCH
+            userGoal.contains("voice", ignoreCase = true) -> TaskCategory.VOICE
+            else -> TaskCategory.GENERAL
+        }
+        ConversationTreeManager.global.createTask(
+            title = userGoal.removePrefix("/agent").removePrefix("/voice").trim().ifBlank { "Autonomous Mission" },
+            category = taskCat,
+            commandPrompt = userGoal,
+            interactionType = currentInteraction,
+            taskId = task.taskId
+        )
 
         uiBridge.emit(AgentUiEvent.ShowAgentStatus("CNS", "Analyzing goal: '$userGoal'", isWorking = true))
         logger.logInstant("CNS", StepType.DECIDE, "Orchestrating goal: '$userGoal' (taskId=${task.taskId})", StepStatus.RUNNING)
@@ -202,9 +219,11 @@ class CentralNervousSystem(
             memory.recordEpisode(userGoal, "CNS", rawSynthesis.take(200), success = true)
             logger.logInstant("CNS", StepType.COMPLETE, "Workflow completed successfully", StepStatus.SUCCESS)
             uiBridge.emit(AgentUiEvent.ShowAgentStatus("CNS", "Goal completed", isWorking = false))
+            ConversationTreeManager.global.completeTask(task.taskId, boundedSynthesis)
 
             return CnsWorkflowResult(
                 workflowId = workflowId,
+                taskId = task.taskId,
                 userGoal = userGoal,
                 success = true,
                 synthesis = boundedSynthesis,
@@ -248,6 +267,29 @@ class CentralNervousSystem(
             } else current
         }
         contextRouter.recordTaskObservation(taskId, "Step $stepNumber: $desc", "Assigned to $agentOrTool")
+
+        val agentIcon = when (agentOrTool) {
+            "CodingAgent" -> "🤖"
+            "WebReviewAgent", "BrowserAgent" -> "🌐"
+            "FileAgent" -> "📁"
+            "SearchAgent" -> "🔍"
+            "VoiceAgent" -> "🎙️"
+            else -> "🤖"
+        }
+        val treeAgentId = ConversationTreeManager.global.addOrUpdateAgent(
+            taskId = taskId,
+            agentName = agentOrTool,
+            icon = agentIcon,
+            role = "Autonomous Sub-Agent",
+            status = AgentStatus.EXECUTING
+        )
+        ConversationTreeManager.global.addDetailStep(
+            taskId = taskId,
+            agentId = treeAgentId,
+            type = DetailNodeType.STEP,
+            title = desc,
+            status = StepExecutionStatus.COMPLETED
+        )
     }
 
     /**

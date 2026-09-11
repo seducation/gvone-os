@@ -43,7 +43,8 @@ fun RuntimeStatusPillRow(
     sandboxTabCount: Int = 0,
     onFocusSandbox: () -> Unit = {},
     bridgeConnectionState: WebAppConnectionState = WebAppConnectionState.IDLE,
-    onBridgeClick: () -> Unit = {}
+    onBridgeClick: () -> Unit = {},
+    onCnsClick: () -> Unit = {}
 ) {
     Surface(
         color = Color(0xFF0D1117),
@@ -199,6 +200,35 @@ fun RuntimeStatusPillRow(
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = bridgeTextColor
+                    )
+                }
+            }
+
+            // 4.5 CNS Dashboard UI Button (placed directly next to Agent Sandbox Bridge)
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = Color(0xFF3B0764).copy(alpha = 0.6f),
+                border = BorderStroke(1.dp, Color(0xFFA855F7)),
+                modifier = Modifier
+                    .clickable { onCnsClick() }
+                    .testTag("terminal_header_cns_badge")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(Color(0xFFA855F7), CircleShape)
+                    )
+                    Text(
+                        text = "🧠 CNS",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFE9D5FF)
                     )
                 }
             }
