@@ -1,6 +1,10 @@
 package com.example.data.terminal
 
 import androidx.lifecycle.viewModelScope
+import com.example.agent.cns.CentralNervousSystem
+import com.example.agent.memory.ContextRouter
+import com.example.agent.nodal.NodalEngine
+import com.example.agent.runtime.RuntimeStateManager
 import com.example.agent.sandbox.AgentPersona
 import com.example.agent.sandbox.SandboxAgentEngine
 import com.example.data.command.CommandEngine
@@ -43,7 +47,9 @@ class TerminalCommandExecutor(
     companion object {
         val SHELL_COMMAND_KEYWORDS = setOf(
             "clear", "cls", "exit", "quit", "q", "help", "?",
-            "agent", "agentic", "key", "gemini", "apikey",
+            "agent", "agentic", "voice", "chat", "text", "cancel", "stop", "abort", "pause", "resume",
+            "debug", "status", "nodal", "workflows", "config", "command", "commands", "yt", "youtube",
+            "key", "gemini", "apikey",
             "dashboard", "cns", "groups", "tabgroups", "group", "sandbox", "organize", "creategroup", "grouptab", "ungroup",
             "pwd", "cd", "ls", "dir", "cat", "touch", "mkdir", "rm", "tree", "df", "du", "cookies",
             "click", "type", "scroll", "links", "text", "extract", "view", "openfile",
@@ -72,6 +78,9 @@ class TerminalCommandExecutor(
 
         // Anything starting with '/' is unconditionally treated as a command
         if (trimmed.startsWith("/")) return true
+
+        // Natural language task switching detection ("Stop that and search news")
+        if (trimmed.matches(Regex("(?i)^(stop|cancel|abort)\\s+(that|current\\s+task|this)\\s+and\\s+.*"))) return true
 
         // If the terminal sheet is actively displayed, treat direct inputs as terminal commands
         if (viewModel.activeSheet.value == ActiveSheet.Terminal) return true
@@ -147,6 +156,29 @@ class TerminalCommandExecutor(
         val tabs = viewModel.tabs.value
         val isTorActive = viewModel.torStatus.value.state == TorConnectionState.CONNECTED
 
+        // 0. Deterministic Natural Language Task Switching: "Stop that and search news"
+        if (trimmed.matches(Regex("(?i)^(stop|cancel|abort)\\s+(that|current\\s+task|this)\\s+and\\s+.*"))) {
+            val newGoal = trimmed.replace(Regex("(?i)^(stop|cancel|abort)\\s+(that|current\\s+task|this)\\s+and\\s+"), "").trim()
+            val runtimeState = RuntimeStateManager.global
+            val active = runtimeState.activeTask.value
+            runtimeState.cancelTask(active?.taskId)
+            if (active != null) {
+                ContextRouter.global.archiveTaskContext(active.taskId, "User switched task to: $newGoal", isSuccess = false)
+            }
+            outputLines.add(TerminalLine("[TASK SWITCH] Previous task cancelled and context scratchpad archived.", TerminalLineType.WARNING))
+            outputLines.add(TerminalLine("[NEW TASK] Initiating fresh isolated task: \"$newGoal\"", TerminalLineType.SUCCESS))
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+
+            runtimeState.activateAgentOnly(newGoal)
+            setAgenticMode(true)
+            scope.launch {
+                agentEngine.runAgenticWorkflow(newGoal, shellEngine.currentDirectory) { line ->
+                    viewModel.appendTerminalLine(line)
+                }
+            }
+            return
+        }
+
         when (normalizedToken) {
             "/clear", "/cls" -> {
                 viewModel.clearTerminalLines()
@@ -168,11 +200,216 @@ class TerminalCommandExecutor(
                 return
             }
 
-            "/agent", "/agentic" -> {
+            "/voice" -> {
+                val runtimeState = RuntimeStateManager.global
                 when {
+                    queryArg.startsWith("/agent", ignoreCase = true) || queryArg.startsWith("agent", ignoreCase = true) -> {
+                        // Compound mode: /voice /agent <goal>
+                        val goal = queryArg.removePrefix("/agent").removePrefix("agent").trim()
+                        runtimeState.activateVoiceAgentCompound(goal)
+                        setAgenticMode(true)
+                        outputLines.add(TerminalLine("╭─────────────────────────────────────────────────────────────╮", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("│ 🎙️ COMPOUND MODE: VOICE-FIRST + AGENT RUNTIME", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("│ Goal: \"$goal\"", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("│ Hierarchy: Voice Primary ➜ Autonomous Agent Execution", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("╰─────────────────────────────────────────────────────────────╯", TerminalLineType.AGENT_PLAN))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            agentEngine.runAgenticWorkflow(goal.ifBlank { "Autonomous task execution" }, shellEngine.currentDirectory) { line ->
+                                viewModel.appendTerminalLine(line)
+                            }
+                        }
+                        return
+                    }
+                    queryArg.isBlank() -> {
+                        // Pure voice conversation mode: /voice (DOES NOT create agent task)
+                        runtimeState.activateVoiceOnly()
+                        outputLines.add(TerminalLine("[VOICE RUNTIME] ACTIVATED. Voice conversation mode is active.", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("● Interaction: VOICE | Execution: CHAT (No autonomous task created)", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Speak or type any conversational question, e.g. \"What is photosynthesis?\"", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("● For autonomous execution, use '/voice /agent <goal>' or '/agent <goal>'", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● To return to standard text chat, type '/chat'", TerminalLineType.OUTPUT))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    else -> {
+                        // Voice utterance with text query
+                        val lower = queryArg.lowercase()
+                        if (lower.startsWith("search ") || lower.contains("youtube") || lower.startsWith("play ") || lower.startsWith("open ")) {
+                            outputLines.add(TerminalLine("[VOICE INTENT DETECTED] Agentic instruction: \"$queryArg\"", TerminalLineType.AGENT_PLAN))
+                            runtimeState.activateVoiceAgentCompound(queryArg)
+                            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                            scope.launch {
+                                agentEngine.runAgenticWorkflow(queryArg, shellEngine.currentDirectory) { line ->
+                                    viewModel.appendTerminalLine(line)
+                                }
+                            }
+                        } else {
+                            outputLines.add(TerminalLine("[VOICE CONVERSATION] \"$queryArg\"", TerminalLineType.COMMAND))
+                            outputLines.add(TerminalLine("Consulting AI conversational service...", TerminalLineType.INFO))
+                            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                            scope.launch {
+                                try {
+                                    val res = viewModel.aiService.searchAndSynthesize(queryArg)
+                                    viewModel.appendTerminalLine(TerminalLine(res.aiAnswer, TerminalLineType.AI_RESPONSE))
+                                } catch (e: Exception) {
+                                    viewModel.appendTerminalLine(TerminalLine("AI response error: ${e.message}", TerminalLineType.ERROR))
+                                }
+                            }
+                        }
+                        return
+                    }
+                }
+            }
+
+            "/cancel", "/stop", "/abort" -> {
+                val runtimeState = RuntimeStateManager.global
+                val current = runtimeState.activeTask.value
+                runtimeState.cancelTask(current?.taskId)
+                if (current != null) {
+                    ContextRouter.global.archiveTaskContext(current.taskId, "User cancelled task", isSuccess = false)
+                }
+                setAgenticMode(false)
+                outputLines.add(TerminalLine("[TASK CANCELLED] Active task has been aborted and cleared.", TerminalLineType.WARNING))
+                outputLines.add(TerminalLine("Unified runtime restored to CHAT mode. Task context scratchpad archived.", TerminalLineType.INFO))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/pause" -> {
+                val runtimeState = RuntimeStateManager.global
+                val current = runtimeState.activeTask.value
+                runtimeState.pauseTask(current?.taskId)
+                outputLines.add(TerminalLine("[TASK PAUSED] Active task execution suspended. Type '/resume' to continue.", TerminalLineType.WARNING))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/resume" -> {
+                val runtimeState = RuntimeStateManager.global
+                val current = runtimeState.activeTask.value
+                runtimeState.resumeTask(current?.taskId)
+                outputLines.add(TerminalLine("[TASK RESUMED] Resumed active task execution.", TerminalLineType.SUCCESS))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/chat", "/text" -> {
+                RuntimeStateManager.global.resetToTextChat()
+                setAgenticMode(false)
+                outputLines.add(TerminalLine("[CHAT MODE] Restored to conversational text mode.", TerminalLineType.SUCCESS))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/debug" -> {
+                RuntimeStateManager.global.toggleDebugMode()
+                val isDbg = RuntimeStateManager.global.runtimeMode.value.isDebugEnabled
+                outputLines.add(
+                    TerminalLine(
+                        "[DEBUG MODE] " + (if (isDbg) "ENABLED. Verbose scratchpad observations, tool traces & latency active." else "DISABLED. Standard clean view active."),
+                        if (isDbg) TerminalLineType.SUCCESS else TerminalLineType.INFO
+                    )
+                )
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/status" -> {
+                val runtimeState = RuntimeStateManager.global
+                val mode = runtimeState.runtimeMode.value
+                val active = runtimeState.activeTask.value
+                outputLines.add(TerminalLine("── GVONE OS UNIFIED RUNTIME STATUS ──", TerminalLineType.SYSTEM))
+                outputLines.add(TerminalLine("● Interaction Mode: ${mode.interaction.name}", TerminalLineType.SUCCESS))
+                outputLines.add(TerminalLine("● Execution Mode:   ${mode.execution.name}", TerminalLineType.INFO))
+                outputLines.add(TerminalLine("● Priority Mode:    ${mode.priority.name}", TerminalLineType.OUTPUT))
+                outputLines.add(TerminalLine("● Debug Observability: ${if (mode.isDebugEnabled) "ON" else "OFF"}", TerminalLineType.OUTPUT))
+                outputLines.add(TerminalLine("● Active Task: ${active?.goal ?: "None (Idle)"} [${active?.status?.name ?: "IDLE"}]", TerminalLineType.OUTPUT))
+                outputLines.add(TerminalLine("● Registered Agents: ${CentralNervousSystem.global.agentRegistry.registeredAgentNames.value.joinToString()}", TerminalLineType.INFO))
+                outputLines.add(TerminalLine("● Nodal Workflows: ${NodalEngine.global.workflows.value.size} registered", TerminalLineType.INFO))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/nodal", "/workflows" -> {
+                val workflows = NodalEngine.global.workflows.value.values.toList()
+                outputLines.add(TerminalLine("── NODAL N8N-STYLE WORKFLOWS (${workflows.size}) ──", TerminalLineType.SYSTEM))
+                workflows.forEach { wf ->
+                    outputLines.add(TerminalLine("● [${wf.id}] \"${wf.name}\" (${wf.nodes.size} nodes, ${wf.connections.size} connections)", TerminalLineType.SUCCESS))
+                    outputLines.add(TerminalLine("  Trigger: ${wf.triggerCommands.joinToString()} | Nodes: ${wf.nodes.joinToString { it.name }}", TerminalLineType.INFO))
+                }
+                outputLines.add(TerminalLine("Commands themselves can be configured through this nodal workflow registry.", TerminalLineType.INFO))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/config" -> {
+                val isGeminiLive = viewModel.aiService.isApiKeyConfigured()
+                outputLines.add(TerminalLine("── GVONE OS SYSTEM CONFIGURATION ──", TerminalLineType.SYSTEM))
+                outputLines.add(TerminalLine("● Engine Version: GVONE OS v2.4-unified", TerminalLineType.INFO))
+                outputLines.add(TerminalLine("● AI Service: ${if (isGeminiLive) "Gemini 3.5 Flash (Online)" else "Local Reflex Engine (Offline)"}", TerminalLineType.SUCCESS))
+                outputLines.add(TerminalLine("● Browser Engine: Android WebView + Multi-Tab Session Manager", TerminalLineType.OUTPUT))
+                outputLines.add(TerminalLine("● Tor Network: ${if (isTorActive) "CONNECTED" else "DISCONNECTED"}", if (isTorActive) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
+                outputLines.add(TerminalLine("● Sandbox Root: /${shellEngine.currentDirectory}", TerminalLineType.OUTPUT))
+                outputLines.add(TerminalLine("● Agent Protocol: RPC-over-CNS + Context Isolation", TerminalLineType.INFO))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/command", "/commands" -> {
+                val allCommands = CommandEngine.mergeWithBuiltIns(viewModel.customCommands.value)
+                outputLines.add(TerminalLine("── GVONE OS COMMAND REGISTRY (${allCommands.size} registered) ──", TerminalLineType.SYSTEM))
+                allCommands.take(15).forEach { cmd ->
+                    outputLines.add(TerminalLine("● ${cmd.command} (${cmd.name}) - ${cmd.description}", TerminalLineType.INFO))
+                }
+                if (allCommands.size > 15) {
+                    outputLines.add(TerminalLine("... and ${allCommands.size - 15} more. Type '/help' for full catalog.", TerminalLineType.OUTPUT))
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/yt", "/youtube" -> {
+                if (queryArg.isNotBlank()) {
+                    outputLines.add(TerminalLine("[YOUTUBE AGENT] Launching autonomous YouTube playback for: \"$queryArg\"...", TerminalLineType.AGENT_PLAN))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    scope.launch {
+                        val res = CentralNervousSystem.global.orchestrateGoal("/yt $queryArg")
+                        viewModel.appendTerminalLine(TerminalLine(res.synthesis, TerminalLineType.SUCCESS))
+                    }
+                    return
+                }
+            }
+
+            "/agent", "/agentic" -> {
+                val runtimeState = RuntimeStateManager.global
+                when {
+                    queryArg.startsWith("/voice", ignoreCase = true) || queryArg.startsWith("voice", ignoreCase = true) -> {
+                        // Compound mode: /agent /voice <goal>
+                        val goal = queryArg.removePrefix("/voice").removePrefix("voice").trim()
+                        runtimeState.activateAgentVoiceCompound(goal)
+                        setAgenticMode(true)
+                        outputLines.add(TerminalLine("╭─────────────────────────────────────────────────────────────╮", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("│ 🤖 COMPOUND MODE: AGENT-FIRST + VOICE STATUS", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("│ Goal: \"$goal\"", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("│ Hierarchy: Autonomous Execution ➜ Voice Reporting", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("╰─────────────────────────────────────────────────────────────╯", TerminalLineType.AGENT_PLAN))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            agentEngine.runAgenticWorkflow(goal.ifBlank { "Autonomous task execution" }, shellEngine.currentDirectory) { line ->
+                                viewModel.appendTerminalLine(line)
+                            }
+                        }
+                        return
+                    }
                     queryArg.isBlank() -> {
                         val newMode = !_isAgenticMode.value
                         setAgenticMode(newMode)
+                        if (newMode) {
+                            runtimeState.activateAgentOnly()
+                        } else {
+                            runtimeState.resetToTextChat()
+                        }
                         outputLines.add(
                             TerminalLine(
                                 "[AGENTIC MODE] " + (if (newMode) "ACTIVATED (${_activePersona.value.displayName}). Type any goal/instruction to execute autonomously." else "DEACTIVATED. Standard bash shell active."),
@@ -188,11 +425,13 @@ class TerminalCommandExecutor(
                     }
                     queryArg.equals("on", ignoreCase = true) || queryArg.equals("start", ignoreCase = true) || queryArg.equals("enable", ignoreCase = true) -> {
                         setAgenticMode(true)
+                        runtimeState.activateAgentOnly()
                         outputLines.add(TerminalLine("[AGENTIC MODE] ACTIVATED. Persona: ${_activePersona.value.displayName}", TerminalLineType.SUCCESS))
                         outputLines.add(TerminalLine("Interactive agent prompt active. Use '/agent persona <atlas|comet|dia|auto>' or '/agent off' to exit.", TerminalLineType.INFO))
                     }
                     queryArg.equals("off", ignoreCase = true) || queryArg.equals("stop", ignoreCase = true) || queryArg.equals("disable", ignoreCase = true) -> {
                         setAgenticMode(false)
+                        runtimeState.resetToTextChat()
                         outputLines.add(TerminalLine("[AGENTIC MODE] DEACTIVATED. Standard bash shell active.", TerminalLineType.WARNING))
                     }
                     queryArg.startsWith("persona", ignoreCase = true) -> {
@@ -219,9 +458,11 @@ class TerminalCommandExecutor(
                     queryArg.equals("status", ignoreCase = true) -> {
                         val activeGroupName = viewModel.tabGroups.value.find { it.id == agentEngine.activeSandboxGroupId }?.name ?: "None"
                         val isGeminiLive = viewModel.aiService.isApiKeyConfigured()
+                        val activeTask = runtimeState.activeTask.value
                         outputLines.add(TerminalLine("── AGENTIC RUNTIME STATUS ──", TerminalLineType.SYSTEM))
                         outputLines.add(TerminalLine("● Mode: " + (if (_isAgenticMode.value) "ACTIVE" else "IDLE"), if (_isAgenticMode.value) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
                         outputLines.add(TerminalLine("● Active Persona: ${_activePersona.value.displayName} (${_activePersona.value.badge})", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Active Task: ${activeTask?.goal ?: "None (Idle)"} [${activeTask?.status?.name ?: "IDLE"}]", TerminalLineType.OUTPUT))
                         outputLines.add(TerminalLine("● Gemini 3.5 LLM: " + (if (isGeminiLive) "ONLINE & ACTIVE" else "LOCAL FALLBACK (Type '/key' for setup)"), if (isGeminiLive) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
                         outputLines.add(TerminalLine("● Sandbox Tab Group: $activeGroupName", TerminalLineType.OUTPUT))
                         outputLines.add(TerminalLine("● Sandbox Directory: /${shellEngine.currentDirectory}", TerminalLineType.OUTPUT))
@@ -237,6 +478,9 @@ class TerminalCommandExecutor(
                         return
                     }
                     else -> {
+                        // Autonomous Agent Goal Execution
+                        runtimeState.activateAgentOnly(queryArg)
+                        setAgenticMode(true)
                         commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                         scope.launch {
                             agentEngine.runAgenticWorkflow(queryArg, shellEngine.currentDirectory) { line ->

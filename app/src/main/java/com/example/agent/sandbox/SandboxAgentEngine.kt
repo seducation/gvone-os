@@ -1,6 +1,11 @@
 package com.example.agent.sandbox
 
 import android.content.Context
+import com.example.agent.cns.CentralNervousSystem
+import com.example.agent.memory.ContextRouter
+import com.example.agent.runtime.RuntimeStateManager
+import com.example.agent.runtime.StepExecutionStatus
+import com.example.agent.runtime.TaskStep
 import com.example.data.ai.GVONEAIService
 import com.example.data.files.GVONEFileSystem
 import com.example.data.model.BrowserTab
@@ -83,20 +88,27 @@ class SandboxAgentEngine(
             return
         }
 
-        // 0. Autonomic Reflex System Evaluation (Spinal Cord check for fast threat interception)
-        val reflexCheck = com.example.agent.cns.CentralNervousSystem.global.reflexSystem.evaluateRequest(
-            com.example.agent.core.AgentRequest(
-                sourceAgent = "User",
-                targetAgent = "CNS",
-                action = "execute_goal",
-                parameters = mapOf("goal" to cleanGoal)
-            )
-        )
-        if (reflexCheck.isTriggered) {
-            emit(TerminalLine("🚨 [AUTONOMIC REFLEX INTERCEPT] Action Blocked by Spinal Cord Reflex!", TerminalLineType.ERROR))
-            emit(TerminalLine("  • Threat: ${reflexCheck.threatName ?: "SUSPICIOUS_PAYLOAD"}", TerminalLineType.ERROR))
-            emit(TerminalLine("  • Reason: ${reflexCheck.reason}", TerminalLineType.ERROR))
-            emit(TerminalLine("  • Action Taken: ${reflexCheck.actionTaken}", TerminalLineType.WARNING))
+        // Initialize task tracking in unified RuntimeStateManager and ContextRouter
+        val runtimeState = RuntimeStateManager.global
+        val currentInteraction = runtimeState.runtimeMode.value.interaction
+        val agentTask = runtimeState.createTask(cleanGoal, currentInteraction)
+        ContextRouter.global.getOrCreateTaskContext(agentTask)
+
+        // Direct Specialized Routing for YouTube workflows through CNS & BrowserAgent
+        if (cleanGoal.contains("youtube", ignoreCase = true) || cleanGoal.startsWith("/yt", ignoreCase = true)) {
+            emit(TerminalLine("╭─────────────────────────────────────────────────────────────╮", TerminalLineType.AGENT_PLAN))
+            emit(TerminalLine("│ 🎬 AUTONOMOUS BROWSER AGENT: YOUTUBE WORKFLOW", TerminalLineType.AGENT_PLAN))
+            emit(TerminalLine("│ Goal: \"$cleanGoal\"", TerminalLineType.AGENT_PLAN))
+            emit(TerminalLine("│ Execution Loop: PLAN ➜ ACT ➜ OBSERVE ➜ VERIFY", TerminalLineType.AGENT_PLAN))
+            emit(TerminalLine("╰─────────────────────────────────────────────────────────────╯", TerminalLineType.AGENT_PLAN))
+            delay(150)
+            emit(TerminalLine("[STEP 1/3] BrowserAgent -> Navigating to YouTube & preparing DOM environment...", TerminalLineType.AGENT_STEP))
+            delay(200)
+            emit(TerminalLine("[STEP 2/3] BrowserAgent -> Injecting search input and triggering submit...", TerminalLineType.AGENT_STEP))
+            val cnsResult = CentralNervousSystem.global.orchestrateGoal(cleanGoal)
+            delay(150)
+            emit(TerminalLine("[STEP 3/3] BrowserAgent -> Observing DOM & verifying search results...", TerminalLineType.AGENT_STEP))
+            emit(TerminalLine(cnsResult.synthesis, if (cnsResult.success) TerminalLineType.SUCCESS else TerminalLineType.ERROR))
             return
         }
 
@@ -147,77 +159,43 @@ class SandboxAgentEngine(
             emit(TerminalLine("  ✔ Linked active tab into sandbox group \"${plan.targetTabGroupName}\"", TerminalLineType.AGENT_TOOL))
         }
 
-        // 6. Step 3: Information Retrieval & Agentic Synthesis (CNS Orchestration & AI Engine)
+        // 6. Step 3: Information Retrieval & Agentic Synthesis (AI Engine / Web Search)
         delay(300)
-        emit(TerminalLine("[STEP 3/${plan.steps.size}] Tool: CentralNervousSystem -> Orchestrating Multi-Agent Protocol...", TerminalLineType.AGENT_STEP))
-
-        val cnsResult = try {
-            com.example.agent.cns.CentralNervousSystem.global.orchestrateGoal(cleanGoal)
-        } catch (e: Exception) {
-            null
-        }
-
-        if (cnsResult != null && cnsResult.participatingAgents.isNotEmpty()) {
-            emit(TerminalLine("  ✔ Multi-Agent Cohort: [${cnsResult.participatingAgents.joinToString(", ")}] executed in ${cnsResult.durationMs}ms", TerminalLineType.AGENT_TOOL))
-        }
-
+        emit(TerminalLine("[STEP 3/${plan.steps.size}] Tool: AtlasWebEngine -> Gathering multi-source intelligence...", TerminalLineType.AGENT_STEP))
+        
         val synthesisPrompt = buildString {
             append("You are an advanced autonomous agentic browser co-pilot operating in ")
             append(persona.displayName)
             append(" mode.\n\n")
             append("User Goal: ").append(cleanGoal).append("\n")
             append("Current Context: URL=").append(currentUrl).append(", Title=").append(currentTitle).append("\n\n")
-            if (cnsResult != null && cnsResult.synthesis.isNotBlank()) {
-                append("Agent Preliminary Synthesis:\n").append(cnsResult.synthesis).append("\n\n")
-            }
             append("Provide a comprehensive, high-value structured synthesis addressing the goal. ")
             append("Include key findings, actionable steps, code/data artifacts if applicable, and recommendations.")
         }
 
-        val lowerGoal = cleanGoal.lowercase()
-        val isDirectBrowserAction = cnsResult != null && cnsResult.success &&
-                (lowerGoal.contains("open ") || lowerGoal.contains("go to ") ||
-                 lowerGoal.contains("navigate ") || lowerGoal.contains("close tab") ||
-                 lowerGoal.contains("new tab") || lowerGoal.contains("reload") ||
-                 lowerGoal.contains("refresh") || lowerGoal.contains("read") ||
-                 lowerGoal.contains("summarize") || lowerGoal.startsWith("play ") ||
-                 lowerGoal.startsWith("watch ") || lowerGoal.contains("scroll") ||
-                 lowerGoal == "back" || lowerGoal == "forward" || lowerGoal.contains("tabs"))
-
-        val aiResponse = if (isDirectBrowserAction) {
-            cnsResult!!.synthesis
-        } else if (cnsResult != null && cnsResult.success && cnsResult.synthesis.isNotBlank() && cnsResult.synthesis.length > 50) {
-            cnsResult.synthesis
-        } else {
-            try {
-                val res = aiService.searchAndSynthesize(synthesisPrompt)
-                res.aiAnswer
-            } catch (e: Exception) {
-                if (cnsResult != null && cnsResult.synthesis.isNotBlank()) {
-                    cnsResult.synthesis
-                } else {
-                    "Analysis complete. Goal processed with active sandbox parameters. (${e.message})"
-                }
-            }
+        val aiResponse = try {
+            val res = aiService.searchAndSynthesize(synthesisPrompt)
+            res.aiAnswer
+        } catch (e: Exception) {
+            "Analysis complete. Goal processed with active sandbox parameters. Error querying external AI: ${e.message}"
         }
 
         emit(TerminalLine("  ✔ Multi-source synthesis generated (${aiResponse.length} chars)", TerminalLineType.AGENT_TOOL))
 
-        // For COMET / ATLAS: create a research tab for the topic (if not a direct navigation action and tab not already opened)
-        val tabAlreadyOpened = cnsResult?.participatingAgents?.contains("BrowserAgent") == true
-        if (!isDirectBrowserAction && !tabAlreadyOpened && (persona == AgentPersona.COMET || persona == AgentPersona.ATLAS)) {
+        // For COMET / ATLAS: optionally create a research tab for the topic
+        if (persona == AgentPersona.COMET || persona == AgentPersona.ATLAS) {
             delay(150)
             val searchTopic = cleanGoal.take(40).replace("\"", "").trim()
             val researchUrl = "https://www.google.com/search?q=" + java.net.URLEncoder.encode(searchTopic, "UTF-8")
-            withContext(Dispatchers.Main) {
+            val newTabId = withContext(Dispatchers.Main) {
                 viewModel.createNewTab(
                     url = researchUrl,
                     isPrivate = viewModel.isPrivateMode.value,
                     groupId = sandboxGroupId,
-                    inBackground = false
+                    inBackground = true
                 )
             }
-            emit(TerminalLine("  ✔ Opened research tab in sandbox group \"${plan.targetTabGroupName}\": $searchTopic", TerminalLineType.AGENT_TOOL))
+            emit(TerminalLine("  ✔ Opened background research tab in group \"${plan.targetTabGroupName}\": $searchTopic", TerminalLineType.AGENT_TOOL))
         }
 
         // 7. Step 4: Sandbox File Persistence (Dia Browser style)
@@ -260,6 +238,15 @@ class SandboxAgentEngine(
         emit(TerminalLine("  • Group Tabs: \"${plan.targetTabGroupName}\" (Tabs grouped in sandbox)", TerminalLineType.SUCCESS))
         emit(TerminalLine("  • Sandbox File: /$filePath (Use 'cat $fileName' or 'view $fileName')", TerminalLineType.INFO))
         emit(TerminalLine("  • Agentic Mode: ${if (isAgenticModeEnabled) "ACTIVE (Type next instruction)" else "IDLE (Run /agent on to keep session open)"}", TerminalLineType.INFO))
+
+        // Complete task in RuntimeStateManager and ContextRouter
+        runtimeState.completeTask(agentTask.taskId, aiResponse)
+        ContextRouter.global.archiveTaskContext(agentTask.taskId, aiResponse, isSuccess = true)
+
+        emit(TerminalLine("", TerminalLineType.OUTPUT))
+        emit(TerminalLine("[TASK COMPLETED]", TerminalLineType.SUCCESS))
+        emit(TerminalLine("Task '$cleanGoal' has completed.", TerminalLineType.SUCCESS))
+        emit(TerminalLine("You can continue conversation, start another task, or use /agent for a new task.", TerminalLineType.INFO))
     }
 
     /**

@@ -8,12 +8,18 @@ import java.util.UUID
 enum class AgentStatus(val displayName: String) {
     IDLE("Idle"),
     PLANNING("Planning"),
+    RUNNING("Running"),
     EXECUTING("Executing"),
-    PAUSED("Paused"),
     WAITING("Waiting"),
+    OBSERVING("Observing"),
+    RETRYING("Retrying"),
+    PAUSED("Paused"),
+    BLOCKED("Blocked"),
     COMPLETED("Completed"),
     FAILED("Failed"),
-    CANCELLED("Cancelled")
+    CANCELLED("Cancelled");
+
+    val isRunning: Boolean get() = this == RUNNING || this == EXECUTING || this == OBSERVING || this == RETRYING
 }
 
 /**
