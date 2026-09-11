@@ -148,108 +148,6 @@ class GVONEFileSystem(private val context: Context) {
                 )
             }
 
-            val indexHtml = File(projectsFolder, "index.html")
-            if (!indexHtml.exists()) {
-                indexHtml.writeText(
-                    """
-                    <!DOCTYPE html>
-                    <html lang="en">
-                    <head>
-                      <meta charset="UTF-8">
-                      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                      <title>GVONE Local Web App</title>
-                      <style>
-                        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-                        body { background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
-                        .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 32px; max-width: 440px; width: 100%; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); text-align: center; }
-                        .badge { display: inline-block; background: #0284c7; color: #e0f2fe; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 9999px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em; }
-                        h1 { font-size: 24px; font-weight: 800; margin-bottom: 12px; background: linear-gradient(135deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-                        p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin-bottom: 24px; }
-                        .counter-box { background: #0f172a; border-radius: 12px; padding: 16px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; }
-                        .counter-val { font-size: 32px; font-weight: 800; color: #38bdf8; }
-                        .btn-row { display: flex; gap: 10px; justify-content: center; }
-                        button { background: #3b82f6; color: white; border: none; padding: 12px 20px; border-radius: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-                        button:hover { background: #2563eb; transform: translateY(-1px); }
-                        button.alt { background: #334155; color: #cbd5e1; }
-                        button.alt:hover { background: #475569; }
-                        .status { margin-top: 20px; font-size: 12px; color: #10b981; }
-                      </style>
-                    </head>
-                    <body>
-                      <div class="card">
-                        <span class="badge">Running in GVONE</span>
-                        <h1>Interactive HTML App</h1>
-                        <p>This web application is executing directly from your GVONE sandbox filesystem.</p>
-                        
-                        <div class="counter-box">
-                          <span style="font-size: 14px; color: #64748b;">Live Counter:</span>
-                          <span class="counter-val" id="counter">0</span>
-                        </div>
-
-                        <div class="btn-row">
-                          <button onclick="increment()">Count Up (+1)</button>
-                          <button class="alt" onclick="sayHello()">Trigger Alert</button>
-                        </div>
-
-                        <p class="status" id="statusMsg">● Runtime Active & Synchronized</p>
-                      </div>
-
-                      <script>
-                        let count = 0;
-                        function increment() {
-                          count++;
-                          document.getElementById('counter').innerText = count;
-                          console.log('[GVONE Web App] Counter updated to: ' + count);
-                        }
-                        function sayHello() {
-                          console.log('[GVONE Web App] Alert triggered by user');
-                          alert('Hello from GVONE Local HTML Runner!\nCount is currently: ' + count);
-                        }
-                        console.log('[GVONE Web App] App initialized successfully. DOM ready.');
-                      </script>
-                    </body>
-                    </html>
-                    """.trimIndent()
-                )
-            }
-
-            val scriptJs = File(projectsFolder, "script.js")
-            if (!scriptJs.exists()) {
-                scriptJs.writeText(
-                    """
-                    // GVONE JavaScript Support File
-                    console.log("GVONE JavaScript Runner initialized");
-                    
-                    function calculateFibonacci(n) {
-                      let a = 0, b = 1;
-                      for (let i = 2; i <= n; i++) {
-                        let c = a + b;
-                        a = b;
-                        b = c;
-                      }
-                      return b;
-                    }
-
-                    console.log("Fibonacci(10) = " + calculateFibonacci(10));
-                    console.log("Platform: " + navigator.userAgent);
-                    """.trimIndent()
-                )
-            }
-
-            val runTestsSh = File(projectsFolder, "run_tests.sh")
-            if (!runTestsSh.exists()) {
-                runTestsSh.writeText(
-                    """
-                    #!/bin/bash
-                    echo "── GVONE AUTOMATED TEST RUNNER ──"
-                    echo "Checking workspace directories..."
-                    ls -la
-                    echo "Validating index.html..."
-                    echo "All tests passed successfully!"
-                    """.trimIndent()
-                )
-            }
-
             val gvoneFolder = File(rootDir, "GVONE")
             val archMd = File(gvoneFolder, "architecture.md")
             if (!archMd.exists()) {
@@ -422,11 +320,10 @@ class GVONEFileSystem(private val context: Context) {
         if (isDirectory) return FileType.FOLDER
         val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
         return when (ext) {
-            "html", "htm" -> FileType.HTML
             "md", "markdown" -> FileType.MARKDOWN
             "txt", "log", "conf", "cfg", "env" -> FileType.TEXT
             "json" -> FileType.JSON
-            "kt", "java", "py", "js", "ts", "css", "sh", "bash", "xml", "c", "cpp", "h", "rs", "go", "sql" -> FileType.CODE
+            "kt", "java", "py", "js", "ts", "html", "htm", "css", "sh", "bash", "xml", "c", "cpp", "h", "rs", "go", "sql" -> FileType.CODE
             "pdf" -> FileType.PDF
             "png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico" -> FileType.IMAGE
             "zip", "tar", "gz", "rar", "7z" -> FileType.ARCHIVE

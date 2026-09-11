@@ -713,6 +713,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val bridgeEnabled = prefs.getBoolean("bidirectional_bridge_enabled", true)
         val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", false)
         val termAutoAppear = prefs.getBoolean("terminal_auto_appear_address_bar", false)
+        val termHeight = prefs.getFloat("terminal_height_fraction", 0.85f)
         val shortsModeName = prefs.getString("shorts_audio_mode", ShortsAudioMode.ALWAYS_UNMUTED.name) ?: ShortsAudioMode.ALWAYS_UNMUTED.name
         val shortsMode = try { ShortsAudioMode.valueOf(shortsModeName) } catch (_: Exception) { ShortsAudioMode.ALWAYS_UNMUTED }
         val bgPlay = prefs.getBoolean("background_play_enabled", true)
@@ -732,6 +733,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             bidirectionalBridgeEnabled = bridgeEnabled,
             bridgeApplyToAllWebsites = bridgeApplyAll,
             terminalAutoAppearOnAddressBar = termAutoAppear,
+            terminalHeightFraction = termHeight,
             shortsAudioMode = shortsMode,
             backgroundPlayEnabled = bgPlay
         )
@@ -753,9 +755,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             .putBoolean("bidirectional_bridge_enabled", s.bidirectionalBridgeEnabled)
             .putBoolean("bridge_apply_all_websites", s.bridgeApplyToAllWebsites)
             .putBoolean("terminal_auto_appear_address_bar", s.terminalAutoAppearOnAddressBar)
+            .putFloat("terminal_height_fraction", s.terminalHeightFraction)
             .putString("shorts_audio_mode", s.shortsAudioMode.name)
             .putBoolean("background_play_enabled", s.backgroundPlayEnabled)
             .apply()
+    }
+
+    fun updateTerminalHeightFraction(fraction: Float) {
+        val clamped = fraction.coerceIn(0.50f, 0.98f)
+        updateSettings(_settings.value.copy(terminalHeightFraction = clamped))
     }
 
     fun openSheet(sheet: ActiveSheet) {

@@ -13,10 +13,12 @@ import com.example.data.sync.WebAppConnectionState
 import com.example.data.tor.TorConnectionState
 import com.example.ui.viewmodel.ActiveSheet
 import com.example.ui.viewmodel.BrowserViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URL
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
@@ -52,6 +54,7 @@ class TerminalCommandExecutor(
             "key", "gemini", "apikey",
             "dashboard", "cns", "groups", "tabgroups", "group", "sandbox", "organize", "creategroup", "grouptab", "ungroup",
             "pwd", "cd", "ls", "dir", "cat", "touch", "mkdir", "rm", "tree", "df", "du", "cookies",
+            "run", "exec", "start",
             "click", "type", "scroll", "links", "text", "extract", "view", "openfile",
             "bridge", "addressbar", "history", "whoami", "date", "uname", "echo",
             "tabs", "lstabs", "tab", "switchtab", "newtab", "nt", "closetab", "ct",
@@ -766,6 +769,11 @@ class TerminalCommandExecutor(
                 return
             }
 
+            "/run", "/exec", "/start" -> {
+                handleRunCommand(queryArg, outputLines, origin)
+                return
+            }
+
             "/click" -> {
                 val activeWv = viewModel.getActiveWebView()
                 if (activeWv == null) {
@@ -1362,6 +1370,248 @@ class TerminalCommandExecutor(
         }
     }
 
+    private fun handleRunCommand(
+        queryArg: String,
+        outputLines: MutableList<TerminalLine>,
+        origin: CommandOrigin
+    ) {
+        val trimmedArg = queryArg.trim()
+        val lowerArg = trimmedArg.lowercase(Locale.ROOT)
+
+        val isWebsiteTarget = trimmedArg.isBlank() ||
+                lowerArg == "website" || lowerArg == "web" || lowerArg == "site" ||
+                lowerArg.contains("create website") || lowerArg.contains("build website") ||
+                lowerArg.contains("make website") || lowerArg.contains("new website") ||
+                lowerArg.contains("webpage") || lowerArg.contains("landing page") ||
+                lowerArg.contains("portfolio")
+
+        // First commit the command line output so the user sees immediate feedback
+        viewModel.appendTerminalLines(outputLines)
+        if (origin == CommandOrigin.ADDRESS_BAR && viewModel.activeSheet.value != ActiveSheet.Terminal) {
+            viewModel.openSheet(ActiveSheet.Terminal)
+        }
+
+        viewModel.viewModelScope.launch {
+            // Check if targeting an existing specific file, e.g. "run index.html" or "run Projects/main.js"
+            if (trimmedArg.isNotBlank() && !isWebsiteTarget) {
+                val resolved = shellEngine.resolvePath(trimmedArg)
+                val file = viewModel.fileSystem.getFile(resolved)
+
+                if (file.exists() && !file.isDirectory) {
+                    val ext = file.extension.lowercase(Locale.ROOT)
+                    if (ext == "html" || ext == "htm") {
+                        val fileItem = viewModel.fileSystem.getFileItem(resolved)
+                        if (fileItem != null) {
+                            withContext(Dispatchers.Main) {
+                                viewModel.openFileInTab(fileItem, inNewTab = true)
+                            }
+                            viewModel.appendTerminalLines(listOf(
+                                TerminalLine("[RUN] 🚀 Launching HTML Website: $resolved in live browser tab", TerminalLineType.SUCCESS),
+                                TerminalLine("  • Live Tab URL: gvone-file://$resolved", TerminalLineType.INFO)
+                            ))
+                        } else {
+                            viewModel.appendTerminalLine(TerminalLine("[RUN] Error opening file item for $resolved", TerminalLineType.ERROR))
+                        }
+                        return@launch
+                    } else if (ext == "js") {
+                        val jsCode = viewModel.fileSystem.readFileContent(resolved)
+                        val activeWv = viewModel.getActiveWebView()
+                        if (activeWv != null) {
+                            viewModel.appendTerminalLine(TerminalLine("[RUN] Executing JavaScript ($resolved) in active tab context...", TerminalLineType.INFO))
+                            activeWv.evaluateJavascript(jsCode) { ret ->
+                                viewModel.appendTerminalLine(TerminalLine("<- $ret", TerminalLineType.SUCCESS))
+                            }
+                        } else {
+                            viewModel.appendTerminalLine(TerminalLine("[RUN] No active browser tab to execute JavaScript in.", TerminalLineType.ERROR))
+                        }
+                        return@launch
+                    } else {
+                        val fileItem = viewModel.fileSystem.getFileItem(resolved)
+                        if (fileItem != null) {
+                            withContext(Dispatchers.Main) {
+                                viewModel.openFileInTab(fileItem, inNewTab = true)
+                            }
+                            viewModel.appendTerminalLine(TerminalLine("[RUN] Opened $resolved in viewer tab", TerminalLineType.SUCCESS))
+                        }
+                        return@launch
+                    }
+                }
+            }
+
+            // If user typed "run" with no arguments, check if an existing index.html exists:
+            val existingCandidate = listOf(
+                shellEngine.resolvePath("index.html"),
+                "Projects/index.html",
+                "Documents/index.html"
+            ).firstOrNull { viewModel.fileSystem.getFile(it).exists() }
+
+            if (existingCandidate != null && (trimmedArg.isBlank() || trimmedArg == "index.html")) {
+                val fileItem = viewModel.fileSystem.getFileItem(existingCandidate)
+                if (fileItem != null) {
+                    withContext(Dispatchers.Main) {
+                        viewModel.openFileInTab(fileItem, inNewTab = true)
+                    }
+                    viewModel.appendTerminalLines(listOf(
+                        TerminalLine("[RUN] 🚀 Launching existing website: $existingCandidate in live tab", TerminalLineType.SUCCESS),
+                        TerminalLine("  • Live URL: gvone-file://$existingCandidate", TerminalLineType.INFO),
+                        TerminalLine("  • Tip: Use 'run website <topic>' to create a new website anytime.", TerminalLineType.INFO)
+                    ))
+                    return@launch
+                }
+            }
+
+            // Autonomous Website Creation and Execution!
+            viewModel.appendTerminalLines(listOf(
+                TerminalLine("[RUN] 🚀 Generating and launching modern interactive website...", TerminalLineType.AGENT_PLAN),
+                TerminalLine("  • Synthesizing responsive HTML5, modern CSS3 styling & interactive JavaScript...", TerminalLineType.AGENT_THOUGHT)
+            ))
+
+            val topic = if (trimmedArg.isNotBlank() && !isWebsiteTarget) trimmedArg else if (lowerArg.contains("website")) {
+                trimmedArg.replace(Regex("(?i)(run|create|build|make|a|new|website)"), "").trim().ifBlank { "Modern Web Dashboard & App Hub" }
+            } else {
+                "Modern Web Dashboard & App Hub"
+            }
+
+            val targetPath = "Projects/index.html"
+            val prompt = "You are an expert full-stack web developer. Build a complete, modern, responsive single-file HTML5 website with inline <style> and <script> for: \"$topic\". " +
+                    "Include modern typography, dark/light theme switcher, card layout, interactive counters/widgets, and responsive design. Return ONLY valid HTML without markdown fences."
+
+            val generatedHtml = if (viewModel.aiService.isApiKeyConfigured()) {
+                try {
+                    val raw = viewModel.aiService.generateDirectResponse(prompt)
+                    if (raw != null) cleanHtmlOutput(raw) else null
+                } catch (e: Exception) {
+                    null
+                }
+            } else null
+
+            val htmlContent = (if (generatedHtml.isNullOrBlank() || !generatedHtml.contains("<html", ignoreCase = true)) {
+                generateDefaultModernWebsite(topic)
+            } else generatedHtml).trim()
+
+            viewModel.fileSystem.writeFileContent(targetPath, htmlContent)
+            val fileItem = viewModel.fileSystem.getFileItem(targetPath)
+            if (fileItem != null) {
+                withContext(Dispatchers.Main) {
+                    viewModel.openFileInTab(fileItem, inNewTab = true)
+                }
+            }
+
+            viewModel.appendTerminalLines(listOf(
+                TerminalLine("✔ Website created and saved to /$targetPath (${htmlContent.length} bytes)", TerminalLineType.SUCCESS),
+                TerminalLine("✔ Launched live interactive website in active tab: gvone-file://$targetPath", TerminalLineType.SUCCESS),
+                TerminalLine("  • Tip: Tap 'Source Code' in viewer to edit, or use '/run' again to reload.", TerminalLineType.INFO)
+            ))
+        }
+    }
+
+    private fun cleanHtmlOutput(raw: String): String {
+        var h = raw.trim()
+        if (h.startsWith("```html", ignoreCase = true)) {
+            h = h.substring(7)
+        } else if (h.startsWith("```")) {
+            h = h.substring(3)
+        }
+        if (h.endsWith("```")) {
+            h = h.dropLast(3)
+        }
+        return h.trim()
+    }
+
+    private fun generateDefaultModernWebsite(topic: String): String {
+        return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>$topic • GVONE Web Runtime</title>
+  <style>
+    :root {
+      --bg: #0B0F17;
+      --card-bg: rgba(26, 34, 52, 0.85);
+      --border: #2A364F;
+      --accent: #00E5FF;
+      --accent-grad: linear-gradient(135deg, #00E5FF, #7C4DFF);
+      --text: #F1F5F9;
+      --subtext: #94A3B8;
+    }
+    [data-theme="light"] {
+      --bg: #F8FAFC;
+      --card-bg: #FFFFFF;
+      --border: #E2E8F0;
+      --accent: #0284C7;
+      --accent-grad: linear-gradient(135deg, #0284C7, #6366F1);
+      --text: #0F172A;
+      --subtext: #64748B;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; transition: background 0.3s, color 0.3s; }
+    body { background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+    .header { width: 100%; max-width: 800px; display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .logo { font-size: 1.25rem; font-weight: 800; background: var(--accent-grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .theme-btn { background: var(--card-bg); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+    .hero { text-align: center; margin: 40px 0 30px; max-width: 650px; }
+    .hero h1 { font-size: 2.2rem; margin-bottom: 12px; font-weight: 800; line-height: 1.2; }
+    .hero p { color: var(--subtext); font-size: 1rem; line-height: 1.6; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; width: 100%; max-width: 800px; margin-bottom: 30px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+    .card h3 { font-size: 1.1rem; margin-bottom: 8px; color: var(--accent); }
+    .card p { font-size: 0.88rem; color: var(--subtext); line-height: 1.5; margin-bottom: 14px; }
+    .interactive-box { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 800px; text-align: center; }
+    .counter-val { font-size: 2.8rem; font-weight: 800; color: var(--accent); margin: 12px 0; }
+    .btn-group { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .action-btn { background: var(--accent); color: #000; font-weight: 700; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; }
+    .footer { margin-top: auto; padding-top: 40px; color: var(--subtext); font-size: 0.8rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">⚡ GVONE LIVE RUNTIME</div>
+    <button class="theme-btn" onclick="toggleTheme()">🌓 Toggle Mode</button>
+  </div>
+  <div class="hero">
+    <h1>$topic</h1>
+    <p>Autonomously generated and running in the GVONE sandboxed runtime. Fully responsive with client-side state and live interactive controls.</p>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h3>🚀 Live Runtime</h3>
+      <p>Interactive web application rendered directly inside your sandboxed browser tab with full DOM and JS execution.</p>
+    </div>
+    <div class="card">
+      <h3>⚡ Responsive Design</h3>
+      <p>Mobile-first layout with dynamic CSS custom properties, touch feedback, and fluid transitions.</p>
+    </div>
+    <div class="card">
+      <h3>🛠 Editable Source</h3>
+      <p>View or modify this page anytime in the built-in file editor or rerun with <code>/run index.html</code>.</p>
+    </div>
+  </div>
+  <div class="interactive-box">
+    <h3>Interactive Runtime Demo</h3>
+    <div class="counter-val" id="counter">0</div>
+    <div class="btn-group">
+      <button class="action-btn" onclick="increment()">Count Up (+1)</button>
+      <button class="theme-btn" onclick="resetCount()">Reset</button>
+    </div>
+  </div>
+  <div class="footer">
+    Built with GVONE Unified Command Engine • Projects/index.html
+  </div>
+  <script>
+    let count = 0;
+    function increment() { count++; document.getElementById('counter').innerText = count; }
+    function resetCount() { count = 0; document.getElementById('counter').innerText = count; }
+    function toggleTheme() {
+      const b = document.body;
+      b.setAttribute('data-theme', b.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+    }
+  </script>
+</body>
+</html>
+        """.trimIndent()
+    }
+
     fun generateHelpOutput(commands: List<CustomCommandEntity>): List<TerminalLine> {
         val lines = mutableListOf<TerminalLine>()
         lines.add(TerminalLine("--- GVONE UNIFIED COMMAND ENGINE MANUAL ---", TerminalLineType.SYSTEM))
@@ -1416,6 +1666,8 @@ class TerminalCommandExecutor(
         lines.add(TerminalLine("  rm [-r] <path>       Remove file or directory", TerminalLineType.OUTPUT))
         lines.add(TerminalLine("  tree [path]          Display ASCII directory tree structure", TerminalLineType.OUTPUT))
         lines.add(TerminalLine("  view, openfile <f>   Open sandbox file in a live browser tab", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  run, /run [site|f]   Run/preview website, launch file, or create web app", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  run website [topic]  Autonomously create modern website & run in live tab", TerminalLineType.OUTPUT))
         lines.add(TerminalLine("  df, du               Inspect disk space & sandbox storage consumption", TerminalLineType.OUTPUT))
         lines.add(TerminalLine("", TerminalLineType.OUTPUT))
 

@@ -530,6 +530,20 @@ object CommandEngine {
             isEnabled = true,
             isPinned = false,
             isBuiltIn = true
+        ),
+        CustomCommandEntity(
+            id = "cmd_run",
+            command = "/run",
+            name = "Run / Create Website",
+            description = "Run, preview, or create an interactive website or script",
+            type = CommandType.AUTOMATION,
+            template = "{query}",
+            aliasesRaw = "/r,/exec,/start",
+            category = CommandCategory.AUTOMATION,
+            targetProvider = "GVONE Runtime",
+            isEnabled = true,
+            isPinned = true,
+            isBuiltIn = true
         )
     )
 

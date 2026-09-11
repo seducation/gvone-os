@@ -167,6 +167,10 @@ fun TerminalScreen(
     val conversationTreeManager = remember { ConversationTreeManager.global }
     var showCnsDashboard by remember { mutableStateOf(false) }
 
+    var terminalHeightFraction by remember(settings.terminalHeightFraction) {
+        mutableFloatStateOf(settings.terminalHeightFraction)
+    }
+
     // Multi-session management
     var sessions by remember {
         val initialLines = viewModel.terminalLines.value.ifEmpty {
@@ -320,6 +324,46 @@ fun TerminalScreen(
 
         // Handle shell built-ins first
         when (normalizedToken) {
+            "/height", "/resize" -> {
+                when {
+                    queryArg.equals("full", ignoreCase = true) || queryArg.equals("max", ignoreCase = true) -> {
+                        onToggleFullScreen(true)
+                        outputLines.add(TerminalLine("🖥️ Terminal maximized to Fullscreen mode.", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("dock", ignoreCase = true) -> {
+                        onToggleFullScreen(false)
+                        outputLines.add(TerminalLine("📱 Terminal docked to ${(terminalHeightFraction * 100).toInt()}%.", TerminalLineType.INFO))
+                    }
+                    queryArg.toIntOrNull() != null -> {
+                        val pct = queryArg.toInt().coerceIn(50, 98)
+                        val frac = pct / 100f
+                        terminalHeightFraction = frac
+                        viewModel.updateTerminalHeightFraction(frac)
+                        if (isFullScreen) onToggleFullScreen(false)
+                        outputLines.add(TerminalLine("📐 Terminal height adjusted to $pct% of screen.", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("increase", ignoreCase = true) || queryArg.equals("up", ignoreCase = true) -> {
+                        val newFrac = (terminalHeightFraction + 0.10f).coerceIn(0.50f, 0.98f)
+                        terminalHeightFraction = newFrac
+                        viewModel.updateTerminalHeightFraction(newFrac)
+                        outputLines.add(TerminalLine("📐 Terminal height increased to ${(newFrac * 100).toInt()}% of screen.", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("decrease", ignoreCase = true) || queryArg.equals("down", ignoreCase = true) -> {
+                        val newFrac = (terminalHeightFraction - 0.10f).coerceIn(0.50f, 0.98f)
+                        terminalHeightFraction = newFrac
+                        viewModel.updateTerminalHeightFraction(newFrac)
+                        outputLines.add(TerminalLine("📐 Terminal height adjusted to ${(newFrac * 100).toInt()}% of screen.", TerminalLineType.SUCCESS))
+                    }
+                    else -> {
+                        outputLines.add(TerminalLine("📐 Current Terminal Height: ${(terminalHeightFraction * 100).toInt()}% of screen (fullscreen: $isFullScreen)", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("Usage: /height [50-98 | increase | decrease | full | dock]", TerminalLineType.OUTPUT))
+                    }
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
             "/clear", "/cls" -> {
                 sessions = sessions.map {
                     if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
@@ -1807,11 +1851,13 @@ fun TerminalScreen(
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
 
     // Main terminal overlay container
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .testTag("terminal_screen")
     ) {
+        val totalHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+
         // Semi-transparent backdrop scrim over the background webpage when docked
         if (!isFullScreen) {
             Box(
@@ -1861,7 +1907,7 @@ fun TerminalScreen(
                                     Modifier
                                 }
                             )
-                            .fillMaxHeight(0.60f)
+                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.50f, 0.98f))
                     }
                 )
                 .offset { IntOffset(0, dragOffsetY.coerceAtLeast(0f).toInt()) }
@@ -1875,24 +1921,45 @@ fun TerminalScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 8.dp, bottom = 4.dp)
-                            .pointerInput(Unit) {
+                            .pointerInput(totalHeightPx) {
                                 detectVerticalDragGestures(
                                     onDragEnd = {
-                                        if (dragOffsetY > 100f) {
+                                        if (dragOffsetY > 120f) {
                                             onClose()
+                                        } else {
+                                            viewModel.updateTerminalHeightFraction(terminalHeightFraction)
                                         }
                                         dragOffsetY = 0f
                                     },
                                     onVerticalDrag = { _, dragAmount ->
-                                        dragOffsetY += dragAmount
+                                        val deltaFraction = -dragAmount / totalHeightPx
+                                        val candidate = terminalHeightFraction + deltaFraction
+                                        if (candidate in 0.55f..0.98f) {
+                                            terminalHeightFraction = candidate
+                                        } else if (candidate < 0.55f && dragAmount > 0) {
+                                            dragOffsetY += dragAmount
+                                        }
                                     }
                                 )
+                            }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                val next = when {
+                                    terminalHeightFraction < 0.80f -> 0.85f
+                                    terminalHeightFraction < 0.90f -> 0.95f
+                                    else -> 0.75f
+                                }
+                                terminalHeightFraction = next
+                                viewModel.updateTerminalHeightFraction(next)
+                                Toast.makeText(context, "Terminal height: ${(next * 100).toInt()}%", Toast.LENGTH_SHORT).show()
                             },
                         contentAlignment = Alignment.Center
                     ) {
                         Box(
                             modifier = Modifier
-                                .width(38.dp)
+                                .width(42.dp)
                                 .height(4.dp)
                                 .background(Color(0xFF484F58), CircleShape)
                         )
@@ -1905,6 +1972,17 @@ fun TerminalScreen(
                     activeSessionId = activeSessionId,
                     isTorActive = isTorActive,
                     isFullScreen = isFullScreen,
+                    terminalHeightFraction = terminalHeightFraction,
+                    onAdjustHeight = {
+                        val next = when {
+                            terminalHeightFraction < 0.80f -> 0.85f
+                            terminalHeightFraction < 0.90f -> 0.95f
+                            else -> 0.75f
+                        }
+                        terminalHeightFraction = next
+                        viewModel.updateTerminalHeightFraction(next)
+                        Toast.makeText(context, "Terminal height: ${(next * 100).toInt()}%", Toast.LENGTH_SHORT).show()
+                    },
                     onToggleFullScreen = { onToggleFullScreen(!isFullScreen) },
                     onSelectSession = { activeSessionId = it },
                     onNewSession = {
@@ -2425,6 +2503,8 @@ private fun TerminalHeaderBar(
     activeSessionId: String,
     isTorActive: Boolean,
     isFullScreen: Boolean,
+    terminalHeightFraction: Float = 0.85f,
+    onAdjustHeight: (() -> Unit)? = null,
     onToggleFullScreen: () -> Unit,
     onSelectSession: (String) -> Unit,
     onNewSession: () -> Unit,
@@ -2543,6 +2623,22 @@ private fun TerminalHeaderBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
+            if (!isFullScreen && onAdjustHeight != null) {
+                IconButton(
+                    onClick = onAdjustHeight,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("terminal_adjust_height_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SwapVert,
+                        contentDescription = "Adjust Terminal Height (${(terminalHeightFraction * 100).toInt()}%)",
+                        tint = TermPromptGreen,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
             IconButton(
                 onClick = onClearScreen,
                 modifier = Modifier
@@ -2807,6 +2903,7 @@ private fun generateHelpOutput(commands: List<CustomCommandEntity>): List<Termin
 
     lines.add(TerminalLine("[1] TERMINAL & SYSTEM UTILITIES", TerminalLineType.SUCCESS))
     lines.add(TerminalLine("  help, ?              Display this manual", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  height [50-98|full]  Adjust or increase docked terminal height", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  clear, cls           Clear terminal screen", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  bridge               Check Web App Bridge status (Success/Failed)", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  addressbar           Check address bar stream link status", TerminalLineType.OUTPUT))

@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -247,6 +248,97 @@ fun SettingsScreen(
                     checked = settings.terminalAutoAppearOnAddressBar,
                     onCheckedChange = { onSettingsChanged(settings.copy(terminalAutoAppearOnAddressBar = it)) }
                 )
+            }
+
+            item {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp)),
+                    color = Color(0xFF141A26)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.SwapVert,
+                                    contentDescription = null,
+                                    tint = GVONEPrimary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column {
+                                    Text(
+                                        "Terminal CLI Height",
+                                        color = GVONETextPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        "Adjust docked panel screen coverage (${(settings.terminalHeightFraction * 100).toInt()}%)",
+                                        color = GVONETextSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                            Text(
+                                "${(settings.terminalHeightFraction * 100).toInt()}%",
+                                color = GVONEPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                0.70f to "Standard (70%)",
+                                0.85f to "Tall (85%)",
+                                0.95f to "Max (95%)"
+                            ).forEach { (fraction, label) ->
+                                val isSelected = kotlin.math.abs(settings.terminalHeightFraction - fraction) < 0.04f
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            onSettingsChanged(settings.copy(terminalHeightFraction = fraction))
+                                        },
+                                    color = if (isSelected) GVONEPrimary.copy(alpha = 0.2f) else Color(0xFF1E2638),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (isSelected) GVONEPrimary else Color(0xFF2A364F)
+                                    )
+                                ) {
+                                    Box(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            label,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) GVONEPrimary else GVONETextPrimary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             item {
