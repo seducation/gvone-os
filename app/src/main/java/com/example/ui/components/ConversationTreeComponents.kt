@@ -421,125 +421,199 @@ fun Level1TaskItem(
                         .padding(start = 16.dp, end = 8.dp, bottom = 8.dp, top = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Task Summary / Quick Action bar
-                    Row(
+                    var isActionLogsExpanded by remember { mutableStateOf(true) }
+
+                    // User Input Bar with right-direction expandable/collapsible icon
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFF0E131C),
+                        border = BorderStroke(0.5.dp, ColorCyan.copy(alpha = 0.35f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .clickable { isActionLogsExpanded = !isActionLogsExpanded }
+                            .testTag("task_user_input_${task.id}")
                     ) {
-                        Text(
-                            text = "AGENTS INVOLVED (${task.agents.size})",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = ColorTextMuted
-                        )
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            // Copy Context Button
-                            Surface(
-                                shape = RoundedCornerShape(3.dp),
-                                color = Color(0xFF161B22),
-                                border = BorderStroke(0.5.dp, BorderLevel2),
-                                modifier = Modifier.clickable {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    val export = buildString {
-                                        appendLine("=== TASK: ${task.title} ===")
-                                        appendLine("Scope: ${task.isolatedMemoryScopeId}")
-                                        appendLine("Command: ${task.commandPrompt}")
-                                        task.agents.forEach { ag ->
-                                            appendLine("  [AGENT] ${ag.agentName} (${ag.status})")
-                                            ag.steps.forEach { st ->
-                                                appendLine("    - [${st.type}] ${st.title} ${st.content ?: ""}")
-                                            }
-                                        }
-                                        if (task.summaryResult != null) {
-                                            appendLine("Result: ${task.summaryResult}")
-                                        }
-                                    }
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("Task Tree", export))
-                                    Toast.makeText(context, "Task context copied", Toast.LENGTH_SHORT).show()
-                                }
-                            ) {
-                                Text(
-                                    text = "COPY CONTEXT",
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 8.sp,
-                                    color = ColorCyan,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            // Dismiss Task
-                            Surface(
-                                shape = RoundedCornerShape(3.dp),
-                                color = Color(0xFF211515),
-                                border = BorderStroke(0.5.dp, ColorError.copy(alpha = 0.4f)),
-                                modifier = Modifier.clickable { onRemove() }
-                            ) {
-                                Text(
-                                    text = "DISMISS",
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 8.sp,
-                                    color = ColorError,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    if (task.agents.isEmpty()) {
-                        Text(
-                            text = "   └── No agents dispatched for this task yet.",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            color = ColorTextMuted,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                    } else {
-                        task.agents.forEachIndexed { index, agent ->
-                            val isLast = index == task.agents.size - 1
-                            Level2AgentItem(
-                                agent = agent,
-                                isLastInList = isLast,
-                                onToggleExpand = { onToggleAgentExpand(agent.id) }
-                            )
-                        }
-                    }
-
-                    // Optional summary result banner if present
-                    if (!task.summaryResult.isNullOrBlank()) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFF0F2618),
-                            border = BorderStroke(0.5.dp, ColorSuccess.copy(alpha = 0.4f)),
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 4.dp)
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(
-                                modifier = Modifier.padding(8.dp),
-                                verticalAlignment = Alignment.Top,
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(text = "🎯", fontSize = 12.sp)
-                                Column {
-                                    Text(
-                                        text = "TASK SYNTHESIS & OUTCOME",
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = ColorSuccess
+                                Text(
+                                    text = "$",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ColorCyan
+                                )
+                                Text(
+                                    text = task.commandPrompt.ifBlank { task.title },
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ColorTextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            // Right-direction expandable and collapsible icon next to user input
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "${task.agents.size} agents • ${task.totalStepsCount} actions",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 8.5.sp,
+                                    color = if (isActionLogsExpanded) ColorCyan else ColorTextMuted
+                                )
+                                Icon(
+                                    imageVector = if (isActionLogsExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                    contentDescription = if (isActionLogsExpanded) "Collapse Action Logs" else "Expand Action Logs",
+                                    tint = if (isActionLogsExpanded) ColorCyan else ColorTextMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = isActionLogsExpanded,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // Task Summary / Quick Action bar
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "AGENTS INVOLVED (${task.agents.size})",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ColorTextMuted
+                                )
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    // Copy Context Button
+                                    Surface(
+                                        shape = RoundedCornerShape(3.dp),
+                                        color = Color(0xFF161B22),
+                                        border = BorderStroke(0.5.dp, BorderLevel2),
+                                        modifier = Modifier.clickable {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            val export = buildString {
+                                                appendLine("=== TASK: ${task.title} ===")
+                                                appendLine("Scope: ${task.isolatedMemoryScopeId}")
+                                                appendLine("Command: ${task.commandPrompt}")
+                                                task.agents.forEach { ag ->
+                                                    appendLine("  [AGENT] ${ag.agentName} (${ag.status})")
+                                                    ag.steps.forEach { st ->
+                                                        appendLine("    - [${st.type}] ${st.title} ${st.content ?: ""}")
+                                                    }
+                                                }
+                                                if (task.summaryResult != null) {
+                                                    appendLine("Result: ${task.summaryResult}")
+                                                }
+                                            }
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("Task Tree", export))
+                                            Toast.makeText(context, "Task context copied", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "COPY CONTEXT",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 8.sp,
+                                            color = ColorCyan,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                        )
+                                    }
+
+                                    // Dismiss Task
+                                    Surface(
+                                        shape = RoundedCornerShape(3.dp),
+                                        color = Color(0xFF211515),
+                                        border = BorderStroke(0.5.dp, ColorError.copy(alpha = 0.4f)),
+                                        modifier = Modifier.clickable { onRemove() }
+                                    ) {
+                                        Text(
+                                            text = "DISMISS",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 8.sp,
+                                            color = ColorError,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (task.agents.isEmpty()) {
+                                Text(
+                                    text = "   └── No agents dispatched for this task yet.",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    color = ColorTextMuted,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            } else {
+                                task.agents.forEachIndexed { index, agent ->
+                                    val isLast = index == task.agents.size - 1
+                                    Level2AgentItem(
+                                        agent = agent,
+                                        isLastInList = isLast,
+                                        onToggleExpand = { onToggleAgentExpand(agent.id) }
                                     )
-                                    Text(
-                                        text = task.summaryResult,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 10.sp,
-                                        color = Color(0xFFD1E7DD),
-                                        modifier = Modifier.padding(top = 2.dp)
-                                    )
+                                }
+                            }
+
+                            // Optional summary result banner if present
+                            if (!task.summaryResult.isNullOrBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFF0F2618),
+                                    border = BorderStroke(0.5.dp, ColorSuccess.copy(alpha = 0.4f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.Top,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(text = "🎯", fontSize = 12.sp)
+                                        Column {
+                                            Text(
+                                                text = "TASK SYNTHESIS & OUTCOME",
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = ColorSuccess
+                                            )
+                                            Text(
+                                                text = task.summaryResult,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 10.sp,
+                                                color = Color(0xFFD1E7DD),
+                                                modifier = Modifier.padding(top = 2.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -772,24 +846,6 @@ fun Level3DetailItem(
                     fontSize = 10.sp,
                     color = TreeLineColor
                 )
-
-                // Small dedicated Expandable / Collapsible Icon (▾ / ▸) next to the action log
-                Surface(
-                    shape = RoundedCornerShape(3.dp),
-                    color = if (isExpanded) ColorPurple.copy(alpha = 0.25f) else Color(0xFF1E2530),
-                    modifier = Modifier
-                        .clickable { isExpanded = !isExpanded }
-                        .testTag("action_log_toggle_${step.id}")
-                ) {
-                    Text(
-                        text = if (isExpanded) "▾" else "▸",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isExpanded) ColorPurple else ColorTextMuted,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                    )
-                }
 
                 // Status / Type Icon (✓, ⚡, 💬, ✗, etc.)
                 Text(

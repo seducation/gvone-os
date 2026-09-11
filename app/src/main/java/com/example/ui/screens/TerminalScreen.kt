@@ -261,6 +261,9 @@ fun TerminalScreen(
         }
     }
 
+    // Collapsed user input commands in stream log (all expanded by default)
+    var collapsedCommandIds by remember { mutableStateOf(setOf<String>()) }
+
     fun commitLines(newLines: List<TerminalLine>) {
         val updated = activeSession.lines + newLines
         sessions = sessions.map {
@@ -337,11 +340,13 @@ fun TerminalScreen(
                 when {
                     queryArg.equals("expand", ignoreCase = true) || queryArg.equals("open", ignoreCase = true) || queryArg.equals("all", ignoreCase = true) -> {
                         conversationTreeManager.expandAll()
-                        outputLines.add(TerminalLine("🌳 [TREE EXPANDED] Expanded all 3-level conversation task branches in the stream log.", TerminalLineType.SUCCESS))
+                        collapsedCommandIds = emptySet()
+                        outputLines.add(TerminalLine("🌳 [TREE EXPANDED] Expanded all user inputs and conversation task branches in the stream log.", TerminalLineType.SUCCESS))
                     }
                     queryArg.equals("collapse", ignoreCase = true) || queryArg.equals("close", ignoreCase = true) -> {
                         conversationTreeManager.collapseAll()
-                        outputLines.add(TerminalLine("🌳 [TREE COLLAPSED] Collapsed all conversation task branches into compact rows in stream log.", TerminalLineType.WARNING))
+                        collapsedCommandIds = activeSession.lines.filter { it.type == TerminalLineType.COMMAND }.map { it.id }.toSet()
+                        outputLines.add(TerminalLine("🌳 [TREE COLLAPSED] Collapsed all user inputs and action logs into compact rows in stream log.", TerminalLineType.WARNING))
                     }
                     else -> {
                         val allTasks = conversationTreeManager.tasks.value
@@ -1773,9 +1778,32 @@ fun TerminalScreen(
                     )
                 }
 
-                // 2. MAIN CLI STREAM LOG (With 3-Level Collapsible Items inline: Task ➜ Agents ➜ Steps)
+                // 2. MAIN CLI STREAM LOG (Grouped by User Input with Expandable/Collapsible Action Logs)
                 val treeTasks by conversationTreeManager.tasks.collectAsState()
                 val activeTaskIdTree by conversationTreeManager.activeTaskId.collectAsState()
+
+                // Group terminal lines into blocks by user input command
+                val commandGroups = remember(activeSession.lines) {
+                    val groups = mutableListOf<TerminalCommandBlock>()
+                    var currentCmd: TerminalLine? = null
+                    val currentActions = mutableListOf<TerminalLine>()
+
+                    for (line in activeSession.lines) {
+                        if (line.type == TerminalLineType.COMMAND) {
+                            if (currentCmd != null || currentActions.isNotEmpty()) {
+                                groups.add(TerminalCommandBlock(currentCmd, currentActions.toList()))
+                                currentActions.clear()
+                            }
+                            currentCmd = line
+                        } else {
+                            currentActions.add(line)
+                        }
+                    }
+                    if (currentCmd != null || currentActions.isNotEmpty()) {
+                        groups.add(TerminalCommandBlock(currentCmd, currentActions.toList()))
+                    }
+                    groups
+                }
 
                 SelectionContainer(
                     modifier = Modifier
@@ -1796,31 +1824,11 @@ fun TerminalScreen(
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        items(activeSession.lines, key = { it.id }) { line ->
-                            if (line.type == TerminalLineType.EXPANDABLE_TASK) {
-                                val task = treeTasks.find { it.id == line.taskId }
-                                if (task != null) {
-                                    Level1TaskItem(
-                                        task = task,
-                                        isActive = activeTaskIdTree == task.id,
-                                        onToggleExpand = {
-                                            conversationTreeManager.toggleTaskExpansion(task.id)
-                                        },
-                                        onToggleAgentExpand = { agentId ->
-                                            conversationTreeManager.toggleAgentExpansion(task.id, agentId)
-                                        },
-                                        onContinue = {
-                                            executeCommand(task.commandPrompt.ifBlank { "/agent ${task.title}" })
-                                        },
-                                        onInspect = {
-                                            executeCommand("/status")
-                                        },
-                                        onRemove = {
-                                            conversationTreeManager.removeTask(task.id)
-                                        },
-                                        modifier = Modifier.padding(vertical = 3.dp)
-                                    )
-                                } else {
+                        commandGroups.forEach { group ->
+                            val cmd = group.commandLine
+                            if (cmd == null) {
+                                // Initial lines (welcome banner, status, etc.) before first user input
+                                items(group.actionLines, key = { it.id }) { line ->
                                     TerminalLineItem(
                                         line = line,
                                         onCopy = {
@@ -1831,14 +1839,96 @@ fun TerminalScreen(
                                     )
                                 }
                             } else {
-                                TerminalLineItem(
-                                    line = line,
-                                    onCopy = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", line.text))
-                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                val isExpanded = cmd.id !in collapsedCommandIds
+
+                                // Every User Input: with right-direction collapsible/expandable icon
+                                item(key = cmd.id) {
+                                    UserInputCommandItem(
+                                        commandLine = cmd,
+                                        actionCount = group.actionLines.size,
+                                        isExpanded = isExpanded,
+                                        onToggleExpand = {
+                                            collapsedCommandIds = if (isExpanded) {
+                                                collapsedCommandIds + cmd.id
+                                            } else {
+                                                collapsedCommandIds - cmd.id
+                                            }
+                                        },
+                                        onCopy = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("Command", cmd.text))
+                                            Toast.makeText(context, "Command copied", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+
+                                if (isExpanded) {
+                                    items(group.actionLines, key = { it.id }) { line ->
+                                        if (line.type == TerminalLineType.EXPANDABLE_TASK) {
+                                            val task = treeTasks.find { it.id == line.taskId }
+                                            if (task != null) {
+                                                Level1TaskItem(
+                                                    task = task,
+                                                    isActive = activeTaskIdTree == task.id,
+                                                    onToggleExpand = {
+                                                        conversationTreeManager.toggleTaskExpansion(task.id)
+                                                    },
+                                                    onToggleAgentExpand = { agentId ->
+                                                        conversationTreeManager.toggleAgentExpansion(task.id, agentId)
+                                                    },
+                                                    onContinue = {
+                                                        executeCommand(task.commandPrompt.ifBlank { "/agent ${task.title}" })
+                                                    },
+                                                    onInspect = {
+                                                        executeCommand("/status")
+                                                    },
+                                                    onRemove = {
+                                                        conversationTreeManager.removeTask(task.id)
+                                                    },
+                                                    modifier = Modifier.padding(start = 6.dp, top = 2.dp, bottom = 2.dp)
+                                                )
+                                            } else {
+                                                TerminalLineItem(
+                                                    line = line,
+                                                    onCopy = {
+                                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                        clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", line.text))
+                                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                )
+                                            }
+                                        } else {
+                                            TerminalLineItem(
+                                                line = line,
+                                                onCopy = {
+                                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                    clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", line.text))
+                                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                                }
+                                            )
+                                        }
                                     }
-                                )
+                                } else if (group.actionLines.isNotEmpty()) {
+                                    item(key = "${cmd.id}_collapsed_summary") {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    collapsedCommandIds = collapsedCommandIds - cmd.id
+                                                }
+                                                .padding(start = 12.dp, top = 1.dp, bottom = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "└── [▸ ${group.actionLines.size} action logs collapsed — tap to expand]",
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 10.sp,
+                                                color = Color(0xFF6E7681)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -2275,6 +2365,11 @@ private fun TerminalHeaderBar(
     }
 }
 
+data class TerminalCommandBlock(
+    val commandLine: TerminalLine?,
+    val actionLines: List<TerminalLine>
+)
+
 @Composable
 private fun TerminalLineItem(
     line: TerminalLine,
@@ -2296,99 +2391,92 @@ private fun TerminalLineItem(
         TerminalLineType.EXPANDABLE_TASK -> Color(0xFFA855F7) // Purple
     }
 
-    val isActionLog = line.type in listOf(
-        TerminalLineType.AGENT_PLAN,
-        TerminalLineType.AGENT_STEP,
-        TerminalLineType.AGENT_THOUGHT,
-        TerminalLineType.AGENT_TOOL
-    ) || (line.text.contains("\n") && line.text.length > 80)
+    Text(
+        text = line.text,
+        color = color,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 12.5.sp,
+        lineHeight = 17.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCopy() }
+    )
+}
 
-    if (isActionLog) {
-        var isExpanded by remember { mutableStateOf(false) }
-        val previewText = remember(line.text) {
-            val firstLine = line.text.lineSequence().firstOrNull()?.trim() ?: line.text
-            if (firstLine.length > 75) firstLine.take(75) + "..." else firstLine
-        }
-
-        Column(
+/**
+ * User Input Item: Renders the user input command line with a right-direction
+ * expandable and collapsible icon next to it, allowing the subsequent action logs to expand and collapse.
+ */
+@Composable
+private fun UserInputCommandItem(
+    commandLine: TerminalLine,
+    actionCount: Int,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onCopy: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = if (isExpanded) Color(0xFF0D121B) else Color(0xFF161B22),
+        border = BorderStroke(
+            0.5.dp,
+            if (isExpanded) TermPromptCyan.copy(alpha = 0.35f) else Color(0xFF30363D)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { if (actionCount > 0) onToggleExpand() else onCopy() }
+            .testTag("user_input_${commandLine.id}")
+    ) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 1.5.dp)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { isExpanded = !isExpanded }
-                    .padding(vertical = 1.dp),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // Small expandable / collapsible icon next to action log
+            Text(
+                text = commandLine.text,
+                color = TermPromptCyan,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 17.sp,
+                modifier = Modifier.weight(1f)
+            )
+
+            // Right-direction expandable and collapsible icon next to user input
+            if (actionCount > 0) {
                 Surface(
                     shape = RoundedCornerShape(3.dp),
-                    color = if (isExpanded) color.copy(alpha = 0.2f) else Color(0xFF1E2530),
-                    modifier = Modifier.padding(top = 1.dp)
-                ) {
-                    Text(
-                        text = if (isExpanded) "▾" else "▸",
-                        color = color,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                    )
-                }
-
-                Text(
-                    text = if (isExpanded) line.text else previewText,
-                    color = color,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.5.sp,
-                    lineHeight = 17.sp,
-                    modifier = Modifier.weight(1f)
-                )
-
-                Icon(
-                    imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = if (isExpanded) "Collapse Action Log" else "Expand Action Log",
-                    tint = color.copy(alpha = 0.7f),
+                    color = if (isExpanded) TermPromptCyan.copy(alpha = 0.15f) else Color(0xFF21262D),
+                    border = BorderStroke(0.5.dp, if (isExpanded) TermPromptCyan.copy(alpha = 0.5f) else Color(0xFF30363D)),
                     modifier = Modifier
-                        .size(15.dp)
-                        .padding(top = 1.dp)
-                )
-            }
-
-            if (isExpanded) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 18.dp, top = 2.dp),
-                    horizontalArrangement = Arrangement.End
+                        .clickable { onToggleExpand() }
+                        .testTag("user_input_toggle_${commandLine.id}")
                 ) {
-                    Text(
-                        text = "[COPY LOG]",
-                        color = TermPromptCyan,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 8.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clickable { onCopy() }
-                            .padding(2.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "$actionCount actions",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isExpanded) TermPromptCyan else Color(0xFF8B949E)
+                        )
+                        // Right direction chevron icon
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = if (isExpanded) "Collapse Action Logs" else "Expand Action Logs",
+                            tint = if (isExpanded) TermPromptCyan else Color(0xFF8B949E),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
                 }
             }
         }
-    } else {
-        Text(
-            text = line.text,
-            color = color,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.5.sp,
-            lineHeight = 17.sp,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onCopy() }
-        )
     }
 }
 
