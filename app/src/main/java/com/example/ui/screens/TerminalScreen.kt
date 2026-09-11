@@ -2296,16 +2296,100 @@ private fun TerminalLineItem(
         TerminalLineType.EXPANDABLE_TASK -> Color(0xFFA855F7) // Purple
     }
 
-    Text(
-        text = line.text,
-        color = color,
-        fontFamily = FontFamily.Monospace,
-        fontSize = 12.5.sp,
-        lineHeight = 17.sp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCopy() }
-    )
+    val isActionLog = line.type in listOf(
+        TerminalLineType.AGENT_PLAN,
+        TerminalLineType.AGENT_STEP,
+        TerminalLineType.AGENT_THOUGHT,
+        TerminalLineType.AGENT_TOOL
+    ) || (line.text.contains("\n") && line.text.length > 80)
+
+    if (isActionLog) {
+        var isExpanded by remember { mutableStateOf(false) }
+        val previewText = remember(line.text) {
+            val firstLine = line.text.lineSequence().firstOrNull()?.trim() ?: line.text
+            if (firstLine.length > 75) firstLine.take(75) + "..." else firstLine
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 1.5.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded }
+                    .padding(vertical = 1.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Small expandable / collapsible icon next to action log
+                Surface(
+                    shape = RoundedCornerShape(3.dp),
+                    color = if (isExpanded) color.copy(alpha = 0.2f) else Color(0xFF1E2530),
+                    modifier = Modifier.padding(top = 1.dp)
+                ) {
+                    Text(
+                        text = if (isExpanded) "▾" else "▸",
+                        color = color,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+
+                Text(
+                    text = if (isExpanded) line.text else previewText,
+                    color = color,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.5.sp,
+                    lineHeight = 17.sp,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Icon(
+                    imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "Collapse Action Log" else "Expand Action Log",
+                    tint = color.copy(alpha = 0.7f),
+                    modifier = Modifier
+                        .size(15.dp)
+                        .padding(top = 1.dp)
+                )
+            }
+
+            if (isExpanded) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 18.dp, top = 2.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = "[COPY LOG]",
+                        color = TermPromptCyan,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clickable { onCopy() }
+                            .padding(2.dp)
+                    )
+                }
+            }
+        }
+    } else {
+        Text(
+            text = line.text,
+            color = color,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.5.sp,
+            lineHeight = 17.sp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onCopy() }
+        )
+    }
 }
 
 @Composable

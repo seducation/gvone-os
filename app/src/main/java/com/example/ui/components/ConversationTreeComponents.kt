@@ -670,6 +670,29 @@ fun Level2AgentItem(
                         modifier = Modifier.padding(vertical = 2.dp)
                     )
                 } else {
+                    // Action Logs header indicator
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "ACTION LOGS (${agent.steps.size})",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = ColorTextMuted
+                        )
+                        Text(
+                            text = "• Tap any log item or arrow to expand details",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.sp,
+                            color = Color(0xFF6E7681)
+                        )
+                    }
+
                     agent.steps.forEachIndexed { sIdx, step ->
                         val isLastStep = sIdx == agent.steps.size - 1
                         Level3DetailItem(
@@ -687,13 +710,10 @@ fun Level2AgentItem(
  * Level 3: Individual execution step, tool call, reasoning/status event, output, error, or result.
  * Example:
  *    ▾ 🤖 Coding Agent
- *       ✓ Analyze repository
- *       ✓ Locate authentication bug
- *       ⚡ Tool: grep -r "AuthToken"
- *       💬 Reasoning: Found token validation logic in AuthService.kt
- *       ✓ Patch auth token verification
- *       ✓ Run test suite
- *       ✔ Result: Fixed in 420ms
+ *       ▾ ✓ Analyze repository
+ *       ▾ ⚡ Tool: grep -r "AuthToken"
+ *       ▸ 💬 Reasoning: Found token validation logic in AuthService.kt
+ *       ▾ ✔ Result: Fixed in 420ms
  */
 @Composable
 fun Level3DetailItem(
@@ -726,10 +746,14 @@ fun Level3DetailItem(
     Surface(
         shape = RoundedCornerShape(4.dp),
         color = CardBgLevel3,
-        border = BorderStroke(0.5.dp, BorderLevel3),
+        border = BorderStroke(
+            0.5.dp,
+            if (isExpanded) ColorPurple.copy(alpha = 0.5f) else BorderLevel3
+        ),
         modifier = modifier
             .fillMaxWidth()
             .testTag("level3_detail_${step.id}")
+            .clickable { isExpanded = !isExpanded }
     ) {
         Column(
             modifier = Modifier
@@ -739,7 +763,7 @@ fun Level3DetailItem(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 // Branch connector
                 Text(
@@ -748,6 +772,24 @@ fun Level3DetailItem(
                     fontSize = 10.sp,
                     color = TreeLineColor
                 )
+
+                // Small dedicated Expandable / Collapsible Icon (▾ / ▸) next to the action log
+                Surface(
+                    shape = RoundedCornerShape(3.dp),
+                    color = if (isExpanded) ColorPurple.copy(alpha = 0.25f) else Color(0xFF1E2530),
+                    modifier = Modifier
+                        .clickable { isExpanded = !isExpanded }
+                        .testTag("action_log_toggle_${step.id}")
+                ) {
+                    Text(
+                        text = if (isExpanded) "▾" else "▸",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isExpanded) ColorPurple else ColorTextMuted,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
 
                 // Status / Type Icon (✓, ⚡, 💬, ✗, etc.)
                 Text(
@@ -791,7 +833,7 @@ fun Level3DetailItem(
                     }
                 }
 
-                // Title
+                // Action Log Title Text
                 Text(
                     text = step.title,
                     fontFamily = FontFamily.Monospace,
@@ -813,28 +855,62 @@ fun Level3DetailItem(
                     )
                 }
 
-                // Expand button if content exists
-                if (!step.content.isNullOrBlank() || !step.toolArgs.isNullOrBlank()) {
-                    Text(
-                        text = if (isExpanded) "▲" else "▼",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
-                        color = ColorTextMuted,
-                        modifier = Modifier
-                            .clickable { isExpanded = !isExpanded }
-                            .padding(2.dp)
-                    )
-                }
+                // Small expandable/collapsible chevron icon next to the action log text
+                Icon(
+                    imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "Collapse Action Log" else "Expand Action Log",
+                    tint = if (isExpanded) ColorCyan else ColorTextMuted,
+                    modifier = Modifier
+                        .size(15.dp)
+                        .clickable { isExpanded = !isExpanded }
+                        .testTag("action_log_chevron_${step.id}")
+                )
             }
 
-            // Expandable Content / Arguments / Output
-            if (isExpanded) {
+            // Expandable Content / Action Log Execution Details
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 4.dp, start = 20.dp),
+                        .padding(top = 5.dp, start = 20.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    // Action log metadata pill
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color = Color(0xFF0F141C),
+                        border = BorderStroke(0.5.dp, BorderLevel3),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 6.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "EVENT: $badgeLabel • STATUS: ${step.status.name}",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = badgeColor
+                            )
+                            if (step.durationMs != null) {
+                                Text(
+                                    text = "DURATION: ${step.durationMs}ms",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 8.sp,
+                                    color = ColorCyan
+                                )
+                            }
+                        }
+                    }
+
                     if (!step.toolArgs.isNullOrBlank()) {
                         SelectionContainer {
                             Surface(
@@ -843,13 +919,40 @@ fun Level3DetailItem(
                                 border = BorderStroke(0.5.dp, Color(0xFF21262D)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = "$ ${step.toolArgs}",
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 9.sp,
-                                    color = ColorCyan,
-                                    modifier = Modifier.padding(6.dp)
-                                )
+                                Column(modifier = Modifier.padding(6.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "COMMAND INVOCATION",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 7.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = ColorPurple
+                                        )
+                                        Text(
+                                            text = "[COPY]",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 7.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = ColorCyan,
+                                            modifier = Modifier.clickable {
+                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                clipboard.setPrimaryClip(ClipData.newPlainText("Command", step.toolArgs))
+                                                Toast.makeText(context, "Command copied", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "$ ${step.toolArgs}",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 9.sp,
+                                        color = ColorCyan
+                                    )
+                                }
                             }
                         }
                     }
@@ -862,14 +965,56 @@ fun Level3DetailItem(
                                 border = BorderStroke(0.5.dp, Color(0xFF21262D)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = step.content,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 9.sp,
-                                    color = Color(0xFFB1BAC4),
-                                    modifier = Modifier.padding(6.dp)
-                                )
+                                Column(modifier = Modifier.padding(6.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "ACTION OUTPUT / REASONING",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 7.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = ColorTextMuted
+                                        )
+                                        Text(
+                                            text = "[COPY OUTPUT]",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 7.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = ColorCyan,
+                                            modifier = Modifier.clickable {
+                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                clipboard.setPrimaryClip(ClipData.newPlainText("Action Output", step.content))
+                                                Toast.makeText(context, "Output copied", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = step.content,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 9.sp,
+                                        color = Color(0xFFB1BAC4)
+                                    )
+                                }
                             }
+                        }
+                    } else if (step.toolArgs.isNullOrBlank()) {
+                        Surface(
+                            shape = RoundedCornerShape(3.dp),
+                            color = Color(0xFF090C10),
+                            border = BorderStroke(0.5.dp, Color(0xFF21262D)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Action event verified and completed in isolated memory scope.",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 8.5.sp,
+                                color = ColorTextMuted,
+                                modifier = Modifier.padding(6.dp)
+                            )
                         }
                     }
                 }
