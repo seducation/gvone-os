@@ -44,7 +44,8 @@ fun RuntimeStatusPillRow(
     onFocusSandbox: () -> Unit = {},
     bridgeConnectionState: WebAppConnectionState = WebAppConnectionState.IDLE,
     onBridgeClick: () -> Unit = {},
-    onCnsClick: () -> Unit = {}
+    onCnsClick: () -> Unit = {},
+    onToggleText: () -> Unit = {}
 ) {
     Surface(
         color = Color(0xFF0D1117),
@@ -59,7 +60,7 @@ fun RuntimeStatusPillRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // 1. Agent Mode / Persona Pill Toggle
+            // 1. Agent Mode / Persona Pill Toggle (Autonomous Execution)
             Surface(
                 shape = RoundedCornerShape(4.dp),
                 color = if (isAgenticMode) Color(0xFF3B0764) else Color(0xFF161B22),
@@ -88,18 +89,43 @@ fun RuntimeStatusPillRow(
                 }
             }
 
-            // 2. Interaction Mode Pill (Voice / Text)
-            val (interactionIcon, interactionLabel, interactionColor) = when {
-                runtimeMode.isVoicePrimary -> Triple(Icons.Rounded.AutoAwesome, "VOICE ➜ AGENT", Color(0xFFA855F7))
-                runtimeMode.isAgentPrimary -> Triple(Icons.Rounded.SmartToy, "AGENT ➜ VOICE", Color(0xFFC084FC))
-                runtimeMode.interaction == InteractionType.VOICE -> Triple(Icons.Rounded.Mic, "VOICE", Color(0xFF38BDF8))
-                else -> Triple(Icons.Rounded.Keyboard, "TEXT", Color(0xFF8B949E))
-            }
-
+            // 2. Separate Dedicated Text Input Pill (Independent of Voice & Agent)
+            val isTextActive = runtimeMode.interaction == InteractionType.TEXT && !runtimeMode.isVoiceActive
             Surface(
                 shape = RoundedCornerShape(4.dp),
-                color = interactionColor.copy(alpha = 0.15f),
-                border = BorderStroke(1.dp, interactionColor.copy(alpha = 0.4f)),
+                color = if (isTextActive) Color(0xFF064E3B) else Color(0xFF161B22),
+                border = BorderStroke(1.dp, if (isTextActive) Color(0xFF10B981) else Color(0xFF30363D)),
+                modifier = Modifier
+                    .clickable { onToggleText() }
+                    .testTag("terminal_header_text_pill")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Keyboard,
+                        contentDescription = "Text Input Mode",
+                        tint = if (isTextActive) Color(0xFF34D399) else Color(0xFF8B949E),
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = if (isTextActive) "TEXT: ON" else "TEXT: OFF",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isTextActive) Color(0xFF6EE7B7) else Color(0xFF8B949E)
+                    )
+                }
+            }
+
+            // 3. Separate Dedicated Voice Layer Pill (Independent of Agent & Text)
+            val isVoiceActive = runtimeMode.isVoiceActive || runtimeMode.interaction == InteractionType.VOICE
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = if (isVoiceActive) Color(0xFF0C4A6E) else Color(0xFF161B22),
+                border = BorderStroke(1.dp, if (isVoiceActive) Color(0xFF38BDF8) else Color(0xFF30363D)),
                 modifier = Modifier
                     .clickable { onToggleVoice() }
                     .testTag("interaction_mode_pill")
@@ -110,17 +136,17 @@ fun RuntimeStatusPillRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(
-                        imageVector = interactionIcon,
-                        contentDescription = interactionLabel,
-                        tint = interactionColor,
+                        imageVector = if (isVoiceActive) Icons.Rounded.Mic else Icons.Rounded.MicOff,
+                        contentDescription = "Voice Interaction Layer",
+                        tint = if (isVoiceActive) Color(0xFF38BDF8) else Color(0xFF8B949E),
                         modifier = Modifier.size(12.dp)
                     )
                     Text(
-                        text = interactionLabel,
+                        text = if (isVoiceActive) "VOICE: ON" else "VOICE: OFF",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = interactionColor
+                        color = if (isVoiceActive) Color(0xFFBAE6FD) else Color(0xFF8B949E)
                     )
                 }
             }

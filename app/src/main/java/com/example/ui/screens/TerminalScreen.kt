@@ -158,6 +158,11 @@ fun TerminalScreen(
     val activeTask by runtimeStateManager.activeTask.collectAsStateWithLifecycle()
     var isTaskCardExpanded by remember { mutableStateOf(true) }
 
+    LaunchedEffect(runtimeMode.execution) {
+        isAgenticMode = runtimeMode.execution == ExecutionType.AGENT
+        agentEngine.isAgenticModeEnabled = isAgenticMode
+    }
+
     // 3-Level Collapsible Conversation Tree & CNS Dashboard states
     val conversationTreeManager = remember { ConversationTreeManager.global }
     var showCnsDashboard by remember { mutableStateOf(false) }
@@ -395,15 +400,77 @@ fun TerminalScreen(
             }
 
             "/voice" -> {
+                val cleanArg = queryArg.trim().lowercase()
+                val isExplicitOn = cleanArg.startsWith("/on") || cleanArg.startsWith("on") || cleanArg.startsWith("/start") || cleanArg.startsWith("start") || cleanArg.startsWith("/enable") || cleanArg.startsWith("enable")
+                val isExplicitOff = cleanArg.startsWith("/off") || cleanArg.startsWith("off") || cleanArg.startsWith("/stop") || cleanArg.startsWith("stop") || cleanArg.startsWith("/disable") || cleanArg.startsWith("disable")
+
+                // Chained / Compound mode: e.g. "/voice /on /agent /off" or "/voice /off /agent /on"
+                if ((cleanArg.contains("/agent") || cleanArg.contains("agent")) && (isExplicitOn || isExplicitOff)) {
+                    val targetVoice = isExplicitOn
+                    runtimeStateManager.toggleVoice(targetVoice)
+
+                    val targetAgent = when {
+                        cleanArg.contains("agent /on") || cleanArg.contains("agent on") || cleanArg.contains("/agent /on") || cleanArg.contains("/agent on") -> true
+                        cleanArg.contains("agent /off") || cleanArg.contains("agent off") || cleanArg.contains("/agent /off") || cleanArg.contains("/agent off") -> false
+                        else -> null
+                    }
+
+                    if (targetAgent != null) {
+                        runtimeStateManager.toggleAgent(targetAgent)
+                        isAgenticMode = targetAgent
+                        agentEngine.isAgenticModeEnabled = targetAgent
+                        outputLines.add(
+                            TerminalLine(
+                                "╭─────────────────────────────────────────────────────────────╮",
+                                TerminalLineType.SUCCESS
+                            )
+                        )
+                        outputLines.add(
+                            TerminalLine(
+                                "│ ⚡ RUNTIME MODE: VOICE ${if (targetVoice) "ON" else "OFF"} | AGENT ${if (targetAgent) "ON" else "OFF"}",
+                                TerminalLineType.SUCCESS
+                            )
+                        )
+                        outputLines.add(
+                            TerminalLine(
+                                "│ Voice: ${if (targetVoice) "ACTIVATED (ON)" else "DEACTIVATED (OFF)"} • Agent: ${if (targetAgent) "ACTIVATED (ON)" else "DEACTIVATED (OFF)"}",
+                                TerminalLineType.INFO
+                            )
+                        )
+                        outputLines.add(
+                            TerminalLine(
+                                "╰─────────────────────────────────────────────────────────────╯",
+                                TerminalLineType.SUCCESS
+                            )
+                        )
+                        commitLines(outputLines)
+                        inputText = TextFieldValue("")
+                        return
+                    }
+                }
+
                 when {
                     queryArg.isBlank() -> {
-                        runtimeStateManager.activateVoiceOnly()
-                        outputLines.add(TerminalLine("[VOICE RUNTIME] ACTIVATED. Voice interaction layer is now primary.", TerminalLineType.SUCCESS))
-                        outputLines.add(TerminalLine("  • Speak your instruction or type transcript directly.", TerminalLineType.INFO))
-                        outputLines.add(TerminalLine("  • Use '/voice /agent <goal>' for Voice-First compound execution.", TerminalLineType.INFO))
-                        outputLines.add(TerminalLine("  • Use '/chat' or '/cancel' to return to standard text mode.", TerminalLineType.INFO))
+                        val willEnable = !runtimeMode.isVoiceActive && runtimeMode.interaction != InteractionType.VOICE
+                        runtimeStateManager.toggleVoice(willEnable)
+                        outputLines.add(
+                            TerminalLine(
+                                "[VOICE RUNTIME] " + (if (willEnable) "ACTIVATED (ON). Voice interaction layer is now ON." else "DEACTIVATED (OFF). Voice interaction is now OFF (returned to TEXT)."),
+                                if (willEnable) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+                            )
+                        )
+                        outputLines.add(TerminalLine("  • Use '/voice /on' or '/voice /off' to explicitly switch state.", TerminalLineType.INFO))
                     }
-                    queryArg.startsWith("/agent", ignoreCase = true) || queryArg.startsWith("agent", ignoreCase = true) -> {
+                    isExplicitOn && !cleanArg.contains("agent") -> {
+                        runtimeStateManager.toggleVoice(true)
+                        outputLines.add(TerminalLine("[VOICE RUNTIME] ACTIVATED (ON). Voice interaction layer is now ON.", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("  • Speak your instruction or type '/voice /off' or '/text' to switch back to text input.", TerminalLineType.INFO))
+                    }
+                    isExplicitOff && !cleanArg.contains("agent") -> {
+                        runtimeStateManager.toggleVoice(false)
+                        outputLines.add(TerminalLine("[VOICE RUNTIME] DEACTIVATED (OFF). Voice interaction is now OFF (TEXT input active).", TerminalLineType.WARNING))
+                    }
+                    cleanArg.startsWith("/agent") || cleanArg.startsWith("agent") -> {
                         val goal = queryArg.removePrefix("/agent").removePrefix("agent").trim()
                         runtimeStateManager.activateVoiceAgentCompound(goal)
                         isAgenticMode = true
@@ -474,11 +541,100 @@ fun TerminalScreen(
                 return
             }
 
-            "/chat", "/text" -> {
+            "/text" -> {
+                val cleanArg = queryArg.trim().lowercase()
+                val isExplicitOff = cleanArg == "/off" || cleanArg == "off" || cleanArg == "/disable" || cleanArg == "disable"
+                when {
+                    isExplicitOff -> {
+                        runtimeStateManager.toggleVoice(true)
+                        outputLines.add(TerminalLine("[TEXT RUNTIME] DEACTIVATED (OFF). Voice interaction layer is now ON.", TerminalLineType.WARNING))
+                    }
+                    else -> {
+                        runtimeStateManager.setTextMode()
+                        outputLines.add(TerminalLine("[TEXT RUNTIME] ACTIVATED (ON). Standard keyboard text mode is active (Voice OFF).", TerminalLineType.SUCCESS))
+                        if (isAgenticMode) {
+                            outputLines.add(TerminalLine("  • Text Agent is active (${activePersona.displayName}). Type your task or use '/agent /off' to exit.", TerminalLineType.INFO))
+                        }
+                    }
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/on" -> {
+                val cleanArg = queryArg.trim().lowercase()
+                when {
+                    cleanArg.contains("voice") && cleanArg.contains("agent") -> {
+                        runtimeStateManager.toggleVoice(true)
+                        runtimeStateManager.toggleAgent(true)
+                        isAgenticMode = true
+                        agentEngine.isAgenticModeEnabled = true
+                        outputLines.add(TerminalLine("[RUNTIME] ACTIVATED (ON): Both Voice and Agent modes are ON.", TerminalLineType.SUCCESS))
+                    }
+                    cleanArg.contains("voice") -> {
+                        runtimeStateManager.toggleVoice(true)
+                        outputLines.add(TerminalLine("[VOICE RUNTIME] ACTIVATED (ON). Voice interaction layer is now ON.", TerminalLineType.SUCCESS))
+                    }
+                    cleanArg.contains("agent") -> {
+                        runtimeStateManager.toggleAgent(true)
+                        isAgenticMode = true
+                        agentEngine.isAgenticModeEnabled = true
+                        outputLines.add(TerminalLine("[AGENTIC MODE] ACTIVATED (ON). Persona: ${activePersona.displayName}", TerminalLineType.SUCCESS))
+                    }
+                    cleanArg.contains("text") -> {
+                        runtimeStateManager.setTextMode()
+                        outputLines.add(TerminalLine("[TEXT RUNTIME] ACTIVATED (ON). Standard keyboard text mode is active (Voice OFF).", TerminalLineType.SUCCESS))
+                    }
+                    else -> {
+                        runtimeStateManager.toggleAgent(true)
+                        isAgenticMode = true
+                        agentEngine.isAgenticModeEnabled = true
+                        outputLines.add(TerminalLine("[AGENTIC MODE] ACTIVATED (ON). Autonomous agent active.", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("💡 Tip: Try '/on /voice', '/on /agent', '/voice /on', '/agent /on', or '/voice /on /agent /off'", TerminalLineType.INFO))
+                    }
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/off" -> {
+                val cleanArg = queryArg.trim().lowercase()
+                when {
+                    cleanArg.contains("voice") && !cleanArg.contains("agent") -> {
+                        runtimeStateManager.toggleVoice(false)
+                        outputLines.add(TerminalLine("[VOICE RUNTIME] DEACTIVATED (OFF). Voice interaction is now OFF (returned to TEXT).", TerminalLineType.WARNING))
+                    }
+                    cleanArg.contains("agent") && !cleanArg.contains("voice") -> {
+                        runtimeStateManager.toggleAgent(false)
+                        isAgenticMode = false
+                        agentEngine.isAgenticModeEnabled = false
+                        outputLines.add(TerminalLine("[AGENTIC MODE] DEACTIVATED (OFF). Standard bash shell active.", TerminalLineType.WARNING))
+                    }
+                    cleanArg.contains("text") -> {
+                        runtimeStateManager.toggleVoice(true)
+                        outputLines.add(TerminalLine("[TEXT RUNTIME] DEACTIVATED (OFF). Voice interaction is now ON.", TerminalLineType.WARNING))
+                    }
+                    else -> {
+                        runtimeStateManager.toggleVoice(false)
+                        runtimeStateManager.toggleAgent(false)
+                        isAgenticMode = false
+                        agentEngine.isAgenticModeEnabled = false
+                        outputLines.add(TerminalLine("[ALL RUNTIMES OFF] Deactivated Agent execution & Voice interaction. Standard bash shell active.", TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("💡 Tip: Try '/off /voice', '/off /agent', '/voice /off', '/agent /off'", TerminalLineType.INFO))
+                    }
+                }
+                commitLines(outputLines)
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/chat" -> {
                 runtimeStateManager.resetToTextChat()
                 isAgenticMode = false
                 agentEngine.isAgenticModeEnabled = false
-                outputLines.add(TerminalLine("[CHAT MODE] Restored to conversational text mode.", TerminalLineType.SUCCESS))
+                outputLines.add(TerminalLine("[CHAT MODE] Restored conversational bash shell (Agent OFF, Voice OFF).", TerminalLineType.SUCCESS))
                 commitLines(outputLines)
                 inputText = TextFieldValue("")
                 return
@@ -549,8 +705,57 @@ fun TerminalScreen(
             }
 
             "/agent", "/agentic" -> {
+                val cleanArg = queryArg.trim().lowercase()
+                val isExplicitOn = cleanArg.startsWith("/on") || cleanArg.startsWith("on") || cleanArg.startsWith("/start") || cleanArg.startsWith("start") || cleanArg.startsWith("/enable") || cleanArg.startsWith("enable")
+                val isExplicitOff = cleanArg.startsWith("/off") || cleanArg.startsWith("off") || cleanArg.startsWith("/stop") || cleanArg.startsWith("stop") || cleanArg.startsWith("/disable") || cleanArg.startsWith("disable")
+
+                // Chained / Compound mode: e.g. "/agent /on /voice /off" or "/agent /off /voice /on"
+                if ((cleanArg.contains("/voice") || cleanArg.contains("voice")) && (isExplicitOn || isExplicitOff)) {
+                    val targetAgent = isExplicitOn
+                    runtimeStateManager.toggleAgent(targetAgent)
+                    isAgenticMode = targetAgent
+                    agentEngine.isAgenticModeEnabled = targetAgent
+
+                    val targetVoice = when {
+                        cleanArg.contains("voice /on") || cleanArg.contains("voice on") || cleanArg.contains("/voice /on") || cleanArg.contains("/voice on") -> true
+                        cleanArg.contains("voice /off") || cleanArg.contains("voice off") || cleanArg.contains("/voice /off") || cleanArg.contains("/voice off") -> false
+                        else -> null
+                    }
+
+                    if (targetVoice != null) {
+                        runtimeStateManager.toggleVoice(targetVoice)
+                        outputLines.add(
+                            TerminalLine(
+                                "╭─────────────────────────────────────────────────────────────╮",
+                                TerminalLineType.SUCCESS
+                            )
+                        )
+                        outputLines.add(
+                            TerminalLine(
+                                "│ ⚡ RUNTIME MODE: AGENT ${if (targetAgent) "ON" else "OFF"} | VOICE ${if (targetVoice) "ON" else "OFF"}",
+                                TerminalLineType.SUCCESS
+                            )
+                        )
+                        outputLines.add(
+                            TerminalLine(
+                                "│ Agent: ${if (targetAgent) "ACTIVATED (ON)" else "DEACTIVATED (OFF)"} • Voice: ${if (targetVoice) "ACTIVATED (ON)" else "DEACTIVATED (OFF)"}",
+                                TerminalLineType.INFO
+                            )
+                        )
+                        outputLines.add(
+                            TerminalLine(
+                                "╰─────────────────────────────────────────────────────────────╯",
+                                TerminalLineType.SUCCESS
+                            )
+                        )
+                        commitLines(outputLines)
+                        inputText = TextFieldValue("")
+                        return
+                    }
+                }
+
                 when {
-                    queryArg.startsWith("/voice", ignoreCase = true) || queryArg.startsWith("voice", ignoreCase = true) -> {
+                    cleanArg.startsWith("/voice") || cleanArg.startsWith("voice") -> {
                         val goal = queryArg.removePrefix("/voice").removePrefix("voice").trim()
                         runtimeStateManager.activateAgentVoiceCompound(goal)
                         isAgenticMode = true
@@ -576,36 +781,32 @@ fun TerminalScreen(
                     queryArg.isBlank() -> {
                         isAgenticMode = !isAgenticMode
                         agentEngine.isAgenticModeEnabled = isAgenticMode
-                        if (isAgenticMode) {
-                            runtimeStateManager.activateAgentOnly()
-                        } else {
-                            runtimeStateManager.resetToTextChat()
-                        }
+                        runtimeStateManager.toggleAgent(isAgenticMode)
                         outputLines.add(
                             TerminalLine(
-                                "[AGENTIC MODE] " + (if (isAgenticMode) "ACTIVATED (${activePersona.displayName}). Type any goal/instruction to execute autonomously." else "DEACTIVATED. Standard bash shell active."),
+                                "[AGENTIC MODE] " + (if (isAgenticMode) "ACTIVATED (ON) [${activePersona.displayName}]. Type any goal/instruction to execute autonomously." else "DEACTIVATED (OFF). Standard bash shell active."),
                                 if (isAgenticMode) TerminalLineType.SUCCESS else TerminalLineType.WARNING
                             )
                         )
                         outputLines.add(
                             TerminalLine(
-                                "Paradigms: ChatGPT Atlas (deep browser automation), Comet (multi-tab research), Dia Browser (file & tab sandbox)",
+                                "  • Use '/agent /on' or '/agent /off' to explicitly switch state.",
                                 TerminalLineType.INFO
                             )
                         )
                     }
-                    queryArg.equals("on", ignoreCase = true) || queryArg.equals("start", ignoreCase = true) || queryArg.equals("enable", ignoreCase = true) -> {
+                    isExplicitOn && !cleanArg.contains("persona") && !cleanArg.contains("voice") -> {
                         isAgenticMode = true
                         agentEngine.isAgenticModeEnabled = true
-                        runtimeStateManager.activateAgentOnly()
-                        outputLines.add(TerminalLine("[AGENTIC MODE] ACTIVATED. Persona: ${activePersona.displayName}", TerminalLineType.SUCCESS))
-                        outputLines.add(TerminalLine("Interactive agent prompt active. Use '/agent persona <atlas|comet|dia|auto>' or '/agent off' to exit.", TerminalLineType.INFO))
+                        runtimeStateManager.toggleAgent(true)
+                        outputLines.add(TerminalLine("[AGENTIC MODE] ACTIVATED (ON). Persona: ${activePersona.displayName}", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("Interactive agent prompt active. Use '/agent persona <atlas|comet|dia|auto>' or '/agent /off' to exit.", TerminalLineType.INFO))
                     }
-                    queryArg.equals("off", ignoreCase = true) || queryArg.equals("stop", ignoreCase = true) || queryArg.equals("disable", ignoreCase = true) -> {
+                    isExplicitOff && !cleanArg.contains("voice") -> {
                         isAgenticMode = false
                         agentEngine.isAgenticModeEnabled = false
-                        runtimeStateManager.resetToTextChat()
-                        outputLines.add(TerminalLine("[AGENTIC MODE] DEACTIVATED. Standard bash shell active.", TerminalLineType.WARNING))
+                        runtimeStateManager.toggleAgent(false)
+                        outputLines.add(TerminalLine("[AGENTIC MODE] DEACTIVATED (OFF). Standard bash shell active.", TerminalLineType.WARNING))
                     }
                     queryArg.startsWith("persona", ignoreCase = true) -> {
                         val personaArg = queryArg.removePrefix("persona").trim().lowercase()
@@ -1746,6 +1947,9 @@ fun TerminalScreen(
                     onToggleAgent = {
                         executeCommand("/agent")
                     },
+                    onToggleText = {
+                        executeCommand("/text")
+                    },
                     onToggleDebug = {
                         executeCommand("/debug")
                     },
@@ -1997,9 +2201,10 @@ fun TerminalScreen(
                     // Prompt label
                     Text(
                         text = buildAnnotatedString {
+                            val isVoice = runtimeMode.isVoiceActive || runtimeMode.interaction == InteractionType.VOICE
                             if (isAgenticMode) {
                                 withStyle(SpanStyle(color = Color(0xFFA855F7), fontWeight = FontWeight.Bold)) {
-                                    append("agent[${activePersona.badge.lowercase()}]")
+                                    append(if (isVoice) "agent[${activePersona.badge.lowercase()}:voice]" else "agent[${activePersona.badge.lowercase()}:text]")
                                 }
                                 withStyle(SpanStyle(color = TermTextSecondary)) {
                                     append(":")
@@ -2008,8 +2213,8 @@ fun TerminalScreen(
                                     append("$currentCwd$ ")
                                 }
                             } else {
-                                withStyle(SpanStyle(color = TermPromptGreen, fontWeight = FontWeight.Bold)) {
-                                    append("gvone@browser")
+                                withStyle(SpanStyle(color = if (isVoice) TermPromptCyan else TermPromptGreen, fontWeight = FontWeight.Bold)) {
+                                    append(if (isVoice) "gvone(voice)@browser" else "gvone@browser")
                                 }
                                 withStyle(SpanStyle(color = TermTextSecondary)) {
                                     append(":")
@@ -2091,12 +2296,30 @@ fun TerminalScreen(
                 }
             }
 
-            // 5. TERMUX-STYLE ACCESSORY TOOLBAR (Mobile Terminal Keys: agent, groups, sandbox, ls, cd, cat, tabs, ESC, TAB, ↑, ↓, /, -, ~, |, CLEAR)
+            // 5. TERMUX-STYLE ACCESSORY TOOLBAR (Mobile Terminal Keys: agent, voice, text, groups, sandbox, ls, cd, cat, tabs, ESC, TAB, ↑, ↓, /, -, ~, |, CLEAR)
             TermuxAccessoryBar(
                 onKey = { key ->
                     when (key) {
                         "agent" -> {
                             val prompt = "/agent "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "/on" -> {
+                            val cur = inputText.text.trimEnd()
+                            val nextText = if (cur.isEmpty()) "/on " else "$cur /on "
+                            inputText = TextFieldValue(nextText, selection = androidx.compose.ui.text.TextRange(nextText.length))
+                        }
+                        "/off" -> {
+                            val cur = inputText.text.trimEnd()
+                            val nextText = if (cur.isEmpty()) "/off " else "$cur /off "
+                            inputText = TextFieldValue(nextText, selection = androidx.compose.ui.text.TextRange(nextText.length))
+                        }
+                        "voice" -> {
+                            val prompt = "/voice "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "text" -> {
+                            val prompt = "/text "
                             inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
                         }
                         "groups" -> {
@@ -2485,7 +2708,7 @@ private fun TermuxAccessoryBar(
     onKey: (String) -> Unit
 ) {
     val keys = listOf(
-        "agent", "groups", "sandbox", "ls", "cd", "cat", "tabs", "ESC", "TAB", "↑", "↓", "/", "-", "~", "|", ":", "$", "clear"
+        "agent", "/on", "/off", "voice", "text", "groups", "sandbox", "ls", "cd", "cat", "tabs", "ESC", "TAB", "↑", "↓", "/", "-", "~", "|", ":", "$", "clear"
     )
 
     Row(

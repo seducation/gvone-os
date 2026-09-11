@@ -57,7 +57,10 @@ data class RuntimeMode(
         get() = execution == ExecutionType.AGENT
 
     val isVoice: Boolean
-        get() = interaction == InteractionType.VOICE
+        get() = interaction == InteractionType.VOICE || isVoiceActive
+
+    val isText: Boolean
+        get() = interaction == InteractionType.TEXT && !isVoiceActive
 
     fun toPromptLabel(): String = buildString {
         append("gvone[")
@@ -154,6 +157,46 @@ class RuntimeStateManager private constructor() {
             activeTaskId = null,
             isVoiceActive = false
         )
+    }
+
+    /**
+     * Toggle or explicitly set Voice interaction mode ON/OFF.
+     * Preserves current execution mode (whether AGENT or CHAT).
+     */
+    fun toggleVoice(enable: Boolean? = null) {
+        val currentActive = _runtimeMode.value.isVoiceActive || _runtimeMode.value.interaction == InteractionType.VOICE
+        val next = enable ?: !currentActive
+        _runtimeMode.value = _runtimeMode.value.copy(
+            interaction = if (next) InteractionType.VOICE else InteractionType.TEXT,
+            isVoiceActive = next
+        )
+        logDebug("Voice mode set to: $next (Agent remains ${_runtimeMode.value.execution.name})")
+    }
+
+    /**
+     * Toggle or explicitly set Agent execution mode ON/OFF.
+     * Preserves current interaction mode (whether TEXT or VOICE).
+     */
+    fun toggleAgent(enable: Boolean? = null) {
+        val currentAgent = _runtimeMode.value.execution == ExecutionType.AGENT
+        val next = enable ?: !currentAgent
+        _runtimeMode.value = _runtimeMode.value.copy(
+            execution = if (next) ExecutionType.AGENT else ExecutionType.CHAT,
+            activeTaskId = if (next) _runtimeMode.value.activeTaskId else null
+        )
+        logDebug("Agent mode set to: $next (Voice remains ${_runtimeMode.value.interaction.name})")
+    }
+
+    /**
+     * Explicitly switch interaction to TEXT mode (turning Voice OFF).
+     * Preserves current execution mode (whether AGENT or CHAT).
+     */
+    fun setTextMode() {
+        _runtimeMode.value = _runtimeMode.value.copy(
+            interaction = InteractionType.TEXT,
+            isVoiceActive = false
+        )
+        logDebug("Switched to TEXT mode. Voice is OFF, Agent remains ${_runtimeMode.value.execution.name}")
     }
 
     /**
