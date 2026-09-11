@@ -105,4 +105,8 @@ interface BrowserController {
     // State & Event streams
     val browserEvents: Flow<BrowserEvent>
     val browserState: StateFlow<BrowserStateSnapshot>
+
+    companion object {
+        var global: BrowserController? = null
+    }
 }

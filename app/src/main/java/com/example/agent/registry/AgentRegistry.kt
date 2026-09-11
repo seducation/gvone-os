@@ -58,35 +58,91 @@ class AgentRegistry {
     }
 
     /**
-     * Resolves the single most suitable agent for a user goal.
+     * Resolves the single most suitable agent for a user goal using dynamic capability matching,
+     * proficiencies, current load, and historical scorecard reliability.
+     * Replaces hardcoded keyword heuristics with empirical multi-criteria routing.
      */
-    fun routeGoalToAgent(goal: String): Agent? {
-        val lower = goal.lowercase()
-        return when {
-            lower.contains("voice") || lower.contains("speak") || lower.contains("listen") ->
-                getAgent("VoiceAgent")
+    fun findBestAgentForGoal(
+        goal: String,
+        requiredCapabilities: List<String> = emptyList(),
+        requiredPermissions: List<String> = emptyList()
+    ): Agent? {
+        val availableAgents = agents.values.filter { !it.health().isQuarantined }
+        if (availableAgents.isEmpty()) return null
 
-            lower.contains("command") || lower.startsWith("/") ->
-                getAgent("CommandAgent")
+        val goalTokens = goal.lowercase()
+            .split("[\\W_]+".toRegex())
+            .filter { it.length >= 2 }
+            .toMutableSet()
 
-            lower.contains("browse") || lower.contains("youtube") || lower.contains("web") ||
-                    lower.contains("click") || lower.contains("page") || lower.contains("url") ->
-                getAgent("BrowserAgent")
-
-            lower.contains("code") || lower.contains("kotlin") || lower.contains("script") ||
-                    lower.contains("bug") || lower.contains("refactor") ->
-                getAgent("CodingAgent")
-
-            lower.contains("file") || lower.contains("directory") || lower.contains("folder") ||
-                    lower.contains("read") || lower.contains("write") ->
-                getAgent("FileAgent")
-
-            lower.contains("search") || lower.contains("find") || lower.contains("lookup") ->
-                getAgent("SearchAgent")
-
-            else -> getAgent("BrowserAgent") ?: agents.values.firstOrNull()
+        if (goal.trim().startsWith("/")) {
+            val cmd = goal.trim().substring(1).substringBefore(" ").lowercase().trim()
+            if (cmd.isNotEmpty()) goalTokens.add(cmd)
         }
+        val tokens = goalTokens
+
+        var bestAgent: Agent? = null
+        var bestScore = -1.0
+
+        for (agent in availableAgents) {
+            val caps = agent.capabilities()
+            var capabilityMatchCount = 0
+            var maxProficiency = 0.5
+
+            // Match identity tokens (e.g. VoiceAgent -> voice, agent)
+            val idTokens = agent.identity()
+                .split("(?=[A-Z])|[\\W_]+".toRegex())
+                .map { it.lowercase().trim() }
+                .filter { it.length >= 2 }
+                .toSet()
+            val idOverlap = tokens.intersect(idTokens).size
+            if (idOverlap > 0) {
+                capabilityMatchCount += idOverlap * 3
+            }
+
+            for (cap in caps) {
+                // Check name, category, keywords, actions, and description
+                val capTokens = (listOf(cap.name, cap.category, cap.description) + cap.keywords + cap.supportedActions)
+                    .flatMap { it.lowercase().split("[\\W_]+".toRegex()) }
+                    .filter { it.length >= 2 }
+                    .toSet()
+
+                val overlap = tokens.intersect(capTokens).size
+                if (overlap > 0) {
+                    capabilityMatchCount += overlap
+                    if (cap.proficiency > maxProficiency) {
+                        maxProficiency = cap.proficiency
+                    }
+                }
+            }
+
+            // Normalization: clamp match count to score between 0.0 and 1.0
+            val capabilityMatchScore = (capabilityMatchCount * 0.25).coerceIn(0.0, 1.0)
+            val scorecard = com.example.agent.core.ScorecardRegistry.global.getScorecard(agent.identity())
+
+            val hasPerms = requiredPermissions.isEmpty() || agent.permissions.containsAll(requiredPermissions)
+
+            val compositeScore = scorecard.computeScore(
+                capabilityMatchScore = capabilityMatchScore,
+                proficiency = maxProficiency,
+                currentLoad = agent.currentLoad,
+                maxConcurrency = agent.maxConcurrency,
+                hasRequiredPermissions = hasPerms
+            )
+
+            if (compositeScore > bestScore) {
+                bestScore = compositeScore
+                bestAgent = agent
+            }
+        }
+
+        return if (bestScore > 0.0) bestAgent else (getAgent("BrowserAgent") ?: availableAgents.firstOrNull())
     }
+
+    /**
+     * Backward-compatible router alias delegating directly to capability + scorecard engine.
+     */
+    fun routeGoalToAgent(goal: String): Agent? = findBestAgentForGoal(goal)
 
     /**
      * Gathers collective health of all agents in the system.

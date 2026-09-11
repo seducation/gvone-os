@@ -14,12 +14,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
 /**
- * First-class Task Status in GVONE OS.
+ * First-class Task Status in GVONE OS State Machine.
+ * CREATED -> PLANNED -> RUNNING -> WAITING_PERMISSION -> SUSPENDED -> COMPLETED / FAILED / CANCELLED
  */
 enum class TaskLifecycleStatus(val displayName: String) {
+    CREATED("Created"),
+    PLANNED("Planned"),
     QUEUED("Queued"),
     RUNNING("Running"),
+    WAITING_PERMISSION("Waiting Permission"),
     WAITING("Waiting"),
+    SUSPENDED("Suspended"),
     PAUSED("Paused"),
     COMPLETED("Completed"),
     FAILED("Failed"),
@@ -27,15 +32,29 @@ enum class TaskLifecycleStatus(val displayName: String) {
 }
 
 /**
- * First-class Task entity.
+ * Task execution constraints and resource budgets.
+ */
+data class TaskBudget(
+    val maxSteps: Int = 50,
+    val maxTokens: Int = 16384,
+    val maxDurationMs: Long = 120_000L
+)
+
+/**
+ * First-class Task entity supporting tree hierarchy, isolation scopes, and artifact tracking.
  */
 data class ManagedTask(
     val taskId: String = UUID.randomUUID().toString(),
+    val parentTaskId: String? = null,
+    val rootTaskId: String = taskId,
     val goal: String,
     val status: TaskLifecycleStatus = TaskLifecycleStatus.RUNNING,
     val assignedAgent: String = "AutoAgent",
+    val priority: Int = 100,
+    val budget: TaskBudget = TaskBudget(),
     val progress: Float = 0.0f,
     val steps: List<TaskStep> = emptyList(),
+    val artifacts: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val result: String? = null,
@@ -58,10 +77,22 @@ class TaskManager(
     private val _activeTaskId = MutableStateFlow<String?>(null)
     val activeTaskId: StateFlow<String?> = _activeTaskId.asStateFlow()
 
-    fun createTask(goal: String, assignedAgent: String = "AutoAgent"): ManagedTask {
+    fun createTask(
+        goal: String,
+        assignedAgent: String = "AutoAgent",
+        parentTaskId: String? = null,
+        priority: Int = 100
+    ): ManagedTask {
+        val rootId = if (parentTaskId != null) {
+            getTask(parentTaskId)?.rootTaskId ?: parentTaskId
+        } else UUID.randomUUID().toString()
+
         val task = ManagedTask(
+            parentTaskId = parentTaskId,
+            rootTaskId = rootId,
             goal = goal,
             assignedAgent = assignedAgent,
+            priority = priority,
             status = TaskLifecycleStatus.RUNNING
         )
         _tasks.value = listOf(task) + _tasks.value

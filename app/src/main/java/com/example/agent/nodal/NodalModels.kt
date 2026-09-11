@@ -7,15 +7,32 @@ import org.json.JSONObject
  * Types of nodes supported in the GVONE n8n-style nodal architecture.
  */
 enum class NodeType(val displayName: String) {
+    TRIGGER("Trigger Node"),
     TRIGGER_COMMAND("Command Trigger"),
+    COMMAND("Command Node"),
+    INTENT("Intent Router"),
     INTENT_ROUTER("Intent Router"),
+    PLANNER("Planner Node"),
+    AGENT("Agent Node"),
     AGENT_NODE("Agent Node"),
+    TOOL("Tool Node"),
     TOOL_NODE("Tool Node"),
+    OBSERVER("Observer Node"),
     OBSERVER_NODE("Observer Node"),
+    EVALUATOR("Evaluator / Verification Node"),
     EVALUATOR_NODE("Evaluator / Verification Node"),
+    CONDITION("Condition Branch Node"),
+    CONDITION_NODE("Condition Branch Node"),
+    PARALLEL("Parallel Fan-out Node"),
+    SEQUENCE("Sequential Pipeline Node"),
+    LOOP("Loop Iterator Node"),
+    APPROVAL("User Approval Node"),
+    WAIT("Wait / Delay Node"),
+    RETRY("Retry Node"),
+    FALLBACK("Fallback Handler Node"),
     VOICE_NODE("Voice Node"),
-    RESULT_NODE("Result Node"),
-    CONDITION_NODE("Condition Branch Node")
+    RESULT("Result Node"),
+    RESULT_NODE("Result Node")
 }
 
 /**

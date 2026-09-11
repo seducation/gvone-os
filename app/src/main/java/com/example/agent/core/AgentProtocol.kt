@@ -3,34 +3,52 @@ package com.example.agent.core
 import java.util.UUID
 
 /**
- * Execution status of an agent or task.
+ * Execution status and lifecycle states of an agent or task.
+ * Supports the full lifecycle:
+ * REGISTERED -> AVAILABLE -> SELECTED -> PLANNING -> EXECUTING -> OBSERVING -> EVALUATING -> COMPLETED
+ * along with failure and waiting states.
  */
 enum class AgentStatus(val displayName: String) {
+    REGISTERED("Registered"),
+    AVAILABLE("Available"),
+    SELECTED("Selected"),
     IDLE("Idle"),
     PLANNING("Planning"),
     RUNNING("Running"),
     EXECUTING("Executing"),
-    WAITING("Waiting"),
     OBSERVING("Observing"),
+    EVALUATING("Evaluating"),
+    WAITING("Waiting"),
+    WAITING_PERMISSION("Waiting for Permission"),
+    WAITING_USER("Waiting for User Input"),
     RETRYING("Retrying"),
     PAUSED("Paused"),
     BLOCKED("Blocked"),
+    TIMEOUT("Timed Out"),
     COMPLETED("Completed"),
     FAILED("Failed"),
     CANCELLED("Cancelled");
 
-    val isRunning: Boolean get() = this == RUNNING || this == EXECUTING || this == OBSERVING || this == RETRYING
+    val isRunning: Boolean get() = this == RUNNING || this == EXECUTING || this == OBSERVING || this == EVALUATING || this == RETRYING
+    val isTerminal: Boolean get() = this == COMPLETED || this == FAILED || this == CANCELLED || this == TIMEOUT
+    val isWaiting: Boolean get() = this == WAITING || this == WAITING_PERMISSION || this == WAITING_USER || this == PAUSED || this == BLOCKED
 }
 
 /**
- * Declares a capability provided by an agent.
+ * Declares a rich capability provided by an agent.
  */
 data class AgentCapability(
     val name: String,
     val description: String,
-    val supportedActions: List<String>,
+    val supportedActions: List<String> = emptyList(),
     val requiresPermission: Boolean = false,
-    val riskLevel: RiskLevel = RiskLevel.LOW
+    val riskLevel: RiskLevel = RiskLevel.LOW,
+    val id: String = name.lowercase().replace(" ", "_"),
+    val category: String = "general",
+    val keywords: List<String> = emptyList(),
+    val proficiency: Double = 1.0, // 0.0 to 1.0
+    val averageExecutionTime: Long = 500L,
+    val asyncSupport: Boolean = true
 )
 
 enum class RiskLevel {

@@ -57,7 +57,9 @@ class CentralNervousSystem(
     val agentRegistry: AgentRegistry = AgentRegistry.global,
     val runtimeState: RuntimeStateManager = RuntimeStateManager.global,
     val contextRouter: ContextRouter = ContextRouter.global,
-    val nodalEngine: NodalEngine = NodalEngine.global
+    val nodalEngine: NodalEngine = NodalEngine.global,
+    val plannerEngine: com.example.agent.nodal.PlannerEngine = com.example.agent.nodal.PlannerEngine.global,
+    val ruleEngine: com.example.agent.safety.RuleEngine = com.example.agent.safety.RuleEngine.global
 ) : AgentOrchestrator {
     private val _isBusy = MutableStateFlow(false)
     val isBusy: StateFlow<Boolean> = _isBusy.asStateFlow()
@@ -146,59 +148,68 @@ class CentralNervousSystem(
                 )
             }
 
-            // 3. Intent parsing & Task routing
-            val lowerGoal = userGoal.lowercase()
+            // 3. Declarative Rule Engine Screening
+            val ruleCheck = ruleEngine.evaluate(
+                com.example.agent.safety.RuleEvaluationContext(
+                    goal = userGoal,
+                    caller = "CNS"
+                )
+            )
+            if (!ruleCheck.allowed) {
+                val errorMsg = "Blocked by Safety Policy: ${ruleCheck.matchedRule?.name ?: "Policy constraint"}"
+                logger.logInstant("CNS", StepType.ERROR, errorMsg, StepStatus.FAILED)
+                uiBridge.emit(AgentUiEvent.ShowError("CNS", errorMsg, canRetry = false))
+                runtimeState.failTask(task.taskId, errorMsg)
+                contextRouter.archiveTaskContext(task.taskId, errorMsg, isSuccess = false)
 
+                return CnsWorkflowResult(
+                    workflowId = workflowId,
+                    userGoal = userGoal,
+                    success = false,
+                    synthesis = errorMsg,
+                    participatingAgents = emptyList(),
+                    subResults = emptyMap(),
+                    durationMs = System.currentTimeMillis() - startTime
+                )
+            }
+
+            // 4. Resolve or plan workflow graph via PlannerEngine (or specialized multi-agent workflow)
+            val lowerGoal = userGoal.lowercase()
             val rawSynthesis: String = when {
-                lowerGoal.contains("compare") && (lowerGoal.contains("pdf") || lowerGoal.contains("document") || lowerGoal.contains("file")) -> {
+                lowerGoal.contains("compare") && (lowerGoal.contains("pdf") || lowerGoal.contains("document") || lowerGoal.contains("file") || lowerGoal.contains("website") || lowerGoal.contains("webpage")) -> {
                     participants.add("WebReviewAgent")
                     participants.add("FileAgent")
                     recordTaskStep(task.taskId, 1, "Extract web and document content for comparison", "WebReviewAgent+FileAgent")
                     executeDocumentWebComparisonWorkflow(workflowId, userGoal, subResults)
                 }
-
-                lowerGoal.contains("search") || lowerGoal.contains("find out") || lowerGoal.contains("what is") -> {
-                    participants.add("SearchAgent")
-                    recordTaskStep(task.taskId, 1, "Query external search sources", "SearchAgent")
-                    val query = userGoal.replace(Regex("(?i)search\\s*(for)?"), "").trim()
-                    executeSearchWorkflow(workflowId, query, subResults)
-                }
-
-                lowerGoal.contains("youtube") || lowerGoal.startsWith("/yt") -> {
-                    participants.add("BrowserAgent")
-                    recordTaskStep(task.taskId, 1, "Autonomous YouTube search and playback", "BrowserAgent")
-                    val query = userGoal
-                        .replace(Regex("(?i)^(/agent|/voice|agent|voice)\\s*"), "")
-                        .replace(Regex("(?i)^(search|find|play|look up)\\s+(for\\s+)?"), "")
-                        .replace(Regex("(?i)\\s+(on|in)\\s+youtube.*$"), "")
-                        .replace(Regex("(?i)youtube"), "")
-                        .trim()
-                        .ifBlank { "lofi hip hop" }
-                    val req = AgentRequest(
-                        sourceAgent = "CNS",
-                        targetAgent = "BrowserAgent",
-                        action = "search_youtube",
-                        parameters = mapOf("query" to query)
-                    )
-                    val res = dispatchToAgent("BrowserAgent", req)
-                    subResults["BrowserAgent"] = res
-                    if (res.isSuccess) {
-                        res.data?.toString() ?: "Autonomous YouTube search verified for '$query'."
-                    } else {
-                        "YouTube workflow failed: ${res.error}"
-                    }
-                }
-
-                lowerGoal.contains("code") || lowerGoal.contains("script") || lowerGoal.contains("syntax") -> {
-                    participants.add("CodingAgent")
-                    recordTaskStep(task.taskId, 1, "Analyze code and project structure", "CodingAgent")
-                    executeCodingWorkflow(workflowId, userGoal, subResults)
-                }
-
                 else -> {
-                    participants.add("BrowserAgent")
-                    recordTaskStep(task.taskId, 1, "Inspect browser context and active tab", "BrowserAgent")
-                    executeBrowserWorkflow(workflowId, userGoal, subResults)
+                    val firstToken = userGoal.trim().split("\\s+".toRegex()).firstOrNull() ?: ""
+                    val commandWorkflow = if (firstToken.startsWith("/")) nodalEngine.findWorkflowForCommand(firstToken) else null
+
+                    val (workflowToRun, primaryAgent) = if (commandWorkflow != null) {
+                        Pair(commandWorkflow, "CommandAgent")
+                    } else {
+                        val plan = plannerEngine.createPlan(userGoal)
+                        val assigned = plan.steps.firstOrNull()?.assignedAgent ?: "BrowserAgent"
+                        Pair(plan.workflow, assigned)
+                    }
+
+                    participants.add(primaryAgent)
+                    recordTaskStep(task.taskId, 1, "Executing ${workflowToRun.name}", primaryAgent)
+
+                    val queryArg = userGoal.removePrefix(firstToken).trim()
+                    val nodalResult = nodalEngine.executeWorkflow(
+                        workflow = workflowToRun,
+                        command = firstToken,
+                        queryArg = queryArg,
+                        rawInput = userGoal
+                    )
+
+                    if (nodalResult.success) {
+                        nodalResult.finalOutput?.toString() ?: "Goal executed successfully by $primaryAgent."
+                    } else {
+                        "Execution note: ${nodalResult.error ?: "Encountered partial result in workflow"}"
+                    }
                 }
             }
 
@@ -494,6 +505,7 @@ class CentralNervousSystem(
         if (vm != null && repo != null) {
             val browserController = com.example.agent.browser.BrowserControllerImpl(vm, repo)
             browserController.startObserving()
+            com.example.agent.browser.BrowserController.global = browserController
             agentRegistry.registerAgent(com.example.agent.specialized.BrowserAgent(browserController))
             agentRegistry.registerAgent(com.example.agent.specialized.WebReviewAgent(browserController))
         }

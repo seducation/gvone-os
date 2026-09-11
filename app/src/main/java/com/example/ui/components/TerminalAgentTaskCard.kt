@@ -327,17 +327,18 @@ fun ExpandableAgentTaskCard(
     modifier: Modifier = Modifier
 ) {
     val statusColor = when (task.status) {
-        AgentStatus.IDLE -> Color(0xFF8B949E)
-        AgentStatus.PLANNING -> Color(0xFFA855F7)
+        AgentStatus.IDLE, AgentStatus.REGISTERED, AgentStatus.AVAILABLE -> Color(0xFF8B949E)
+        AgentStatus.PLANNING, AgentStatus.SELECTED, AgentStatus.EVALUATING -> Color(0xFFA855F7)
         AgentStatus.RUNNING, AgentStatus.EXECUTING -> Color(0xFF38BDF8)
         AgentStatus.OBSERVING -> Color(0xFF00E5FF)
         AgentStatus.RETRYING -> Color(0xFFFF9100)
         AgentStatus.PAUSED -> Color(0xFFF59E0B)
-        AgentStatus.WAITING -> Color(0xFFFBBF24)
-        AgentStatus.BLOCKED -> Color(0xFFFF5252)
+        AgentStatus.WAITING, AgentStatus.WAITING_PERMISSION, AgentStatus.WAITING_USER -> Color(0xFFFBBF24)
+        AgentStatus.BLOCKED, AgentStatus.TIMEOUT -> Color(0xFFFF5252)
         AgentStatus.COMPLETED -> Color(0xFF3FB950)
         AgentStatus.FAILED -> Color(0xFFF85149)
         AgentStatus.CANCELLED -> Color(0xFF8B949E)
+        else -> Color(0xFF38BDF8)
     }
 
     Surface(

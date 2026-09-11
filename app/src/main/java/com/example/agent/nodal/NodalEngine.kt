@@ -121,11 +121,17 @@ class NodalEngine(
 
             try {
                 when (currentNode.type) {
-                    NodeType.TRIGGER_COMMAND -> {
+                    NodeType.TRIGGER, NodeType.TRIGGER_COMMAND -> {
                         context.setVariable("command", command)
                         context.setVariable("query", queryArg)
                         context.setVariable("input", rawInput)
                         nodeOutputSummary = "Triggered: $command with arg '$queryArg'"
+                    }
+
+                    NodeType.COMMAND -> {
+                        context.setVariable("command", command)
+                        context.setVariable("query", queryArg)
+                        nodeOutputSummary = "Command executed: $command"
                     }
 
                     NodeType.VOICE_NODE -> {
@@ -140,22 +146,26 @@ class NodalEngine(
                         }
                     }
 
-                    NodeType.INTENT_ROUTER -> {
+                    NodeType.INTENT, NodeType.INTENT_ROUTER -> {
                         val goal = queryArg.ifBlank { rawInput }
                         context.setVariable("goal", goal)
-                        val targetAgent = when {
-                            goal.contains("youtube", ignoreCase = true) || goal.contains("browse", ignoreCase = true) -> "BrowserAgent"
-                            goal.contains("code", ignoreCase = true) || goal.contains("script", ignoreCase = true) -> "CodingAgent"
-                            goal.contains("file", ignoreCase = true) -> "FileAgent"
-                            goal.contains("search", ignoreCase = true) -> "SearchAgent"
-                            else -> "BrowserAgent"
-                        }
+                        // Dynamic capability + scorecard based routing without hardcoded strings
+                        val bestAgent = com.example.agent.registry.AgentRegistry.global.findBestAgentForGoal(goal)
+                        val targetAgent = bestAgent?.identity() ?: "BrowserAgent"
                         context.setVariable("targetAgent", targetAgent)
-                        nodeOutputSummary = "Routed goal '$goal' to agent $targetAgent"
+                        nodeOutputSummary = "Routed goal '$goal' to agent $targetAgent based on capability match"
                     }
 
-                    NodeType.AGENT_NODE -> {
-                        val targetAgent = currentNode.config["agent"]?.toString()
+                    NodeType.PLANNER -> {
+                        val goal = context.getVariable("goal")?.toString() ?: queryArg.ifBlank { rawInput }
+                        val plan = PlannerEngine.global.createPlan(goal)
+                        context.setVariable("plan", plan.planId)
+                        context.setVariable("targetAgent", plan.steps.firstOrNull()?.assignedAgent ?: "BrowserAgent")
+                        nodeOutputSummary = "Formulated plan with ${plan.steps.size} steps for goal '$goal'"
+                    }
+
+                    NodeType.AGENT, NodeType.AGENT_NODE -> {
+                        var targetAgent = currentNode.config["agent"]?.toString()
                             ?: context.getVariable("targetAgent")?.toString()
                             ?: "BrowserAgent"
                         val action = currentNode.config["action"]?.toString() ?: "execute_task"
@@ -169,7 +179,17 @@ class NodalEngine(
                             action = action,
                             parameters = mapOf("goal" to goal, "query" to queryArg)
                         )
-                        val result = dispatchAgent(targetAgent, request)
+                        var result = dispatchAgent(targetAgent, request)
+
+                        // Fallback handling if configured or on failure
+                        if (!result.isSuccess && currentNode.config.containsKey("fallbackAgent")) {
+                            val fallbackAgent = currentNode.config["fallbackAgent"].toString()
+                            runtimeState.logDebug("Primary agent $targetAgent failed. Executing fallback agent $fallbackAgent")
+                            val fallbackReq = request.copy(targetAgent = fallbackAgent)
+                            result = dispatchAgent(fallbackAgent, fallbackReq)
+                            targetAgent = fallbackAgent
+                        }
+
                         context.setVariable("agentResult", result.data)
                         if (!result.isSuccess) {
                             nodeError = result.error ?: "Agent execution error"
@@ -177,27 +197,23 @@ class NodalEngine(
                         nodeOutputSummary = "Agent $targetAgent executed: ${result.data?.toString()?.take(80)}"
                     }
 
-                    NodeType.TOOL_NODE -> {
+                    NodeType.TOOL, NodeType.TOOL_NODE -> {
                         val tool = currentNode.config["tool"]?.toString() ?: "generic_tool"
                         @Suppress("UNCHECKED_CAST")
                         val params = (currentNode.config["params"] as? Map<String, Any?>) ?: emptyMap()
-                        val registeredTool = ToolRegistry.global.getTool(tool)
-                        if (registeredTool != null) {
-                            val toolRes = registeredTool.execute(params)
-                            if (toolRes.success) {
-                                context.setVariable("lastToolOutput", toolRes.data?.toString() ?: "Success")
-                                nodeOutputSummary = "Executed tool $tool successfully"
-                            } else {
-                                nodeError = toolRes.error ?: "Tool $tool failed"
-                                nodeOutputSummary = "Tool $tool failed: $nodeError"
-                            }
+                        val callingAgent = context.getVariable("targetAgent")?.toString() ?: "NodalEngine"
+
+                        val toolRes = ToolRegistry.global.executeMediated(tool, params, callingAgent)
+                        if (toolRes.success) {
+                            context.setVariable("lastToolOutput", toolRes.data?.toString() ?: "Success")
+                            nodeOutputSummary = "Executed tool $tool successfully"
                         } else {
-                            context.setVariable("lastToolOutput", "Executed tool: $tool with $params")
-                            nodeOutputSummary = "Executed tool $tool"
+                            nodeError = toolRes.error ?: "Tool $tool failed"
+                            nodeOutputSummary = "Tool $tool failed: $nodeError"
                         }
                     }
 
-                    NodeType.OBSERVER_NODE -> {
+                    NodeType.OBSERVER, NodeType.OBSERVER_NODE -> {
                         val target = currentNode.config["target"]?.toString() ?: "dom"
                         val obsData: String = when (target.lowercase()) {
                             "dom", "browser", "page" -> {
@@ -231,7 +247,7 @@ class NodalEngine(
                         nodeOutputSummary = "Observed state for $target: ${obsData.take(60)}"
                     }
 
-                    NodeType.EVALUATOR_NODE -> {
+                    NodeType.EVALUATOR, NodeType.EVALUATOR_NODE -> {
                         val condition = currentNode.config["verify"]?.toString() ?: "result_success"
                         val agentResult = context.getVariable("agentResult")
                         val observation = context.getVariable("observation")?.toString() ?: ""
@@ -267,7 +283,42 @@ class NodalEngine(
                         nodeOutputSummary = "Outcome verification '$condition': ${if (isVerified) "PASSED" else "FAILED"}"
                     }
 
-                    NodeType.RESULT_NODE -> {
+                    NodeType.APPROVAL -> {
+                        val permission = currentNode.config["permission"]?.toString() ?: "general.execute"
+                        val hasPerm = com.example.agent.safety.PermissionSystem.global.hasPermission(permission)
+                        if (!hasPerm) {
+                            nodeError = "User approval required for permission '$permission'"
+                        }
+                        nodeOutputSummary = "Approval check for $permission: ${if (hasPerm) "APPROVED" else "PENDING"}"
+                    }
+
+                    NodeType.WAIT -> {
+                        val duration = (currentNode.config["durationMs"] as? Number)?.toLong() ?: 50L
+                        kotlinx.coroutines.delay(duration)
+                        nodeOutputSummary = "Waited ${duration}ms"
+                    }
+
+                    NodeType.RETRY -> {
+                        nodeOutputSummary = "Retry checkpoint reached"
+                    }
+
+                    NodeType.FALLBACK -> {
+                        nodeOutputSummary = "Fallback handler invoked"
+                    }
+
+                    NodeType.PARALLEL -> {
+                        nodeOutputSummary = "Parallel fork evaluated"
+                    }
+
+                    NodeType.SEQUENCE -> {
+                        nodeOutputSummary = "Sequence segment evaluated"
+                    }
+
+                    NodeType.LOOP -> {
+                        nodeOutputSummary = "Loop condition evaluated"
+                    }
+
+                    NodeType.RESULT, NodeType.RESULT_NODE -> {
                         val synthesis = context.getVariable("agentResult")?.toString()
                             ?: context.getVariable("lastToolOutput")?.toString()
                             ?: "Workflow '${workflow.name}' completed successfully."
@@ -275,7 +326,7 @@ class NodalEngine(
                         nodeOutputSummary = "Synthesis: ${synthesis.take(60)}"
                     }
 
-                    NodeType.CONDITION_NODE -> {
+                    NodeType.CONDITION, NodeType.CONDITION_NODE -> {
                         nodeOutputSummary = "Branch evaluated"
                     }
                 }

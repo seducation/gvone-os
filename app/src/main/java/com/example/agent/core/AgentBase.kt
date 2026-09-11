@@ -24,7 +24,7 @@ class CancelledException(message: String = "Task was cancelled") : RuntimeExcept
  * Enforces automatic step logging, metabolic stress tracking, pause/resume, and delegation.
  */
 abstract class AgentBase(
-    val name: String,
+    override val name: String,
     val logger: StepLogger = StepLogger.global
 ) : Agent {
 
@@ -224,27 +224,37 @@ abstract class AgentBase(
                 val result = onExecute(request, token)
                 lastResult = result
                 currentStatus = result.status
+                val duration = System.currentTimeMillis() - startTime
+                if (result.isSuccess) {
+                    ScorecardRegistry.global.recordSuccess(name, duration)
+                } else {
+                    ScorecardRegistry.global.recordFailure(name, duration, isTimeout = false, isCancel = false)
+                }
                 // Metabolic recovery upon successful run
                 metabolicStress = (metabolicStress - 0.03).coerceAtLeast(0.0)
                 result
             } catch (e: CancelledException) {
                 currentStatus = AgentStatus.CANCELLED
+                val duration = System.currentTimeMillis() - startTime
+                ScorecardRegistry.global.recordFailure(name, duration, isTimeout = false, isCancel = true)
                 val res = AgentResult(
                     requestId = request.requestId,
                     status = AgentStatus.CANCELLED,
                     error = e.message,
-                    durationMs = System.currentTimeMillis() - startTime
+                    durationMs = duration
                 )
                 lastResult = res
                 res
             } catch (e: Exception) {
                 currentStatus = AgentStatus.FAILED
                 failureCount++
+                val duration = System.currentTimeMillis() - startTime
+                ScorecardRegistry.global.recordFailure(name, duration, isTimeout = false, isCancel = false)
                 val res = AgentResult(
                     requestId = request.requestId,
                     status = AgentStatus.FAILED,
                     error = e.message ?: e.toString(),
-                    durationMs = System.currentTimeMillis() - startTime
+                    durationMs = duration
                 )
                 lastResult = res
                 res

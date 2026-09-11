@@ -17,6 +17,7 @@ enum class StepType(val displayName: String) {
     STORE("Storing"),
     NAVIGATE("Navigating"),
     EXECUTE("Executing"),
+    TOOL_CALL("Tool Call"),
     WAITING("Waiting"),
     COMPLETE("Completed"),
     ERROR("Error"),
