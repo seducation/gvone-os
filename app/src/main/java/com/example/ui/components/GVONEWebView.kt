@@ -107,8 +107,7 @@ fun GVONEWebView(
                     GVONEActionWebView(context).apply {
                         isBackgroundPlayEnabled = backgroundPlayEnabled
                         onScrollChangeCallback = onPageScroll
-                        val isBridgeTarget = bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url) || com.example.data.sync.PageContextDetector.isYouTubeOrigin(tab.url)
-                        isBridgeActive = bridgeEnabled && isBridgeTarget
+                        isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url)
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
@@ -301,11 +300,7 @@ fun GVONEWebView(
                                 url?.let {
                                     lastLoadedUrl = it
                                     onUrlChanged(it)
-                                    val isBridgeTarget = bridgeEnabled && (bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(it) || com.example.data.sync.PageContextDetector.isYouTubeOrigin(it))
-                                    (view as? GVONEActionWebView)?.isBridgeActive = isBridgeTarget
-                                    if (isBridgeTarget) {
-                                        webAppBridge?.setConnectionState(com.example.data.sync.WebAppConnectionState.CONNECTING)
-                                    }
+                                    (view as? GVONEActionWebView)?.isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(it)
                                     view?.let { wv ->
                                         webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode)
                                         webAppBridge?.injectBackgroundPlayerScript(wv, backgroundPlayEnabled)
@@ -319,11 +314,7 @@ fun GVONEWebView(
                                 url?.let {
                                     lastLoadedUrl = it
                                     onUrlChanged(it)
-                                    val isBridgeTarget = bridgeEnabled && (bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(it) || com.example.data.sync.PageContextDetector.isYouTubeOrigin(it))
-                                    (view as? GVONEActionWebView)?.isBridgeActive = isBridgeTarget
-                                    if (isBridgeTarget) {
-                                        webAppBridge?.setConnectionState(com.example.data.sync.WebAppConnectionState.READY)
-                                    }
+                                    (view as? GVONEActionWebView)?.isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(it)
                                     view?.let { wv ->
                                         webAppBridge?.injectBridgeRuntime(wv, it, enabled = bridgeEnabled, applyToAll = bridgeApplyToAll, shortsAudioMode = shortsAudioMode)
                                         webAppBridge?.injectBackgroundPlayerScript(wv, backgroundPlayEnabled)
@@ -379,8 +370,7 @@ fun GVONEWebView(
                     webViewInstance = webView
                     if (webView is GVONEActionWebView) {
                         webView.isBackgroundPlayEnabled = backgroundPlayEnabled
-                        val isBridgeTarget = bridgeEnabled && (bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url) || com.example.data.sync.PageContextDetector.isYouTubeOrigin(tab.url))
-                        webView.isBridgeActive = isBridgeTarget
+                        webView.isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url)
                         webView.onScrollChangeCallback = onPageScroll
                     }
                     onRegisterWebView?.invoke(tab.id, webView)
