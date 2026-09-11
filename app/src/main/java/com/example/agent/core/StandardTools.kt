@@ -98,10 +98,15 @@ class SearchTool : Tool {
 
 /**
  * Standard File Tool: Manages file reading, writing, and listing within the sandbox.
+ * @deprecated Use [com.example.agent.specialized.FileAgent] via AgentRegistry for comprehensive operations, permission gating, and outcome verification.
  */
+@Deprecated(
+    message = "FileTool is deprecated in favor of FileAgent. Use AgentRegistry.global.getAgent(\"FileAgent\") for comprehensive operations with permission gating and provenance verification.",
+    replaceWith = ReplaceWith("com.example.agent.registry.AgentRegistry.global.getAgent(\"FileAgent\")")
+)
 class FileTool : Tool {
     override val name: String = "FileTool"
-    override val description: String = "Reads, writes, and lists sandbox files and directories."
+    override val description: String = "Legacy adapter delegating file reading, writing, and listing to FileAgent."
     override val riskLevel: RiskLevel = RiskLevel.MEDIUM
     override val requiredPermissions: List<String> = listOf(PermissionSystem.PERM_FILESYSTEM_READ)
     override val inputSchema: Map<String, String> = mapOf(
@@ -114,21 +119,76 @@ class FileTool : Tool {
         val action = parameters["action"]?.toString()?.lowercase() ?: "read"
         val path = parameters["path"]?.toString() ?: "."
 
+        // Delegate to FileAgent if registered
+        val fileAgent = com.example.agent.registry.AgentRegistry.global.getAgent("FileAgent")
+        if (fileAgent != null) {
+            val agentAction = when (action) {
+                "read" -> "read_file"
+                "write" -> "write_file"
+                "delete" -> "delete_file"
+                "list" -> "list_files"
+                else -> action
+            }
+            val request = AgentRequest(
+                sourceAgent = "FileTool",
+                targetAgent = "FileAgent",
+                action = agentAction,
+                parameters = parameters
+            )
+            val result = fileAgent.execute(request)
+            return if (result.isSuccess) {
+                ToolResult(success = true, data = result.data?.toString() ?: "Operation completed successfully.")
+            } else {
+                ToolResult(success = false, error = result.error ?: "FileAgent execution failed.")
+            }
+        }
+
+        // Direct verified filesystem operations (no simulated/mock placeholders)
         return when (action) {
             "read" -> {
                 val file = File(path)
                 if (file.exists() && file.isFile) {
                     ToolResult(success = true, data = file.readText())
                 } else {
-                    ToolResult(success = true, data = "File '$path' verified in workspace context.")
+                    ToolResult(success = false, error = "File not found: $path")
                 }
             }
             "write" -> {
                 val content = parameters["content"]?.toString() ?: ""
-                ToolResult(success = true, data = "Successfully wrote ${content.length} characters to '$path'")
+                try {
+                    val file = File(path)
+                    file.parentFile?.mkdirs()
+                    file.writeText(content)
+                    if (file.exists()) {
+                        ToolResult(success = true, data = "Successfully wrote ${content.length} characters to '$path'")
+                    } else {
+                        ToolResult(success = false, error = "Verification failed: file write was not persisted.")
+                    }
+                } catch (e: Exception) {
+                    ToolResult(success = false, error = "Failed to write to '$path': ${e.message}")
+                }
+            }
+            "delete" -> {
+                val file = File(path)
+                if (file.exists()) {
+                    val deleted = file.deleteRecursively()
+                    if (deleted && !file.exists()) {
+                        ToolResult(success = true, data = "Successfully deleted '$path'")
+                    } else {
+                        ToolResult(success = false, error = "Failed to delete '$path'")
+                    }
+                } else {
+                    ToolResult(success = false, error = "File '$path' does not exist.")
+                }
             }
             "list" -> {
-                ToolResult(success = true, data = "Files at '$path':\n- build.gradle.kts\n- AndroidManifest.xml\n- MainActivity.kt")
+                val dir = File(path)
+                if (dir.exists() && dir.isDirectory) {
+                    val list = dir.listFiles()?.joinToString("\n") { "- ${it.name}" } ?: "Empty directory"
+                    ToolResult(success = true, data = "Files at '$path':\n$list")
+                } else {
+                    ToolResult(success = false, error = "Directory '$path' does not exist.")
+                }
             }
             else -> ToolResult(success = false, error = "Unsupported file action '$action'")
         }

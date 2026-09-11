@@ -5,6 +5,7 @@ import com.example.agent.core.*
 import com.example.agent.memory.AgentMemory
 import com.example.agent.memory.ContextRouter
 import com.example.agent.nodal.NodalEngine
+import com.example.agent.nodal.NodeType
 import com.example.agent.registry.AgentRegistry
 import com.example.agent.runtime.InteractionType
 import com.example.agent.runtime.RuntimeStateManager
@@ -205,8 +206,22 @@ class CentralNervousSystem(
                         rawInput = userGoal
                     )
 
+                    // Extract all actual participating agents from nodal execution logs
+                    for (stepLog in nodalResult.logs) {
+                        if (stepLog.nodeType == NodeType.AGENT || stepLog.nodeType == NodeType.AGENT_NODE) {
+                            val agentName = stepLog.outputSummary
+                                ?.substringAfter("Agent ")
+                                ?.substringBefore(" executed")
+                                ?.trim()
+                                ?: stepLog.nodeName.removePrefix("Execute: ").trim()
+                            if (agentName.isNotBlank() && !participants.contains(agentName)) {
+                                participants.add(agentName)
+                            }
+                        }
+                    }
+
                     if (nodalResult.success) {
-                        nodalResult.finalOutput?.toString() ?: "Goal executed successfully by $primaryAgent."
+                        nodalResult.finalOutput?.toString() ?: "Goal executed successfully by ${participants.joinToString(", ")}."
                     } else {
                         "Execution note: ${nodalResult.error ?: "Encountered partial result in workflow"}"
                     }

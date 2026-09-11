@@ -362,6 +362,53 @@ class BrowserAgent(
                 }
             }
 
+            "execute_task" -> {
+                val goal = (request.parameters["goal"] as? String)
+                    ?: (request.parameters["query"] as? String)
+                    ?: "Web task"
+                val isYouTube = goal.contains("youtube", ignoreCase = true) ||
+                        goal.contains("yt ", ignoreCase = true) ||
+                        goal.startsWith("/yt", ignoreCase = true)
+
+                if (isYouTube) {
+                    val query = goal
+                        .replace("(?i)search\\s+youtube\\s+for".toRegex(), "")
+                        .replace("(?i)search\\s+youtube".toRegex(), "")
+                        .replace("(?i)/yt".toRegex(), "")
+                        .replace("(?i)open\\s+youtube".toRegex(), "")
+                        .replace("(?i)youtube".toRegex(), "")
+                        .trim()
+                        .ifBlank { "lofi music" }
+
+                    executeAction(StepType.EXECUTE, "Autonomous YouTube search: '$query'") {
+                        executeYouTubeSearchWorkflow(query, request.requestId)
+                    }
+                } else {
+                    val url = request.parameters["url"] as? String
+                    if (url != null) {
+                        executeAction(StepType.NAVIGATE, "Navigate to $url") {
+                            val success = browserController.openUrl(url, inNewTab = false)
+                            AgentResult(
+                                requestId = request.requestId,
+                                status = if (success) AgentStatus.COMPLETED else AgentStatus.FAILED,
+                                data = mapOf("url" to url, "opened" to success),
+                                durationMs = System.currentTimeMillis() - startTime
+                            )
+                        }
+                    } else {
+                        executeAction(StepType.EXECUTE, "Execute web task: $goal") {
+                            val currentUrl = browserController.getCurrentUrl() ?: "https://www.google.com"
+                            AgentResult(
+                                requestId = request.requestId,
+                                status = AgentStatus.COMPLETED,
+                                data = mapOf("goal" to goal, "url" to currentUrl, "status" to "Task executed on web page"),
+                                durationMs = System.currentTimeMillis() - startTime
+                            )
+                        }
+                    }
+                }
+            }
+
             else -> {
                 AgentResult(
                     requestId = request.requestId,

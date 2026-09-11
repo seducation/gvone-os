@@ -122,7 +122,7 @@ data class NodeConnection(
 data class NodalWorkflow(
     val id: String,
     val name: String,
-    val description: String,
+    val description: String = "",
     val triggerCommands: List<String> = emptyList(),
     val nodes: List<NodalNode> = emptyList(),
     val connections: List<NodeConnection> = emptyList(),

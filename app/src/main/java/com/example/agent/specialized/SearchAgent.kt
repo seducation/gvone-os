@@ -28,11 +28,12 @@ class SearchAgent(
 
     override suspend fun onExecute(request: AgentRequest, token: CancellationToken): AgentResult {
         val startTime = System.currentTimeMillis()
-        val query = request.parameters["query"] as? String
+        val query = (request.parameters["query"] as? String)
+            ?: (request.parameters["goal"] as? String)
             ?: return AgentResult(
                 requestId = request.requestId,
                 status = AgentStatus.FAILED,
-                error = "Missing 'query' parameter"
+                error = "Missing 'query' or 'goal' parameter"
             )
 
         return executeAction(StepType.FETCH, "Search and synthesize: '$query'") {
