@@ -2,6 +2,7 @@ package com.example.data.terminal
 
 import androidx.lifecycle.viewModelScope
 import com.example.agent.cns.CentralNervousSystem
+import com.example.agent.command.CommandRegistry
 import com.example.agent.memory.ContextRouter
 import com.example.agent.nodal.NodalEngine
 import com.example.agent.runtime.RuntimeStateManager
@@ -205,23 +206,53 @@ class TerminalCommandExecutor(
 
             "/voice" -> {
                 val runtimeState = RuntimeStateManager.global
+                val inv = CommandRegistry.global.parse(trimmed)
+                val hasOn = inv?.isPersistentOn == true || queryArg.contains("/on") || queryArg.equals("on", ignoreCase = true)
+                val hasOff = inv?.isPersistentOff == true || queryArg.contains("/off") || queryArg.equals("off", ignoreCase = true)
+                val hasAgent = inv?.isAgenticRequested == true || queryArg.contains("/agent") || queryArg.startsWith("agent", ignoreCase = true)
+
                 when {
-                    queryArg.startsWith("/agent", ignoreCase = true) || queryArg.startsWith("agent", ignoreCase = true) -> {
-                        // Compound mode: /voice /agent <goal>
-                        val goal = queryArg.removePrefix("/agent").removePrefix("agent").trim()
-                        runtimeState.activateVoiceAgentCompound(goal)
+                    hasOff -> {
+                        runtimeState.setTextMode()
+                        setAgenticMode(false)
+                        outputLines.add(TerminalLine("[VOICE RUNTIME] Persistent voice mode DISABLED.", TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("● Restored to TEXT chat interaction. Microphone input disengaged.", TerminalLineType.INFO))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    hasAgent -> {
+                        // Compound mode: /voice /agent <goal> or /voice /on /agent <goal>
+                        val cleanGoal = inv?.queryArg?.ifBlank { null }
+                            ?: queryArg.replace(Regex("(?i)(/on|/agent|on|agent)"), "").trim()
+                        runtimeState.activateVoiceAgentCompound(cleanGoal?.ifBlank { null })
                         setAgenticMode(true)
                         outputLines.add(TerminalLine("╭─────────────────────────────────────────────────────────────╮", TerminalLineType.AGENT_PLAN))
                         outputLines.add(TerminalLine("│ 🎙️ COMPOUND MODE: VOICE-FIRST + AGENT RUNTIME", TerminalLineType.AGENT_PLAN))
-                        outputLines.add(TerminalLine("│ Goal: \"$goal\"", TerminalLineType.AGENT_PLAN))
+                        if (!cleanGoal.isNullOrBlank()) {
+                            outputLines.add(TerminalLine("│ Goal: \"$cleanGoal\"", TerminalLineType.AGENT_PLAN))
+                        } else {
+                            outputLines.add(TerminalLine("│ Listening for speech goal via microphone...", TerminalLineType.AGENT_PLAN))
+                        }
                         outputLines.add(TerminalLine("│ Hierarchy: Voice Primary ➜ Autonomous Agent Execution", TerminalLineType.AGENT_PLAN))
                         outputLines.add(TerminalLine("╰─────────────────────────────────────────────────────────────╯", TerminalLineType.AGENT_PLAN))
                         commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-                        scope.launch {
-                            agentEngine.runAgenticWorkflow(goal.ifBlank { "Autonomous task execution" }, shellEngine.currentDirectory) { line ->
-                                viewModel.appendTerminalLine(line)
+                        if (!cleanGoal.isNullOrBlank()) {
+                            scope.launch {
+                                agentEngine.runAgenticWorkflow(cleanGoal, shellEngine.currentDirectory) { line ->
+                                    viewModel.appendTerminalLine(line)
+                                }
                             }
                         }
+                        return
+                    }
+                    hasOn -> {
+                        // Persistent voice mode: /voice /on (CHAT only, no autonomous agent task)
+                        runtimeState.activateVoiceOnly()
+                        outputLines.add(TerminalLine("[VOICE RUNTIME] Persistent voice mode ENABLED.", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("● Interaction: VOICE | Execution: CHAT (VoiceActive=true)", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Continuous speech listening engaged. No background task created.", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("● Use '/voice /off' to disable persistent voice mode.", TerminalLineType.INFO))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                         return
                     }
                     queryArg.isBlank() -> {
@@ -229,9 +260,8 @@ class TerminalCommandExecutor(
                         runtimeState.activateVoiceOnly()
                         outputLines.add(TerminalLine("[VOICE RUNTIME] ACTIVATED. Voice conversation mode is active.", TerminalLineType.SUCCESS))
                         outputLines.add(TerminalLine("● Interaction: VOICE | Execution: CHAT (No autonomous task created)", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Modifiers: /voice /on (persistent), /voice /off, /voice /agent <goal>", TerminalLineType.INFO))
                         outputLines.add(TerminalLine("● Speak or type any conversational question, e.g. \"What is photosynthesis?\"", TerminalLineType.OUTPUT))
-                        outputLines.add(TerminalLine("● For autonomous execution, use '/voice /agent <goal>' or '/agent <goal>'", TerminalLineType.INFO))
-                        outputLines.add(TerminalLine("● To return to standard text chat, type '/chat'", TerminalLineType.OUTPUT))
                         commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                         return
                     }
@@ -263,6 +293,36 @@ class TerminalCommandExecutor(
                         return
                     }
                 }
+            }
+
+            "/task", "/tasks" -> {
+                scope.launch {
+                    val cmdRes = CommandRegistry.global.executeRaw(trimmed)
+                    if (cmdRes != null) {
+                        commitAndShowTerminalIfNeeded(cmdRes.terminalLines, openTerminal = cmdRes.openTerminal)
+                    }
+                }
+                return
+            }
+
+            "/memory", "/mem" -> {
+                scope.launch {
+                    val cmdRes = CommandRegistry.global.executeRaw(trimmed)
+                    if (cmdRes != null) {
+                        commitAndShowTerminalIfNeeded(cmdRes.terminalLines, openTerminal = cmdRes.openTerminal)
+                    }
+                }
+                return
+            }
+
+            "/context", "/ctx" -> {
+                scope.launch {
+                    val cmdRes = CommandRegistry.global.executeRaw(trimmed)
+                    if (cmdRes != null) {
+                        commitAndShowTerminalIfNeeded(cmdRes.terminalLines, openTerminal = cmdRes.openTerminal)
+                    }
+                }
+                return
             }
 
             "/cancel", "/stop", "/abort" -> {
@@ -347,6 +407,15 @@ class TerminalCommandExecutor(
             }
 
             "/config" -> {
+                if (queryArg.isNotBlank()) {
+                    scope.launch {
+                        val cmdRes = CommandRegistry.global.executeRaw(trimmed)
+                        if (cmdRes != null) {
+                            commitAndShowTerminalIfNeeded(cmdRes.terminalLines, openTerminal = cmdRes.openTerminal)
+                        }
+                    }
+                    return
+                }
                 val isGeminiLive = viewModel.aiService.isApiKeyConfigured()
                 outputLines.add(TerminalLine("── GVONE OS SYSTEM CONFIGURATION ──", TerminalLineType.SYSTEM))
                 outputLines.add(TerminalLine("● Engine Version: GVONE OS v2.4-unified", TerminalLineType.INFO))
@@ -355,6 +424,7 @@ class TerminalCommandExecutor(
                 outputLines.add(TerminalLine("● Tor Network: ${if (isTorActive) "CONNECTED" else "DISCONNECTED"}", if (isTorActive) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
                 outputLines.add(TerminalLine("● Sandbox Root: /${shellEngine.currentDirectory}", TerminalLineType.OUTPUT))
                 outputLines.add(TerminalLine("● Agent Protocol: RPC-over-CNS + Context Isolation", TerminalLineType.INFO))
+                outputLines.add(TerminalLine("Use '/config list', '/config get <key>', or '/config set <key> <val>' for runtime parameters.", TerminalLineType.OUTPUT))
                 commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                 return
             }

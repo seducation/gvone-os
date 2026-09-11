@@ -155,6 +155,30 @@ class ContextRouter(
         return conversationHistory.takeLast(limit)
     }
 
+    /**
+     * Session context for persistent session variables.
+     */
+    data class SessionContext(
+        val sessionId: String,
+        val sessionVariables: MutableMap<String, String> = ConcurrentHashMap()
+    )
+
+    private val sessionContexts = ConcurrentHashMap<String, SessionContext>()
+
+    fun getOrCreateSessionContext(sessionId: String = "default_session"): SessionContext {
+        return sessionContexts.computeIfAbsent(sessionId) {
+            SessionContext(sessionId)
+        }
+    }
+
+    fun getActiveTaskContextsCount(): Int = taskContexts.size
+
+    fun resetAllScopes() {
+        taskContexts.clear()
+        conversationHistory.clear()
+        sessionContexts.clear()
+    }
+
     companion object {
         val global: ContextRouter by lazy { ContextRouter() }
     }
