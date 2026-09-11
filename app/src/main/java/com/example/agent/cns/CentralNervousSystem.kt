@@ -58,14 +58,14 @@ class CentralNervousSystem(
     val runtimeState: RuntimeStateManager = RuntimeStateManager.global,
     val contextRouter: ContextRouter = ContextRouter.global,
     val nodalEngine: NodalEngine = NodalEngine.global
-) {
+) : AgentOrchestrator {
     private val _isBusy = MutableStateFlow(false)
     val isBusy: StateFlow<Boolean> = _isBusy.asStateFlow()
 
     private val _activeMission = MutableStateFlow<String?>(null)
     val activeMission: StateFlow<String?> = _activeMission.asStateFlow()
 
-    fun registerAgent(agent: Agent) {
+    override fun registerAgent(agent: Agent) {
         agentRegistry.registerAgent(agent)
         worldState.registerActiveAgent(agent.identity())
         worldState.updateEntity(
@@ -78,15 +78,15 @@ class CentralNervousSystem(
         )
     }
 
-    fun getAgent(name: String): Agent? = agentRegistry.getAgent(name)
+    override fun getAgent(name: String): Agent? = agentRegistry.getAgent(name)
 
-    fun getAllAgents(): List<Agent> = agentRegistry.getAllAgents()
+    override fun getAllAgents(): List<Agent> = agentRegistry.getAllAgents()
 
     /**
      * Core orchestrator method:
      * User request -> Intent understanding -> Safety screening -> Task isolation -> Delegation -> Synthesis
      */
-    suspend fun orchestrateGoal(userGoal: String): CnsWorkflowResult {
+    override suspend fun orchestrateGoal(userGoal: String): CnsWorkflowResult {
         val workflowId = UUID.randomUUID().toString()
         val startTime = System.currentTimeMillis()
         _isBusy.value = true
@@ -295,7 +295,7 @@ class CentralNervousSystem(
     /**
      * Executes safe, permission-checked delegation from CNS to an agent.
      */
-    suspend fun dispatchToAgent(agentName: String, request: AgentRequest): AgentResult {
+    override suspend fun dispatchToAgent(agentName: String, request: AgentRequest): AgentResult {
         val agent = agentRegistry.getAgent(agentName)
             ?: return AgentResult(
                 requestId = request.requestId,

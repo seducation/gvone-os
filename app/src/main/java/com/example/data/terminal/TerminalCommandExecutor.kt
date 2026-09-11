@@ -533,7 +533,16 @@ class TerminalCommandExecutor(
                 }
             }
 
-            "/dashboard", "/cns" -> {
+            "/dashboard", "/cns", "/brain" -> {
+                if (queryArg.isNotBlank()) {
+                    outputLines.add(TerminalLine("[CNS ORCHESTRATION] Orchestrating goal: \"$queryArg\"...", TerminalLineType.AGENT_PLAN))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    scope.launch {
+                        val res = CentralNervousSystem.global.orchestrateGoal(queryArg)
+                        viewModel.appendTerminalLine(TerminalLine(res.synthesis, if (res.success) TerminalLineType.SUCCESS else TerminalLineType.ERROR))
+                    }
+                    return
+                }
                 outputLines.add(TerminalLine("[AGENT UI DASHBOARD] Launching Central Nervous System Dashboard...", TerminalLineType.SUCCESS))
                 viewModel.appendTerminalLines(outputLines)
                 if (onOpenAgentDashboard != null) {
@@ -745,13 +754,41 @@ class TerminalCommandExecutor(
                 return
             }
 
-            "/tree" -> {
-                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-                scope.launch {
-                    val lines = shellEngine.generateTree(queryArg)
-                    viewModel.appendTerminalLines(lines)
+            "/tree", "/hierarchy", "/convos" -> {
+                when {
+                    queryArg.equals("expand", ignoreCase = true) || queryArg.equals("open", ignoreCase = true) || queryArg.equals("all", ignoreCase = true) -> {
+                        ConversationTreeManager.global.expandAll()
+                        outputLines.add(TerminalLine("🌳 [TREE EXPANDED] Expanded all user inputs and conversation task branches in the stream log.", TerminalLineType.SUCCESS))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    queryArg.equals("collapse", ignoreCase = true) || queryArg.equals("close", ignoreCase = true) -> {
+                        ConversationTreeManager.global.collapseAll()
+                        outputLines.add(TerminalLine("🌳 [TREE COLLAPSED] Collapsed all user inputs and action logs into compact rows in stream log.", TerminalLineType.WARNING))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    normalizedToken == "/hierarchy" || normalizedToken == "/convos" -> {
+                        val allTasks = ConversationTreeManager.global.tasks.value
+                        outputLines.add(TerminalLine("── 3-LEVEL CONVERSATION STREAM TREE ──", TerminalLineType.SYSTEM))
+                        outputLines.add(TerminalLine("The stream log embeds a native 3-level expandable task tree:", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("  Level 1: Conversation / Task  (▸ 🎵 YouTube, ▾ 💻 Coding)", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("  Level 2: Agent Sessions       (▾ 🤖 CodingAgent, ▸ 🌐 BrowserAgent)", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("  Level 3: Steps, Tools, Reasoning & Results (expandable tool output)", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("Total conversation tasks tracked: ${allTasks.size}", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("Commands: '/tree expand' | '/tree collapse'", TerminalLineType.OUTPUT))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    else -> {
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            val lines = shellEngine.generateTree(queryArg)
+                            viewModel.appendTerminalLines(lines)
+                        }
+                        return
+                    }
                 }
-                return
             }
 
             "/df", "/du" -> {

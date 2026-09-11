@@ -1,10 +1,13 @@
 package com.example.agent.nodal
 
+import com.example.agent.core.AgentOrchestrator
 import com.example.agent.core.AgentRequest
 import com.example.agent.core.AgentResult
 import com.example.agent.core.AgentStatus
 import com.example.agent.core.StepLogger
 import com.example.agent.core.StepType
+import com.example.agent.core.ToolRegistry
+import com.example.agent.cns.CentralNervousSystem
 import com.example.agent.runtime.InteractionType
 import com.example.agent.runtime.ModePriority
 import com.example.agent.runtime.RuntimeStateManager
@@ -21,10 +24,28 @@ import org.json.JSONObject
 class NodalEngine(
     private val runtimeState: RuntimeStateManager = RuntimeStateManager.global,
     private val logger: StepLogger = StepLogger.global,
-    private val agentDispatcher: suspend (agentName: String, request: AgentRequest) -> AgentResult = { _, _ ->
-        AgentResult("req", AgentStatus.COMPLETED, "Dispatched")
-    }
+    private val orchestrator: AgentOrchestrator? = null,
+    customAgentDispatcher: (suspend (agentName: String, request: AgentRequest) -> AgentResult)? = null
 ) {
+    private var agentDispatcher: (suspend (agentName: String, request: AgentRequest) -> AgentResult)? = customAgentDispatcher
+
+    fun setAgentDispatcher(dispatcher: suspend (agentName: String, request: AgentRequest) -> AgentResult) {
+        this.agentDispatcher = dispatcher
+    }
+
+    private suspend fun dispatchAgent(agentName: String, request: AgentRequest): AgentResult {
+        val custom = agentDispatcher
+        if (custom != null) {
+            return custom(agentName, request)
+        }
+        val orch = orchestrator ?: CentralNervousSystem.global
+        return try {
+            orch.dispatchToAgent(agentName, request)
+        } catch (e: Exception) {
+            AgentResult(request.requestId, AgentStatus.FAILED, error = "Failed to dispatch to $agentName: ${e.message}")
+        }
+    }
+
     private val _workflows = MutableStateFlow<Map<String, NodalWorkflow>>(emptyMap())
     val workflows: StateFlow<Map<String, NodalWorkflow>> = _workflows.asStateFlow()
 
@@ -148,7 +169,7 @@ class NodalEngine(
                             action = action,
                             parameters = mapOf("goal" to goal, "query" to queryArg)
                         )
-                        val result = agentDispatcher(targetAgent, request)
+                        val result = dispatchAgent(targetAgent, request)
                         context.setVariable("agentResult", result.data)
                         if (!result.isSuccess) {
                             nodeError = result.error ?: "Agent execution error"
@@ -158,22 +179,92 @@ class NodalEngine(
 
                     NodeType.TOOL_NODE -> {
                         val tool = currentNode.config["tool"]?.toString() ?: "generic_tool"
-                        val params = currentNode.config["params"] ?: emptyMap<String, Any>()
-                        context.setVariable("lastToolOutput", "Executed $tool with $params")
-                        nodeOutputSummary = "Executed tool $tool"
+                        @Suppress("UNCHECKED_CAST")
+                        val params = (currentNode.config["params"] as? Map<String, Any?>) ?: emptyMap()
+                        val registeredTool = ToolRegistry.global.getTool(tool)
+                        if (registeredTool != null) {
+                            val toolRes = registeredTool.execute(params)
+                            if (toolRes.success) {
+                                context.setVariable("lastToolOutput", toolRes.data?.toString() ?: "Success")
+                                nodeOutputSummary = "Executed tool $tool successfully"
+                            } else {
+                                nodeError = toolRes.error ?: "Tool $tool failed"
+                                nodeOutputSummary = "Tool $tool failed: $nodeError"
+                            }
+                        } else {
+                            context.setVariable("lastToolOutput", "Executed tool: $tool with $params")
+                            nodeOutputSummary = "Executed tool $tool"
+                        }
                     }
 
                     NodeType.OBSERVER_NODE -> {
                         val target = currentNode.config["target"]?.toString() ?: "dom"
-                        context.setVariable("observation", "Observed $target: OK")
-                        nodeOutputSummary = "Observed state for $target"
+                        val obsData: String = when (target.lowercase()) {
+                            "dom", "browser", "page" -> {
+                                val req = AgentRequest(
+                                    sourceAgent = "NodalEngine",
+                                    targetAgent = "BrowserAgent",
+                                    action = "observe_dom"
+                                )
+                                val res = dispatchAgent("BrowserAgent", req)
+                                if (res.isSuccess) {
+                                    res.data?.toString() ?: "DOM observation: OK"
+                                } else {
+                                    "DOM observation unavailable: ${res.error}"
+                                }
+                            }
+                            "tabs" -> {
+                                val req = AgentRequest(
+                                    sourceAgent = "NodalEngine",
+                                    targetAgent = "BrowserAgent",
+                                    action = "get_tabs"
+                                )
+                                val res = dispatchAgent("BrowserAgent", req)
+                                res.data?.toString() ?: "Tabs: none"
+                            }
+                            "state", "runtime" -> {
+                                "Mode=${runtimeState.runtimeMode.value.toPromptLabel()}, ActiveTask=${runtimeState.activeTask.value?.taskId ?: "None"}"
+                            }
+                            else -> "Observed $target"
+                        }
+                        context.setVariable("observation", obsData)
+                        nodeOutputSummary = "Observed state for $target: ${obsData.take(60)}"
                     }
 
                     NodeType.EVALUATOR_NODE -> {
-                        val condition = currentNode.config["verify"]?.toString() ?: "always_true"
-                        val verified = true
-                        context.setVariable("isVerified", verified)
-                        nodeOutputSummary = "Verification condition '$condition' passed: $verified"
+                        val condition = currentNode.config["verify"]?.toString() ?: "result_success"
+                        val agentResult = context.getVariable("agentResult")
+                        val observation = context.getVariable("observation")?.toString() ?: ""
+                        val lastToolOutput = context.getVariable("lastToolOutput")?.toString() ?: ""
+
+                        val isVerified = when {
+                            condition == "result_success" -> {
+                                (agentResult != null && !context.variables.containsKey("error")) ||
+                                        (observation.isNotBlank() && !observation.startsWith("DOM observation unavailable")) ||
+                                        lastToolOutput.isNotBlank()
+                            }
+                            condition.startsWith("contains:") -> {
+                                val expected = condition.removePrefix("contains:").trim()
+                                val combined = "${agentResult ?: ""} $observation $lastToolOutput"
+                                combined.contains(expected, ignoreCase = true)
+                            }
+                            condition == "non_empty" -> {
+                                val combined = "${agentResult ?: ""} $observation $lastToolOutput".trim()
+                                combined.isNotEmpty() && !combined.equals("null", ignoreCase = true)
+                            }
+                            condition == "always_true" -> {
+                                agentResult != null || observation.isNotBlank() || lastToolOutput.isNotBlank()
+                            }
+                            else -> {
+                                agentResult != null
+                            }
+                        }
+
+                        context.setVariable("isVerified", isVerified)
+                        if (!isVerified) {
+                            nodeError = "Verification failed: required outcome '$condition' was not satisfied."
+                        }
+                        nodeOutputSummary = "Outcome verification '$condition': ${if (isVerified) "PASSED" else "FAILED"}"
                     }
 
                     NodeType.RESULT_NODE -> {
@@ -204,6 +295,10 @@ class NodalEngine(
             )
             context.stepLogs.add(stepLog)
             executedNodeIds.add(currentNode.id)
+
+            if (nodeError != null) {
+                break
+            }
 
             // Find next connected nodes
             val outgoing = workflow.getOutgoingConnections(currentNode.id)

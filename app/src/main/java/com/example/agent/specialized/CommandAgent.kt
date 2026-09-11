@@ -1,7 +1,9 @@
 package com.example.agent.specialized
 
+import com.example.agent.cns.CentralNervousSystem
 import com.example.agent.core.AgentBase
 import com.example.agent.core.AgentCapability
+import com.example.agent.core.AgentOrchestrator
 import com.example.agent.core.AgentRequest
 import com.example.agent.core.AgentResult
 import com.example.agent.core.AgentStatus
@@ -20,8 +22,15 @@ import com.example.agent.runtime.RuntimeStateManager
 class CommandAgent(
     logger: StepLogger = StepLogger.global,
     private val runtimeState: RuntimeStateManager = RuntimeStateManager.global,
-    private val nodalEngine: NodalEngine = NodalEngine.global
+    nodalEngine: NodalEngine? = null,
+    private val orchestrator: AgentOrchestrator? = null
 ) : AgentBase("CommandAgent", logger) {
+
+    private val orchestratorInstance: AgentOrchestrator
+        get() = orchestrator ?: CentralNervousSystem.global
+
+    private val nodalEngineInstance: NodalEngine = nodalEngine
+        ?: NodalEngine(runtimeState = runtimeState, logger = logger, orchestrator = orchestrator)
 
     override fun capabilities(): List<AgentCapability> = listOf(
         AgentCapability(
@@ -35,7 +44,7 @@ class CommandAgent(
         "runtimeMode" to runtimeState.runtimeMode.value.toPromptLabel(),
         "activeTask" to (runtimeState.activeTask.value?.goal ?: "None"),
         "debugEnabled" to runtimeState.runtimeMode.value.isDebugEnabled,
-        "workflowCount" to nodalEngine.workflows.value.size
+        "workflowCount" to nodalEngineInstance.workflows.value.size
     )
 
     override suspend fun onExecute(request: AgentRequest, token: CancellationToken): AgentResult {
@@ -53,9 +62,9 @@ class CommandAgent(
         if (trimmed.startsWith("/voice /agent", ignoreCase = true) || trimmed.startsWith("/voice_agent", ignoreCase = true)) {
             val goal = trimmed.substringAfter("/agent", "").trim()
             runtimeState.activateVoiceAgentCompound(goal.ifBlank { null })
-            val wf = nodalEngine.findWorkflowForCommand("/voice /agent")
+            val wf = nodalEngineInstance.findWorkflowForCommand("/voice /agent")
             val output = if (wf != null && goal.isNotBlank()) {
-                val wfRes = nodalEngine.executeWorkflow(wf, "/voice /agent", goal, rawInput)
+                val wfRes = nodalEngineInstance.executeWorkflow(wf, "/voice /agent", goal, rawInput)
                 wfRes.finalOutput ?: "Voice-first agent started for: $goal"
             } else {
                 "Activated Voice-First Agent Mode (Interaction: VOICE, Execution: AGENT, Priority: INTERACTION).\n" +
@@ -68,9 +77,9 @@ class CommandAgent(
         if (trimmed.startsWith("/agent /voice", ignoreCase = true) || trimmed.startsWith("/agent_voice", ignoreCase = true)) {
             val goal = trimmed.substringAfter("/voice", "").trim()
             runtimeState.activateAgentVoiceCompound(goal.ifBlank { null })
-            val wf = nodalEngine.findWorkflowForCommand("/agent /voice")
+            val wf = nodalEngineInstance.findWorkflowForCommand("/agent /voice")
             val output = if (wf != null && goal.isNotBlank()) {
-                val wfRes = nodalEngine.executeWorkflow(wf, "/agent /voice", goal, rawInput)
+                val wfRes = nodalEngineInstance.executeWorkflow(wf, "/agent /voice", goal, rawInput)
                 wfRes.finalOutput ?: "Agent-first voice task started: $goal"
             } else {
                 "Activated Agent-First Voice Mode (Interaction: VOICE, Execution: AGENT, Priority: EXECUTION).\n" +
@@ -93,15 +102,26 @@ class CommandAgent(
         if (trimmed.equals("/agent", ignoreCase = true) || trimmed.startsWith("/agent ", ignoreCase = true)) {
             val goal = trimmed.removePrefix("/agent").trim()
             val task = runtimeState.activateAgentOnly(goal.ifBlank { null })
-            val wf = nodalEngine.findWorkflowForCommand("/agent")
-            val output = if (wf != null && goal.isNotBlank()) {
-                val wfRes = nodalEngine.executeWorkflow(wf, "/agent", goal, rawInput)
-                wfRes.finalOutput ?: "Agent task completed: $goal"
+            val wf = nodalEngineInstance.findWorkflowForCommand("/agent")
+            if (wf != null && goal.isNotBlank()) {
+                val wfRes = nodalEngineInstance.executeWorkflow(wf, "/agent", goal, rawInput)
+                return if (wfRes.success) {
+                    AgentResult(requestId, AgentStatus.COMPLETED, wfRes.finalOutput ?: "Agent task completed: $goal")
+                } else {
+                    AgentResult(requestId, AgentStatus.FAILED, error = wfRes.error ?: "Agent workflow failed")
+                }
+            } else if (goal.isNotBlank()) {
+                val orchRes = orchestratorInstance.orchestrateGoal(goal)
+                return if (orchRes.success) {
+                    AgentResult(requestId, AgentStatus.COMPLETED, orchRes.synthesis)
+                } else {
+                    AgentResult(requestId, AgentStatus.FAILED, error = orchRes.synthesis)
+                }
             } else {
-                "Agent Task Mode enabled (Interaction: TEXT, Execution: AGENT, Priority: EXECUTION).\n" +
-                        if (goal.isNotBlank()) "Task initiated: '$goal' (TaskId: ${task?.taskId})" else "Ready for autonomous goal. Provide instructions."
+                val output = "Agent Task Mode enabled (Interaction: TEXT, Execution: AGENT, Priority: EXECUTION).\n" +
+                        "Ready for autonomous goal. Provide instructions or run '/agent <goal>'."
+                return AgentResult(requestId, AgentStatus.COMPLETED, output)
             }
-            return AgentResult(requestId, AgentStatus.COMPLETED, output)
         }
 
         // Operational controls:
@@ -144,13 +164,13 @@ class CommandAgent(
                     appendLine("Voice Active:     ${mode.isVoiceActive}")
                     appendLine("Debug Enabled:    ${mode.isDebugEnabled}")
                     appendLine("Active Task:      ${active?.let { "'${it.goal}' [${it.status}]" } ?: "None"}")
-                    appendLine("Registered WFs:   ${nodalEngine.workflows.value.size}")
+                    appendLine("Registered WFs:   ${nodalEngineInstance.workflows.value.size}")
                 }
                 return AgentResult(requestId, AgentStatus.COMPLETED, statusReport.trim())
             }
 
             "/commands", "/help" -> {
-                val wfs = nodalEngine.workflows.value.values
+                val wfs = nodalEngineInstance.workflows.value.values
                 val list = buildString {
                     appendLine("Available GVONE OS Commands & Nodal Workflows:")
                     appendLine("  /voice                 - Enable continuous hands-free voice conversation")
@@ -174,13 +194,13 @@ class CommandAgent(
             val sub = trimmed.removePrefix("/nodal").trim().lowercase()
             return when {
                 sub == "list" -> {
-                    val lines = nodalEngine.workflows.value.values.joinToString("\n") { wf ->
+                    val lines = nodalEngineInstance.workflows.value.values.joinToString("\n") { wf ->
                         "- ${wf.id} [${wf.name}]: triggers=${wf.triggerCommands.joinToString(", ")} (nodes=${wf.nodes.size})"
                     }
                     AgentResult(requestId, AgentStatus.COMPLETED, "Registered Nodal Workflows:\n$lines")
                 }
                 sub == "export" -> {
-                    val json = nodalEngine.exportWorkflowsToJson()
+                    val json = nodalEngineInstance.exportWorkflowsToJson()
                     AgentResult(requestId, AgentStatus.COMPLETED, "Nodal Workflow Configuration Export:\n$json")
                 }
                 else -> {
@@ -191,10 +211,10 @@ class CommandAgent(
 
         // 4. Check if matched by any other registered nodal workflow
         val firstToken = trimmed.split(" ").firstOrNull() ?: ""
-        val matchedWf = nodalEngine.findWorkflowForCommand(firstToken)
+        val matchedWf = nodalEngineInstance.findWorkflowForCommand(firstToken)
         if (matchedWf != null) {
             val queryArg = trimmed.removePrefix(firstToken).trim()
-            val result = nodalEngine.executeWorkflow(matchedWf, firstToken, queryArg, trimmed)
+            val result = nodalEngineInstance.executeWorkflow(matchedWf, firstToken, queryArg, trimmed)
             return AgentResult(
                 requestId = requestId,
                 status = if (result.success) AgentStatus.COMPLETED else AgentStatus.FAILED,
