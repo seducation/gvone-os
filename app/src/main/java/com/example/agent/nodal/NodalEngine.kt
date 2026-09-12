@@ -11,15 +11,11 @@ import com.example.agent.cns.CentralNervousSystem
 import com.example.agent.runtime.InteractionType
 import com.example.agent.runtime.ModePriority
 import com.example.agent.runtime.RuntimeStateManager
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 
 /**
  * Nodal Workflow Engine (n8n-style) for GVONE OS.
@@ -29,6 +25,7 @@ class NodalEngine(
     private val runtimeState: RuntimeStateManager = RuntimeStateManager.global,
     private val logger: StepLogger = StepLogger.global,
     private val orchestrator: AgentOrchestrator? = null,
+    private val ruleEngine: com.example.agent.rules.RuleEngine = com.example.agent.rules.RuleEngine.global,
     customAgentDispatcher: (suspend (agentName: String, request: AgentRequest) -> AgentResult)? = null
 ) {
     private var agentDispatcher: (suspend (agentName: String, request: AgentRequest) -> AgentResult)? = customAgentDispatcher
@@ -256,40 +253,28 @@ class NodalEngine(
                         val agentResult = context.getVariable("agentResult")
                         val observation = context.getVariable("observation")?.toString() ?: ""
                         val lastToolOutput = context.getVariable("lastToolOutput")?.toString() ?: ""
-                        val lastOutput = context.getVariable("lastOutput")?.toString() ?: ""
-                        val combined = "${agentResult ?: ""} $observation $lastToolOutput $lastOutput".trim()
 
                         val isVerified = when {
                             condition == "result_success" -> {
                                 (agentResult != null && !context.variables.containsKey("error")) ||
                                         (observation.isNotBlank() && !observation.startsWith("DOM observation unavailable")) ||
-                                        lastToolOutput.isNotBlank() ||
-                                        lastOutput.isNotBlank()
+                                        lastToolOutput.isNotBlank()
                             }
                             condition.startsWith("contains:") -> {
                                 val expected = condition.removePrefix("contains:").trim()
+                                val combined = "${agentResult ?: ""} $observation $lastToolOutput"
                                 combined.contains(expected, ignoreCase = true)
                             }
-                            condition.startsWith("equals:") -> {
-                                val expected = condition.removePrefix("equals:").trim()
-                                combined.equals(expected, ignoreCase = true) || agentResult?.toString()?.equals(expected, ignoreCase = true) == true
-                            }
-                            condition.startsWith("file_exists:") -> {
-                                val filePath = condition.removePrefix("file_exists:").trim()
-                                File(filePath).exists()
-                            }
-                            condition.startsWith("file_contains:") -> {
-                                val parts = condition.removePrefix("file_contains:").split("=", limit = 2)
-                                if (parts.size == 2) {
-                                    val f = File(parts[0].trim())
-                                    f.exists() && f.readText().contains(parts[1].trim(), ignoreCase = true)
-                                } else false
-                            }
                             condition == "non_empty" -> {
+                                val combined = "${agentResult ?: ""} $observation $lastToolOutput".trim()
                                 combined.isNotEmpty() && !combined.equals("null", ignoreCase = true)
                             }
-                            condition == "always_true" -> true
-                            else -> agentResult != null || lastToolOutput.isNotBlank()
+                            condition == "always_true" -> {
+                                agentResult != null || observation.isNotBlank() || lastToolOutput.isNotBlank()
+                            }
+                            else -> {
+                                agentResult != null
+                            }
                         }
 
                         context.setVariable("isVerified", isVerified)
@@ -315,217 +300,93 @@ class NodalEngine(
                     }
 
                     NodeType.RETRY -> {
-                        val maxRetries = (currentNode.config["maxRetries"] as? Number)?.toInt() ?: 3
-                        val targetNodeId = currentNode.config["targetNodeId"]?.toString()
-                        var retryCount = 0
-                        var succeeded = false
-
-                        if (targetNodeId != null) {
-                            val targetNode = workflow.getNode(targetNodeId)
-                            if (targetNode != null) {
-                                while (retryCount < maxRetries && !succeeded) {
-                                    retryCount++
-                                    try {
-                                        val agent = targetNode.config["agent"]?.toString()
-                                            ?: context.getVariable("targetAgent")?.toString() ?: "BrowserAgent"
-                                        val req = AgentRequest(
-                                            sourceAgent = "RetryNode",
-                                            targetAgent = agent,
-                                            action = targetNode.config["action"]?.toString() ?: "execute_task"
-                                        )
-                                        val res = dispatchAgent(agent, req)
-                                        if (res.isSuccess) {
-                                            succeeded = true
-                                            context.setVariable("agentResult", res.data)
-                                            context.setVariable("lastOutput", res.data)
-                                        }
-                                    } catch (_: Exception) {}
-                                }
-                            }
-                        }
-                        context.setVariable("retryAttempts", retryCount)
-                        context.setVariable("retrySuccess", succeeded)
-                        nodeOutputSummary = "Retry checkpoint reached (attempts=$retryCount, success=$succeeded)"
+                        nodeOutputSummary = "Retry checkpoint reached"
                     }
 
                     NodeType.FALLBACK -> {
-                        val fallbackAgent = currentNode.config["fallbackAgent"]?.toString()
-                        val fallbackTool = currentNode.config["fallbackTool"]?.toString()
-                        val fallbackValue = currentNode.config["fallbackValue"]?.toString() ?: "Fallback execution succeeded"
-
-                        var fallbackResult: Any? = fallbackValue
-                        if (fallbackAgent != null) {
-                            val req = AgentRequest(
-                                sourceAgent = "FallbackNode",
-                                targetAgent = fallbackAgent,
-                                action = currentNode.config["action"]?.toString() ?: "execute_task",
-                                parameters = mapOf("goal" to (context.getVariable("goal")?.toString() ?: queryArg))
-                            )
-                            val res = dispatchAgent(fallbackAgent, req)
-                            fallbackResult = res.data ?: fallbackValue
-                        } else if (fallbackTool != null) {
-                            val tRes = ToolRegistry.global.executeMediated(fallbackTool, emptyMap(), "FallbackNode")
-                            fallbackResult = tRes.data ?: fallbackValue
-                        }
-
-                        context.setVariable("fallbackResult", fallbackResult)
-                        context.setVariable("agentResult", fallbackResult)
-                        context.setVariable("lastOutput", fallbackResult)
-                        nodeOutputSummary = "Fallback handler invoked: ${fallbackResult.toString().take(60)}"
+                        nodeOutputSummary = "Fallback handler invoked"
                     }
 
                     NodeType.PARALLEL -> {
-                        val actions = (currentNode.config["actions"] as? List<*>) ?: emptyList<Any>()
-                        val parallelOutputs = mutableListOf<Any?>()
-
-                        if (actions.isNotEmpty()) {
-                            coroutineScope {
-                                val deferreds = actions.map { actionItem ->
-                                    async {
-                                        if (actionItem is Map<*, *>) {
-                                            val tool = actionItem["tool"]?.toString()
-                                            val agent = actionItem["agent"]?.toString()
-                                            if (tool != null) {
-                                                @Suppress("UNCHECKED_CAST")
-                                                val params = (actionItem["params"] as? Map<String, Any?>) ?: emptyMap()
-                                                val tRes = ToolRegistry.global.executeMediated(tool, params, "ParallelNode")
-                                                tRes.data ?: if (tRes.success) "Success" else "Failed: ${tRes.error}"
-                                            } else if (agent != null) {
-                                                val req = AgentRequest(
-                                                    sourceAgent = "ParallelNode",
-                                                    targetAgent = agent,
-                                                    action = actionItem["action"]?.toString() ?: "execute_task",
-                                                    parameters = (actionItem["parameters"] as? Map<String, Any?>) ?: emptyMap()
-                                                )
-                                                dispatchAgent(agent, req).data
-                                            } else {
-                                                actionItem.toString()
-                                            }
-                                        } else {
-                                            actionItem.toString()
-                                        }
-                                    }
-                                }
-                                parallelOutputs.addAll(deferreds.awaitAll())
-                            }
-                        } else {
-                            val outgoingConns = workflow.getOutgoingConnections(currentNode.id)
-                            if (outgoingConns.isNotEmpty()) {
-                                coroutineScope {
-                                    val branchJobs = outgoingConns.map { conn ->
-                                        async {
-                                            val targetNode = workflow.getNode(conn.toNodeId)
-                                            targetNode?.name ?: conn.toNodeId
-                                        }
-                                    }
-                                    parallelOutputs.addAll(branchJobs.awaitAll())
-                                }
-                            }
-                        }
-
-                        context.setVariable("parallelResults", parallelOutputs)
-                        context.setVariable("lastOutput", parallelOutputs)
-                        nodeOutputSummary = "Parallel fork evaluated with ${parallelOutputs.size} branches"
+                        nodeOutputSummary = "Parallel fork evaluated"
                     }
 
                     NodeType.SEQUENCE -> {
-                        val steps = (currentNode.config["steps"] as? List<*>) ?: emptyList<Any>()
-                        val seqResults = mutableListOf<Any?>()
-                        for (step in steps) {
-                            if (step is Map<*, *>) {
-                                val tool = step["tool"]?.toString()
-                                if (tool != null) {
-                                    @Suppress("UNCHECKED_CAST")
-                                    val params = (step["params"] as? Map<String, Any?>) ?: emptyMap()
-                                    val r = ToolRegistry.global.executeMediated(tool, params, "SequenceNode")
-                                    seqResults.add(r.data ?: if (r.success) "Success" else "Failed")
-                                } else {
-                                    seqResults.add(step.toString())
-                                }
-                            } else {
-                                seqResults.add(step.toString())
-                            }
-                        }
-                        context.setVariable("sequenceResults", seqResults)
-                        context.setVariable("lastOutput", seqResults)
-                        nodeOutputSummary = "Sequence segment evaluated with ${steps.size} steps"
+                        nodeOutputSummary = "Sequence segment evaluated"
                     }
 
                     NodeType.LOOP -> {
-                        val maxIterations = ((currentNode.config["maxIterations"] as? Number)?.toInt() ?: 50).coerceAtMost(50)
-                        val configuredIterations = (currentNode.config["iterations"] as? Number)?.toInt()
-                        val itemsList = (currentNode.config["items"] as? List<*>)
-                            ?: (context.getVariable("loopItems") as? List<*>)
-                            ?: (context.getVariable("parallelResults") as? List<*>)
-
-                        val totalToRun = (itemsList?.size ?: configuredIterations ?: 3).coerceAtMost(maxIterations)
-                        val loopResults = mutableListOf<Any?>()
-                        val subTool = currentNode.config["tool"]?.toString()
-                        val subAction = currentNode.config["action"]?.toString()
-
-                        for (i in 0 until totalToRun) {
-                            val currentItem = itemsList?.getOrNull(i) ?: i
-                            context.setVariable("loopIndex", i)
-                            context.setVariable("loopItem", currentItem)
-
-                            if (subTool != null) {
-                                val toolRes = ToolRegistry.global.executeMediated(
-                                    subTool,
-                                    mapOf("item" to currentItem, "index" to i),
-                                    "LoopNode"
-                                )
-                                loopResults.add(toolRes.data ?: if (toolRes.success) "Success" else "Error")
-                            } else if (subAction != null) {
-                                loopResults.add("Processed item $i: $currentItem")
-                            } else {
-                                loopResults.add(currentItem)
-                            }
-                        }
-
-                        context.setVariable("loopResults", loopResults)
-                        context.setVariable("lastOutput", loopResults)
-                        nodeOutputSummary = "Loop completed $totalToRun iterations (capped at $maxIterations)"
+                        nodeOutputSummary = "Loop condition evaluated"
                     }
 
                     NodeType.RESULT, NodeType.RESULT_NODE -> {
-                        val synthesis = context.getVariable("finalResult")?.toString()
-                            ?: context.getVariable("agentResult")?.toString()
+                        val synthesis = context.getVariable("agentResult")?.toString()
                             ?: context.getVariable("lastToolOutput")?.toString()
-                            ?: context.getVariable("lastOutput")?.toString()
                             ?: "Workflow '${workflow.name}' completed successfully."
                         context.setVariable("finalResult", synthesis)
                         nodeOutputSummary = "Synthesis: ${synthesis.take(60)}"
                     }
 
                     NodeType.CONDITION, NodeType.CONDITION_NODE -> {
-                        val variableName = currentNode.config["variable"]?.toString() ?: "isVerified"
-                        val operator = currentNode.config["operator"]?.toString() ?: "is_true"
+                        val ruleId = currentNode.config["ruleId"]?.toString()
+                        val expr = currentNode.config["expression"]?.toString() ?: currentNode.config["condition"]?.toString()
+                        val variableName = currentNode.config["variable"]?.toString() ?: "agentResult"
+                        val operatorStr = currentNode.config["operator"]?.toString() ?: "IS_NOT_EMPTY"
                         val expectedValue = currentNode.config["value"]?.toString()
-                        val varValue = context.getVariable(variableName)
 
-                        val conditionPassed = when (operator.lowercase()) {
-                            "is_true" -> (varValue as? Boolean) == true || varValue?.toString()?.equals("true", ignoreCase = true) == true
-                            "is_false" -> (varValue as? Boolean) == false || varValue?.toString()?.equals("false", ignoreCase = true) == true
-                            "equals" -> varValue?.toString() == expectedValue
-                            "not_equals" -> varValue?.toString() != expectedValue
-                            "contains" -> varValue?.toString()?.contains(expectedValue ?: "", ignoreCase = true) == true
-                            "greater_than" -> {
-                                val num = varValue?.toString()?.toDoubleOrNull() ?: 0.0
-                                val target = expectedValue?.toDoubleOrNull() ?: 0.0
-                                num > target
+                        val evalCondition: Boolean = if (!ruleId.isNullOrBlank()) {
+                            val rule = ruleEngine.getRule(ruleId)
+                            if (rule != null) {
+                                val ruleContext = com.example.agent.rules.RuleContext(
+                                    event = com.example.agent.rules.RuleEvents.NODE_STARTED,
+                                    request = com.example.agent.rules.RuleRequestContext(
+                                        goal = context.rawInput,
+                                        command = command,
+                                        queryArg = queryArg,
+                                        rawInput = context.rawInput
+                                    ),
+                                    node = com.example.agent.rules.RuleNodeContext(
+                                        id = currentNode.id,
+                                        type = currentNode.type.name,
+                                        name = currentNode.name
+                                    ),
+                                    variables = context.variables
+                                )
+                                com.example.agent.rules.ConditionEvaluator.evaluate(rule.conditions, ruleContext)
+                            } else false
+                        } else if (!expr.isNullOrBlank() || !expectedValue.isNullOrBlank()) {
+                            val ruleContext = com.example.agent.rules.RuleContext(
+                                event = com.example.agent.rules.RuleEvents.NODE_STARTED,
+                                request = com.example.agent.rules.RuleRequestContext(
+                                    goal = context.rawInput,
+                                    command = command,
+                                    queryArg = queryArg,
+                                    rawInput = context.rawInput
+                                ),
+                                variables = context.variables
+                            )
+                            val op = try {
+                                com.example.agent.rules.ConditionOperator.valueOf(operatorStr)
+                            } catch (e: Exception) {
+                                com.example.agent.rules.ConditionOperator.CONTAINS
                             }
-                            "less_than" -> {
-                                val num = varValue?.toString()?.toDoubleOrNull() ?: 0.0
-                                val target = expectedValue?.toDoubleOrNull() ?: 0.0
-                                num < target
-                            }
-                            "non_empty" -> varValue != null && varValue.toString().isNotBlank()
-                            else -> (varValue as? Boolean) == true || (varValue != null && varValue.toString().isNotBlank())
+                            com.example.agent.rules.ConditionEvaluator.evaluateCondition(
+                                com.example.agent.rules.SingleCondition(
+                                    field = "variables.$variableName",
+                                    operator = op,
+                                    value = expectedValue ?: expr
+                                ),
+                                ruleContext
+                            )
+                        } else {
+                            val v = context.getVariable(variableName)?.toString() ?: ""
+                            v.isNotBlank() && !v.equals("null", ignoreCase = true)
                         }
 
-                        context.setVariable("conditionResult", conditionPassed)
-                        context.setVariable("${currentNode.id}_result", conditionPassed)
-                        nodeOutputSummary = "Branch evaluated ($variableName $operator ${expectedValue ?: ""}): $conditionPassed"
+                        val branchPort = if (evalCondition) "true" else "false"
+                        context.setVariable("conditionResult", evalCondition)
+                        context.setVariable("activeBranch", branchPort)
+                        nodeOutputSummary = "Condition evaluated: $evalCondition -> branch '$branchPort'"
                     }
                 }
             } catch (e: Exception) {
@@ -546,40 +407,21 @@ class NodalEngine(
             executedNodeIds.add(currentNode.id)
 
             if (nodeError != null) {
-                // Check if an explicit fallback branch exists
-                val fallbackConn = workflow.getOutgoingConnections(currentNode.id).find { conn ->
-                    val target = workflow.getNode(conn.toNodeId)
-                    target?.type == NodeType.FALLBACK ||
-                            conn.outputPort.equals("fallback", ignoreCase = true) ||
-                            conn.outputPort.equals("error", ignoreCase = true)
-                }
-                if (fallbackConn != null) {
-                    val fbNode = workflow.getNode(fallbackConn.toNodeId)
-                    if (fbNode != null && !executedNodeIds.contains(fbNode.id)) {
-                        queue.add(fbNode)
-                        continue
-                    }
-                }
                 break
             }
 
-            // Find next connected nodes with condition routing
+            // Find next connected nodes, honoring condition branching ports (true / false)
             val outgoing = workflow.getOutgoingConnections(currentNode.id)
-            val nextConnections = if (currentNode.type == NodeType.CONDITION || currentNode.type == NodeType.CONDITION_NODE) {
-                val conditionPassed = context.getVariable("conditionResult") as? Boolean ?: true
-                val filtered = outgoing.filter { conn ->
-                    when (conn.outputPort.lowercase()) {
-                        "true", "then" -> conditionPassed
-                        "false", "else" -> !conditionPassed
-                        else -> true
+            val isBranching = currentNode.type == NodeType.CONDITION || currentNode.type == NodeType.CONDITION_NODE
+            val activeBranch = context.getVariable("activeBranch")?.toString() ?: "true"
+
+            for (conn in outgoing) {
+                if (isBranching) {
+                    val port = conn.outputPort.lowercase()
+                    if (port != "out" && port != activeBranch) {
+                        continue // Skip unselected branch
                     }
                 }
-                if (filtered.isNotEmpty()) filtered else outgoing
-            } else {
-                outgoing.filter { it.outputPort != "fallback" && it.outputPort != "error" }
-            }
-
-            for (conn in nextConnections) {
                 val nextNode = workflow.getNode(conn.toNodeId)
                 if (nextNode != null && !executedNodeIds.contains(nextNode.id)) {
                     queue.add(nextNode)
@@ -587,13 +429,12 @@ class NodalEngine(
             }
         }
 
-        val lastExecuted = context.stepLogs.lastOrNull()
-        val hasFatalError = lastExecuted?.error != null || context.getVariable("isVerified") == false
+        val hasErrors = context.stepLogs.any { it.error != null }
         return NodalWorkflowResult(
             workflowId = workflow.id,
-            success = !hasFatalError && !context.isCancelled,
-            finalOutput = context.getVariable("finalResult") ?: context.getVariable("agentResult") ?: context.getVariable("lastOutput"),
-            error = if (hasFatalError) lastExecuted?.error ?: "Workflow outcome verification failed" else null,
+            success = !hasErrors && !context.isCancelled,
+            finalOutput = context.getVariable("finalResult") ?: context.getVariable("agentResult"),
+            error = context.stepLogs.find { it.error != null }?.error,
             logs = context.stepLogs,
             durationMs = System.currentTimeMillis() - startTime
         )

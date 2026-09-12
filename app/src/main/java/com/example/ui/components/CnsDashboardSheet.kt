@@ -52,6 +52,7 @@ private val CnsTextMuted = Color(0xFF8B949E)
 
 enum class CnsDashboardTab(val label: String, val icon: String) {
     AGENTS("Agents", "🤖"),
+    RULES("Rule Engine & Gems", "💎"),
     SAFETY("Safety Systems", "🛡️"),
     MEMORY("Memory & Scopes", "🧬"),
     WORKFLOWS("Nodal Workflows", "⚡")
@@ -264,6 +265,7 @@ fun CnsDashboardSheet(
             ) {
                 when (selectedTab) {
                     CnsDashboardTab.AGENTS -> AgentsMatrixTab(agentRegistry, cns)
+                    CnsDashboardTab.RULES -> RuleEngineTab(ruleEngine = cns.declarativeRuleEngine)
                     CnsDashboardTab.SAFETY -> BiologicalSafetyTab(cns) { diag -> diagnosticResult = diag }
                     CnsDashboardTab.MEMORY -> MemoryScopesTab(contextRouter, runtimeState)
                     CnsDashboardTab.WORKFLOWS -> NodalWorkflowsTab(nodalEngine)

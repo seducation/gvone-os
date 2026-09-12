@@ -1,6 +1,6 @@
 {
   "name": "GVONE Browser",
-  "description": "Next-generation browser with Gemini AI Search, Connector Hub (Drive, GitHub, Slack, Notion, Dropbox), Research Workspace with auto-citations & evidence maps, Data Saver extension, and unified Communication Hub.",
+  "description": "Next-generation autonomous workspace browser featuring Gemini AI Search, CNS Decision Engine with Gemini Gems dashboard for global and chat-specific execution, Connector Hub, and deterministic safety rules.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -60,7 +60,8 @@ class CentralNervousSystem(
     val contextRouter: ContextRouter = ContextRouter.global,
     val nodalEngine: NodalEngine = NodalEngine.global,
     val plannerEngine: com.example.agent.nodal.PlannerEngine = com.example.agent.nodal.PlannerEngine.global,
-    val ruleEngine: com.example.agent.safety.RuleEngine = com.example.agent.safety.RuleEngine.global
+    val ruleEngine: com.example.agent.safety.RuleEngine = com.example.agent.safety.RuleEngine.global,
+    val declarativeRuleEngine: com.example.agent.rules.RuleEngine = com.example.agent.rules.RuleEngine.global
 ) : AgentOrchestrator {
     private val _isBusy = MutableStateFlow(false)
     val isBusy: StateFlow<Boolean> = _isBusy.asStateFlow()
@@ -149,15 +150,27 @@ class CentralNervousSystem(
                 )
             }
 
-            // 3. Declarative Rule Engine Screening
-            val ruleCheck = ruleEngine.evaluate(
-                com.example.agent.safety.RuleEvaluationContext(
+            // 3. Declarative Rule Engine Evaluation
+            val firstToken = userGoal.trim().split("\\s+".toRegex()).firstOrNull() ?: ""
+            val isCommand = firstToken.startsWith("/")
+            val evalEvent = if (isCommand) com.example.agent.rules.RuleEvents.COMMAND_PARSED else com.example.agent.rules.RuleEvents.REQUEST_RECEIVED
+            val ruleCtx = com.example.agent.rules.RuleContext(
+                event = evalEvent,
+                request = com.example.agent.rules.RuleRequestContext(
                     goal = userGoal,
+                    command = if (isCommand) firstToken else "",
+                    queryArg = userGoal.removePrefix(firstToken).trim(),
+                    rawInput = userGoal,
                     caller = "CNS"
-                )
+                ),
+                permissions = permissionSystem.getGrantedPermissions(),
+                availableAgents = agentRegistry.getAllAgents().map { it.identity() }
             )
-            if (!ruleCheck.allowed) {
-                val errorMsg = "Blocked by Safety Policy: ${ruleCheck.matchedRule?.name ?: "Policy constraint"}"
+            val (ruleTrace, _) = declarativeRuleEngine.evaluateAndExecute(ruleCtx)
+
+            if (ruleCtx.isExecutionHalted()) {
+                val errorMsg = ruleCtx.variables["haltReason"]?.toString()
+                    ?: "Blocked by Safety Policy: ${ruleTrace.selectedRule?.name ?: "Policy constraint"}"
                 logger.logInstant("CNS", StepType.ERROR, errorMsg, StepStatus.FAILED)
                 uiBridge.emit(AgentUiEvent.ShowError("CNS", errorMsg, canRetry = false))
                 runtimeState.failTask(task.taskId, errorMsg)
@@ -174,24 +187,49 @@ class CentralNervousSystem(
                 )
             }
 
-            // 4. Resolve or plan workflow graph via PlannerEngine (or specialized multi-agent workflow)
-            val lowerGoal = userGoal.lowercase()
+            // 4. Resolve or plan workflow graph via Rule Engine, NodalEngine, or PlannerEngine
+            @Suppress("UNCHECKED_CAST")
+            val rulePipeline = ruleCtx.variables["sequentialPipeline"] as? List<String>
+            val ruleTargetWorkflow = ruleCtx.variables["targetWorkflowId"]?.toString()
+            val ruleTargetAgent = ruleCtx.variables["targetAgent"]?.toString()
+
             val rawSynthesis: String = when {
-                lowerGoal.contains("compare") && (lowerGoal.contains("pdf") || lowerGoal.contains("document") || lowerGoal.contains("file") || lowerGoal.contains("website") || lowerGoal.contains("webpage")) -> {
-                    participants.add("WebReviewAgent")
-                    participants.add("FileAgent")
-                    recordTaskStep(task.taskId, 1, "Extract web and document content for comparison", "WebReviewAgent+FileAgent")
-                    executeDocumentWebComparisonWorkflow(workflowId, userGoal, subResults)
+                // Rule-orchestrated sequential pipeline (e.g. document & web comparison)
+                rulePipeline != null && rulePipeline.isNotEmpty() -> {
+                    participants.addAll(rulePipeline)
+                    recordTaskStep(task.taskId, 1, "Executing Rule-Orchestrated Pipeline: ${rulePipeline.joinToString(" -> ")}", rulePipeline.first())
+                    if (rulePipeline.contains("WebReviewAgent") && rulePipeline.contains("FileAgent")) {
+                        executeDocumentWebComparisonWorkflow(workflowId, userGoal, subResults)
+                    } else {
+                        var intermediate = userGoal
+                        for (agentName in rulePipeline) {
+                            val req = AgentRequest(
+                                sourceAgent = "CNS",
+                                targetAgent = agentName,
+                                action = "process",
+                                parameters = mapOf("input" to intermediate, "goal" to userGoal)
+                            )
+                            val agentRes = dispatchToAgent(agentName, req)
+                            subResults[agentName] = agentRes
+                            if (agentRes.isSuccess && agentRes.data != null) {
+                                intermediate = agentRes.data.toString()
+                            }
+                        }
+                        intermediate
+                    }
                 }
                 else -> {
-                    val firstToken = userGoal.trim().split("\\s+".toRegex()).firstOrNull() ?: ""
-                    val commandWorkflow = if (firstToken.startsWith("/")) nodalEngine.findWorkflowForCommand(firstToken) else null
+                    val commandWorkflow = if (isCommand) {
+                        nodalEngine.findWorkflowForCommand(firstToken)
+                    } else if (ruleTargetWorkflow != null) {
+                        nodalEngine.getWorkflow(ruleTargetWorkflow)
+                    } else null
 
                     val (workflowToRun, primaryAgent) = if (commandWorkflow != null) {
-                        Pair(commandWorkflow, "CommandAgent")
+                        Pair(commandWorkflow, ruleTargetAgent ?: "CommandAgent")
                     } else {
                         val plan = plannerEngine.createPlan(userGoal)
-                        val assigned = plan.steps.firstOrNull()?.assignedAgent ?: "BrowserAgent"
+                        val assigned = ruleTargetAgent ?: plan.steps.firstOrNull()?.assignedAgent ?: "BrowserAgent"
                         Pair(plan.workflow, assigned)
                     }
 

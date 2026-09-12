@@ -81,8 +81,108 @@ class RuleEngine {
 
     /**
      * Evaluates all registered rules in priority order against a given context.
+     * Integrates with the declarative GVONE com.example.agent.rules.RuleEngine.
      */
     fun evaluate(context: RuleEvaluationContext): RuleEvaluationResult {
+        // First check declarative RuleEngine rules
+        val declarativeEngine = com.example.agent.rules.RuleEngine.global
+        val ruleCtx = com.example.agent.rules.RuleContext(
+            event = com.example.agent.rules.RuleEvents.REQUEST_RECEIVED,
+            request = com.example.agent.rules.RuleRequestContext(
+                goal = context.goal,
+                caller = context.caller,
+                rawInput = context.goal
+            ),
+            candidateAgent = context.candidateAgent,
+            tools = com.example.agent.rules.RuleToolContext(toolName = context.toolName),
+            permissions = context.permissionsAvailable,
+            metadata = context.metadata
+        )
+
+        val trace = declarativeEngine.evaluate(ruleCtx)
+        val selectedRule = trace.selectedRule
+        if (selectedRule != null) {
+            val abortAction = selectedRule.actions.find { it.type == com.example.agent.rules.RuleActionTypes.STOP_EXECUTION }
+            val permAction = selectedRule.actions.find { it.type == com.example.agent.rules.RuleActionTypes.REQUEST_APPROVAL }
+            val fallbackAction = selectedRule.actions.find { it.type == com.example.agent.rules.RuleActionTypes.FALLBACK }
+            val routeAction = selectedRule.actions.find { it.type == com.example.agent.rules.RuleActionTypes.ROUTE_AGENT }
+
+            if (abortAction != null) {
+                val legacyDef = RuleDefinition(
+                    ruleId = selectedRule.id,
+                    name = selectedRule.name,
+                    description = selectedRule.description,
+                    priority = selectedRule.priority,
+                    condition = { true },
+                    actionType = RuleActionType.ABORT_EXECUTION
+                )
+                return RuleEvaluationResult(
+                    matchedRule = legacyDef,
+                    actionType = RuleActionType.ABORT_EXECUTION,
+                    targetAgent = null,
+                    requiredPermission = null,
+                    fallbackTarget = null,
+                    allowed = false
+                )
+            } else if (permAction != null) {
+                val perm = permAction.parameters["permission"]?.toString() ?: PermissionSystem.PERM_SHELL_EXECUTE
+                val legacyDef = RuleDefinition(
+                    ruleId = selectedRule.id,
+                    name = selectedRule.name,
+                    description = selectedRule.description,
+                    priority = selectedRule.priority,
+                    condition = { true },
+                    actionType = RuleActionType.REQUIRE_PERMISSION,
+                    requiredPermission = perm
+                )
+                return RuleEvaluationResult(
+                    matchedRule = legacyDef,
+                    actionType = RuleActionType.REQUIRE_PERMISSION,
+                    targetAgent = null,
+                    requiredPermission = perm,
+                    fallbackTarget = null,
+                    allowed = context.permissionsAvailable.contains(perm)
+                )
+            } else if (fallbackAction != null) {
+                val legacyDef = RuleDefinition(
+                    ruleId = selectedRule.id,
+                    name = selectedRule.name,
+                    description = selectedRule.description,
+                    priority = selectedRule.priority,
+                    condition = { true },
+                    actionType = RuleActionType.FALLBACK_AGENT,
+                    fallbackTarget = fallbackAction.target
+                )
+                return RuleEvaluationResult(
+                    matchedRule = legacyDef,
+                    actionType = RuleActionType.FALLBACK_AGENT,
+                    targetAgent = null,
+                    requiredPermission = null,
+                    fallbackTarget = fallbackAction.target,
+                    allowed = true
+                )
+            } else if (routeAction != null) {
+                val legacyDef = RuleDefinition(
+                    ruleId = selectedRule.id,
+                    name = selectedRule.name,
+                    description = selectedRule.description,
+                    priority = selectedRule.priority,
+                    condition = { true },
+                    actionType = RuleActionType.ROUTE_TO_AGENT,
+                    targetAgent = routeAction.target
+                )
+                return RuleEvaluationResult(
+                    matchedRule = legacyDef,
+                    actionType = RuleActionType.ROUTE_TO_AGENT,
+                    targetAgent = routeAction.target,
+                    requiredPermission = null,
+                    fallbackTarget = null,
+                    allowed = true
+                )
+            }
+        }
+
+        // Check local legacy rules
         for (rule in rules) {
             if (rule.condition(context)) {
                 return RuleEvaluationResult(
