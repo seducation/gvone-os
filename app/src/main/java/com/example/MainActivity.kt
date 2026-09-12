@@ -134,6 +134,10 @@ fun BrowserApp(
     val customCommands by viewModel.customCommands.collectAsStateWithLifecycle()
     val addressBarInput by viewModel.addressBarInput.collectAsStateWithLifecycle()
 
+    val showSuggestions by viewModel.showSuggestions.collectAsStateWithLifecycle()
+    val showCommandPalette by viewModel.showCommandPalette.collectAsStateWithLifecycle()
+    val suggestions by viewModel.suggestions.collectAsStateWithLifecycle()
+
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -212,6 +216,9 @@ fun BrowserApp(
     BackHandler(enabled = activeSheet != ActiveSheet.None) {
         viewModel.closeSheet()
     }
+    BackHandler(enabled = showSuggestions && activeSheet == ActiveSheet.None) {
+        viewModel.closeSuggestions()
+    }
 
     Box(
         modifier = Modifier
@@ -254,6 +261,10 @@ fun BrowserApp(
                                 onReorderObjects = { viewModel.reorderCanvasObjects(it) },
                                 onUpdateBackground = { viewModel.updateCanvasBackground(it) },
                                 onUpdateLayoutMode = { viewModel.updateCanvasLayoutMode(it) },
+                                showSuggestions = showSuggestions,
+                                suggestions = suggestions,
+                                onExecuteSuggestion = { viewModel.executeSuggestion(it) },
+                                onCloseSuggestions = { viewModel.closeSuggestions() },
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else if (tab.url.startsWith("gvone-file://")) {
@@ -424,6 +435,12 @@ fun BrowserApp(
                 currentEnvironmentName = currentEnvironment.name,
                 addressBarInput = addressBarInput,
                 onAddressBarInputChange = { viewModel.setAddressBarInput(it) },
+                showSuggestions = showSuggestions,
+                showCommandPalette = showCommandPalette,
+                onToggleSuggestions = { viewModel.toggleSuggestions() },
+                onCloseSuggestions = { viewModel.closeSuggestions() },
+                onOpenCommandPalette = { viewModel.openCommandPalette() },
+                onCloseCommandPalette = { viewModel.closeCommandPalette() },
                 modifier = Modifier
                     .align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
                     .onGloballyPositioned { coordinates ->

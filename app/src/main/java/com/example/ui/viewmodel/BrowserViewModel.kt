@@ -245,6 +245,74 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _findCurrentIndex = MutableStateFlow(0)
     val findCurrentIndex: StateFlow<Int> = _findCurrentIndex.asStateFlow()
 
+    // Proactive Suggestions UI & Slash-Command Palette States (Mutually Exclusive Interaction Systems)
+    private val _showSuggestions = MutableStateFlow(false)
+    val showSuggestions: StateFlow<Boolean> = _showSuggestions.asStateFlow()
+
+    private val _showCommandPalette = MutableStateFlow(false)
+    val showCommandPalette: StateFlow<Boolean> = _showCommandPalette.asStateFlow()
+
+    private val _suggestions = MutableStateFlow<List<com.example.data.model.Suggestion>>(
+        com.example.data.model.DefaultSuggestions.items
+    )
+    val suggestions: StateFlow<List<com.example.data.model.Suggestion>> = _suggestions.asStateFlow()
+
+    fun openSuggestions() {
+        _showSuggestions.value = true
+        _showCommandPalette.value = false
+    }
+
+    fun closeSuggestions() {
+        _showSuggestions.value = false
+    }
+
+    fun toggleSuggestions() {
+        if (_showSuggestions.value) {
+            _showSuggestions.value = false
+        } else {
+            _showSuggestions.value = true
+            _showCommandPalette.value = false
+        }
+    }
+
+    fun openCommandPalette() {
+        _showCommandPalette.value = true
+        _showSuggestions.value = false
+    }
+
+    fun closeCommandPalette() {
+        _showCommandPalette.value = false
+    }
+
+    fun executeSuggestion(suggestion: com.example.data.model.Suggestion) {
+        closeSuggestions()
+        when (val action = suggestion.action) {
+            is com.example.data.model.SuggestionAction.OpenSheet -> {
+                when (action.sheetName) {
+                    "AgentDashboard" -> openSheet(ActiveSheet.AgentDashboard)
+                    "CustomCommands" -> openSheet(ActiveSheet.CustomCommands)
+                    "ResearchWorkspace" -> openSheet(ActiveSheet.ResearchWorkspace)
+                    "CommunicationHub" -> openSheet(ActiveSheet.CommunicationHub)
+                    "DataSaver" -> openSheet(ActiveSheet.DataSaver)
+                    "TorDiagnostics" -> openSheet(ActiveSheet.TorDiagnostics)
+                    else -> appendTerminalLine("[SUGGESTION] Opened sheet: ${action.sheetName}", TerminalLineType.INFO)
+                }
+            }
+            is com.example.data.model.SuggestionAction.RunGoal -> {
+                appendTerminalLine("[AGENT CNS] Executing goal from suggestions: \"${action.goal}\"", TerminalLineType.INFO)
+                viewModelScope.launch {
+                    com.example.agent.cns.CentralNervousSystem.global.orchestrateGoal(action.goal)
+                }
+            }
+            is com.example.data.model.SuggestionAction.Navigate -> {
+                loadUrlInCurrentTab(action.url)
+            }
+            is com.example.data.model.SuggestionAction.Custom -> {
+                appendTerminalLine("[SUGGESTION] Triggered: ${action.actionId}", TerminalLineType.INFO)
+            }
+        }
+    }
+
     // Custom Commands State
     val customCommands: StateFlow<List<CustomCommandEntity>> = repository.customCommands.stateIn(
         viewModelScope,

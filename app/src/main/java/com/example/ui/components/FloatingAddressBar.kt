@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.command.CommandEngine
 import com.example.data.model.*
 import com.example.data.sync.PageContextDetector
+import com.example.ui.components.suggestions.SuggestionsButton
 import com.example.ui.theme.*
 
 /**
@@ -110,6 +111,12 @@ fun FloatingAddressBar(
     currentEnvironmentName: String = "Default",
     addressBarInput: String = "",
     onAddressBarInputChange: ((String) -> Unit)? = null,
+    showSuggestions: Boolean = false,
+    showCommandPalette: Boolean = false,
+    onToggleSuggestions: () -> Unit = {},
+    onCloseSuggestions: () -> Unit = {},
+    onOpenCommandPalette: () -> Unit = {},
+    onCloseCommandPalette: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -295,13 +302,14 @@ fun FloatingAddressBar(
         ) {
             if (isBottom) {
                 AnimatedVisibility(
-                    visible = isFocused && commandSuggestions.isNotEmpty(),
+                    visible = showCommandPalette && isFocused && commandSuggestions.isNotEmpty(),
                     enter = fadeIn() + slideInVertically { it / 2 },
                     exit = fadeOut() + slideOutVertically { it / 2 }
                 ) {
                     CommandAutocompletePopup(
                         suggestions = commandSuggestions,
                         onSelectSuggestion = { suggestion, executeNow ->
+                            onCloseCommandPalette()
                             if (executeNow) {
                                 val arg = suggestion.queryArgument
                                 val runStr = if (arg.isNotEmpty()) "${suggestion.matchedTrigger} $arg" else suggestion.matchedTrigger
@@ -582,6 +590,12 @@ fun FloatingAddressBar(
                                         onValueChange = { newText ->
                                             inputText = newText
                                             onAddressBarInputChange?.invoke(newText)
+                                            if (newText.startsWith("/")) {
+                                                onCloseSuggestions()
+                                                onOpenCommandPalette()
+                                            } else if (newText.isBlank()) {
+                                                onCloseCommandPalette()
+                                            }
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -779,7 +793,7 @@ fun FloatingAddressBar(
                     }
                 }
 
-                // 3. RIGHT CIRCULAR BUTTON: Safari Three-Dot "More" Actions Menu
+                // 3. RIGHT CIRCULAR BUTTON: Suggestions Bulb (Home Screen) / Safari Actions Menu
                 Box(
                     modifier = Modifier
                         .width(sideButtonWidth)
@@ -787,58 +801,84 @@ fun FloatingAddressBar(
                     contentAlignment = Alignment.Center
                 ) {
                     if (sideButtonWidth > 4.dp) {
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .scale(rightScale * sideButtonsScale)
-                                .alpha(sideButtonsAlpha)
-                                .shadow(
-                                    elevation = 16.dp,
-                                    shape = CircleShape,
-                                    spotColor = Color.Black.copy(alpha = 0.6f)
-                                )
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color(0xDD222B3A),
-                                            Color(0xEE141A24)
+                        val isStartPage = currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url)
+                        if (isStartPage) {
+                            SuggestionsButton(
+                                isActive = showSuggestions,
+                                onClick = {
+                                    if (isFocused) {
+                                        focusManager.clearFocus()
+                                        isFocused = false
+                                    }
+                                    onCloseCommandPalette()
+                                    onToggleSuggestions()
+                                },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onActionsMenuClick()
+                                },
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .scale(rightScale * sideButtonsScale)
+                                    .alpha(sideButtonsAlpha)
+                                    .testTag("suggestions_button")
+                                    .testTag("bulb_button")
+                                    .testTag("safari_more_actions_button")
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .scale(rightScale * sideButtonsScale)
+                                    .alpha(sideButtonsAlpha)
+                                    .shadow(
+                                        elevation = 16.dp,
+                                        shape = CircleShape,
+                                        spotColor = Color.Black.copy(alpha = 0.6f)
+                                    )
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.verticalGradient(
+                                            colors = listOf(
+                                                Color(0xDD222B3A),
+                                                Color(0xEE141A24)
+                                            )
                                         )
                                     )
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    brush = Brush.linearGradient(
-                                        colors = listOf(
-                                            Color(0x66FFFFFF),
-                                            Color(0x11FFFFFF)
-                                        )
-                                    ),
-                                    shape = CircleShape
-                                )
-                                .combinedClickable(
-                                    interactionSource = rightButtonSource,
-                                    indication = null,
-                                    enabled = !effectivelyCompact,
-                                    onClick = {
-                                        onActionsMenuClick()
-                                    },
-                                    onLongClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        if (effectivelyCompact) {
-                                            onExpand()
-                                        } else {
-                                            onContract()
+                                    .border(
+                                        width = 1.dp,
+                                        brush = Brush.linearGradient(
+                                            colors = listOf(
+                                                Color(0x66FFFFFF),
+                                                Color(0x11FFFFFF)
+                                            )
+                                        ),
+                                        shape = CircleShape
+                                    )
+                                    .combinedClickable(
+                                        interactionSource = rightButtonSource,
+                                        indication = null,
+                                        enabled = !effectivelyCompact,
+                                        onClick = {
+                                            onActionsMenuClick()
+                                        },
+                                        onLongClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            if (effectivelyCompact) {
+                                                onExpand()
+                                            } else {
+                                                onContract()
+                                            }
                                         }
-                                    }
+                                    )
+                                    .testTag("safari_more_actions_button"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                SafariThreeDotsIcon(
+                                    color = Color(0xFFF0F3F8),
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                .testTag("safari_more_actions_button"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            SafariThreeDotsIcon(
-                                color = Color(0xFFF0F3F8),
-                                modifier = Modifier.size(20.dp)
-                            )
+                            }
                         }
                     }
                 }
@@ -847,13 +887,14 @@ fun FloatingAddressBar(
 
         if (!isBottom) {
             AnimatedVisibility(
-                visible = isFocused && commandSuggestions.isNotEmpty(),
+                visible = showCommandPalette && isFocused && commandSuggestions.isNotEmpty(),
                 enter = fadeIn() + slideInVertically { -it / 2 },
                 exit = fadeOut() + slideOutVertically { -it / 2 }
             ) {
                 CommandAutocompletePopup(
                     suggestions = commandSuggestions,
                     onSelectSuggestion = { suggestion, executeNow ->
+                        onCloseCommandPalette()
                         if (executeNow) {
                             val arg = suggestion.queryArgument
                             val runStr = if (arg.isNotEmpty()) "${suggestion.matchedTrigger} $arg" else suggestion.matchedTrigger

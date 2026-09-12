@@ -1,6 +1,7 @@
 package com.example.ui.screens.canvas
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.*
+import com.example.ui.components.suggestions.SuggestionsPanel
 
 @Composable
 fun EnvironmentStartPageCanvas(
@@ -49,8 +51,13 @@ fun EnvironmentStartPageCanvas(
     onReorderObjects: (List<CanvasObject>) -> Unit,
     onUpdateBackground: (EnvironmentBackground) -> Unit,
     onUpdateLayoutMode: (EnvironmentLayoutMode) -> Unit,
+    showSuggestions: Boolean = false,
+    suggestions: List<Suggestion> = emptyList(),
+    onExecuteSuggestion: (Suggestion) -> Unit = {},
+    onCloseSuggestions: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val scrollState = rememberScrollState()
     var showEnvSwitchSheet by remember { mutableStateOf(false) }
     var showAddLinkDialog by remember { mutableStateOf(false) }
     var showAddWidgetDialog by remember { mutableStateOf(false) }
@@ -67,6 +74,13 @@ fun EnvironmentStartPageCanvas(
     }
     val accentColor = remember(environment.background.accentColorHex) {
         parseColorSafe(environment.background.accentColorHex, Color(0xFF38BDF8))
+    }
+
+    // Auto-scroll to top when suggestions panel is opened
+    LaunchedEffect(showSuggestions) {
+        if (showSuggestions) {
+            scrollState.animateScrollTo(0)
+        }
     }
 
     // Directly open starting link if environment startPageUrl is set
@@ -129,7 +143,7 @@ fun EnvironmentStartPageCanvas(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -227,6 +241,37 @@ fun EnvironmentStartPageCanvas(
                             )
                         }
                     }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // PROACTIVE SUGGESTIONS PANEL (Rendered near top above home content)
+            // -------------------------------------------------------------
+            AnimatedVisibility(
+                visible = showSuggestions,
+                enter = fadeIn(animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)) +
+                        scaleIn(initialScale = 0.95f, animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)) +
+                        slideInVertically(initialOffsetY = { -it / 4 }, animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)) +
+                       scaleOut(targetScale = 0.95f, animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)) +
+                       slideOutVertically(targetOffsetY = { -it / 4 }, animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    SuggestionsPanel(
+                        suggestions = suggestions,
+                        onSuggestionClick = { suggestion ->
+                            onExecuteSuggestion(suggestion)
+                        },
+                        onClose = onCloseSuggestions,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = 680.dp)
+                    )
                 }
             }
 
