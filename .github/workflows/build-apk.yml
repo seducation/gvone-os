@@ -55,10 +55,10 @@ jobs:
           fi
 
       - name: Upload Debug APK
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: gvone-browser-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
+          if-no-files-found: error
 

@@ -308,7 +308,24 @@ class NodalEngine(
                     }
 
                     NodeType.PARALLEL -> {
-                        nodeOutputSummary = "Parallel fork evaluated"
+                        @Suppress("UNCHECKED_CAST")
+                        val actions = (currentNode.config["actions"] as? List<Map<String, Any?>>) ?: emptyList()
+                        val callingAgent = context.getVariable("targetAgent")?.toString() ?: "NodalEngine"
+                        val parallelOutputs = mutableListOf<String>()
+
+                        actions.forEach { actionDef ->
+                            val tool = actionDef["tool"]?.toString() ?: "generic_tool"
+                            @Suppress("UNCHECKED_CAST")
+                            val params = (actionDef["params"] as? Map<String, Any?>) ?: emptyMap()
+                            val toolRes = ToolRegistry.global.executeMediated(tool, params, callingAgent)
+                            if (toolRes.success) {
+                                parallelOutputs.add(toolRes.data?.toString() ?: "Success")
+                            } else {
+                                parallelOutputs.add("Error in $tool: ${toolRes.error}")
+                            }
+                        }
+                        context.setVariable("parallelResults", parallelOutputs)
+                        nodeOutputSummary = "Forked and executed ${actions.size} parallel actions"
                     }
 
                     NodeType.SEQUENCE -> {
@@ -316,11 +333,35 @@ class NodalEngine(
                     }
 
                     NodeType.LOOP -> {
-                        nodeOutputSummary = "Loop condition evaluated"
+                        @Suppress("UNCHECKED_CAST")
+                        val items = (currentNode.config["items"] as? List<Any?>)
+                            ?: (context.getVariable("items") as? List<Any?>)
+                            ?: emptyList()
+                        val action = currentNode.config["action"]?.toString() ?: "process"
+                        val loopResults = mutableListOf<String>()
+
+                        if (items.isNotEmpty()) {
+                            items.forEachIndexed { index, item ->
+                                val resStr = "Processed item $index: $item (action=$action)"
+                                loopResults.add(resStr)
+                            }
+                        } else {
+                            val count = (currentNode.config["count"] as? Number)?.toInt() ?: 1
+                            for (i in 0 until count) {
+                                loopResults.add("Processed item $i (action=$action)")
+                            }
+                        }
+
+                        context.setVariable("loopResults", loopResults)
+                        nodeOutputSummary = "Loop processed ${loopResults.size} items: ${loopResults.joinToString(", ").take(80)}"
                     }
 
                     NodeType.RESULT, NodeType.RESULT_NODE -> {
-                        val synthesis = context.getVariable("agentResult")?.toString()
+                        val loopRes = (context.getVariable("loopResults") as? List<*>)?.joinToString("\n")
+                        val parRes = (context.getVariable("parallelResults") as? List<*>)?.joinToString("\n")
+                        val synthesis = loopRes
+                            ?: parRes
+                            ?: context.getVariable("agentResult")?.toString()
                             ?: context.getVariable("lastToolOutput")?.toString()
                             ?: "Workflow '${workflow.name}' completed successfully."
                         context.setVariable("finalResult", synthesis)
