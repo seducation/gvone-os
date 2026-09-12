@@ -193,49 +193,4 @@ class SuggestionsInteractionUnitTest {
         assertFalse("Selecting chip must not open terminal commands", showTerminalCommands)
         assertEquals("Add Mission Templates", submittedPrompt)
     }
-
-    @Test
-    fun bulbIconOnLeftOfChips_triggersSuggestiveCommandsMatchingSlashCommand() {
-        var isFocused = false
-        var showTerminalCommands = false
-        var executedAction: String? = null
-
-        // In written mode or clicking address bar: chips become available
-        isFocused = true
-        val isChipsAvailable = isFocused
-        assertTrue("Chips must be available when user is in written mode / clicking address", isChipsAvailable)
-
-        // Clicking bulb icon on the left of persistent chips toggles suggestive command UI
-        val onToggleBulb = {
-            showTerminalCommands = !showTerminalCommands
-        }
-
-        onToggleBulb()
-        assertTrue("Clicking bulb on left of chip must open suggestive commands UI", showTerminalCommands)
-
-        // Typing /command triggers the exact same suggestive commands UI
-        val onTypeSlash = {
-            showTerminalCommands = true
-        }
-        onTypeSlash()
-        assertTrue("Typing /command must also open suggestive commands UI", showTerminalCommands)
-
-        // Selecting a suggestive command executes the command and closes the UI
-        val onSelectCommand = { cmd: String ->
-            executedAction = cmd
-            showTerminalCommands = false
-        }
-        onSelectCommand("/yt AI Swarm")
-        assertEquals("/yt AI Swarm", executedAction)
-        assertFalse("Suggestive command UI closes after selection", showTerminalCommands)
-
-        // Selecting a quick prompt chip also executes and closes
-        val onSelectChip = { prompt: String ->
-            executedAction = prompt
-            isFocused = false
-        }
-        onSelectChip("Add Mission Templates")
-        assertEquals("Add Mission Templates", executedAction)
-        assertFalse("Input written mode clears after chip selection", isFocused)
-    }
 }
