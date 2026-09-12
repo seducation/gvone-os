@@ -14,11 +14,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +25,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -535,3 +535,213 @@ fun SuggestionChip(
         }
     }
 }
+
+/**
+ * QuickPrompt data model for horizontal suggestion chips above the address bar.
+ */
+data class QuickPrompt(
+    val id: String,
+    val title: String,
+    val promptText: String,
+    val icon: ImageVector = Icons.Rounded.AutoAwesome,
+    val category: String = "Prompt"
+)
+
+object DefaultQuickPrompts {
+    val items = listOf(
+        QuickPrompt(
+            id = "mission_templates",
+            title = "Add Mission Templates",
+            promptText = "Add mission templates for autonomous execution",
+            icon = Icons.Rounded.Assignment,
+            category = "Missions"
+        ),
+        QuickPrompt(
+            id = "swarm_visualize",
+            title = "Visualize Swarm Members",
+            promptText = "Visualize all active swarm members and agents",
+            icon = Icons.Rounded.Hub,
+            category = "Swarm"
+        ),
+        QuickPrompt(
+            id = "explore_agents",
+            title = "Explore Agent Swarm",
+            promptText = "Explore available subagents and adapter capabilities",
+            icon = Icons.Rounded.SmartToy,
+            category = "Agents"
+        ),
+        QuickPrompt(
+            id = "feed_signals",
+            title = "Analyze Feed Signals",
+            promptText = "Analyze current feed signals and telemetry",
+            icon = Icons.Rounded.RssFeed,
+            category = "Signals"
+        ),
+        QuickPrompt(
+            id = "nodal_workflow",
+            title = "Run Nodal Workflow",
+            promptText = "Execute primary nodal pipeline workflow",
+            icon = Icons.Rounded.AccountTree,
+            category = "Workflows"
+        ),
+        QuickPrompt(
+            id = "diagnostics",
+            title = "System Diagnostics",
+            promptText = "Run Central Nervous System health check and diagnostics",
+            icon = Icons.Rounded.Psychology,
+            category = "CNS"
+        ),
+        QuickPrompt(
+            id = "youtube_search",
+            title = "Search YouTube",
+            promptText = "/yt ",
+            icon = Icons.Rounded.PlayCircle,
+            category = "Search"
+        ),
+        QuickPrompt(
+            id = "research_canvas",
+            title = "Open Research Canvas",
+            promptText = "Open multi-agent research workspace canvas",
+            icon = Icons.Rounded.Science,
+            category = "Research"
+        )
+    )
+}
+
+/**
+ * SuggestionChipsBar:
+ * Floating row of quick-prompt chips matching the address bar theme,
+ * with the bulb icon placed on the left of the persistent chips.
+ * No header word, no swipe arrow, and no cross button.
+ */
+@Composable
+fun SuggestionChipsBar(
+    prompts: List<QuickPrompt> = DefaultQuickPrompts.items,
+    isSuggestivePopupOpen: Boolean = false,
+    onToggleBulb: () -> Unit = {},
+    onSelectPrompt: (String) -> Unit,
+    onClose: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val scrollState = rememberScrollState()
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .widthIn(max = 440.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .testTag("floating_suggestion_chips_bar")
+            .testTag("suggestion_chips_bar")
+            .testTag("suggestion_chips_ui"),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Bulb icon on the LEFT of persistence chips
+        Surface(
+            modifier = Modifier
+                .size(36.dp)
+                .shadow(elevation = 10.dp, shape = CircleShape, spotColor = Color.Black.copy(alpha = 0.6f))
+                .clip(CircleShape)
+                .clickable { onToggleBulb() }
+                .testTag("bulb_button_left")
+                .testTag("lightbulb_icon")
+                .testTag("bulb_button"),
+            shape = CircleShape,
+            color = if (isSuggestivePopupOpen) Color(0xFF2D2312) else Color(0xEB131A24),
+            border = BorderStroke(
+                1.dp,
+                if (isSuggestivePopupOpen) Color(0xFFFBBF24) else Color(0x33FFFFFF)
+            )
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Rounded.Lightbulb,
+                    contentDescription = "Suggestions & Commands",
+                    tint = if (isSuggestivePopupOpen) Color(0xFFFBBF24) else Color(0xFFE2E8F0),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Horizontal scrollable floating chips
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            prompts.forEach { prompt ->
+                QuickPromptChip(
+                    prompt = prompt,
+                    onClick = {
+                        onSelectPrompt(prompt.promptText)
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * QuickPromptChip:
+ * Sleek floating prompt chip matching the dark glassmorphic address bar theme.
+ */
+@Composable
+fun QuickPromptChip(
+    prompt: QuickPrompt,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .height(34.dp)
+            .shadow(elevation = 8.dp, shape = RoundedCornerShape(17.dp), spotColor = Color.Black.copy(alpha = 0.4f))
+            .clip(RoundedCornerShape(17.dp))
+            .clickable { onClick() }
+            .testTag("quick_prompt_chip_${prompt.id}")
+            .testTag("suggestion_chip_${prompt.id}"),
+        shape = RoundedCornerShape(17.dp),
+        color = Color(0xEB131A24),
+        border = BorderStroke(
+            1.dp,
+            Brush.linearGradient(
+                listOf(
+                    Color(0x33FFFFFF),
+                    Color(0x1838BDF8)
+                )
+            )
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color(0xEB131A24),
+                            Color(0xF00D131C)
+                        )
+                    )
+                )
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = prompt.icon,
+                contentDescription = null,
+                tint = Color(0xFFFBBF24),
+                modifier = Modifier.size(13.dp)
+            )
+            Text(
+                text = prompt.title,
+                color = Color(0xFFF1F5F9),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1
+            )
+        }
+    }
+}
+

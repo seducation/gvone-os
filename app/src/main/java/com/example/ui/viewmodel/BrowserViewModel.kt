@@ -248,41 +248,57 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     // Proactive Suggestions UI & Slash-Command Palette States (Mutually Exclusive Interaction Systems)
     private val _showSuggestions = MutableStateFlow(false)
     val showSuggestions: StateFlow<Boolean> = _showSuggestions.asStateFlow()
+    val showSuggestionChips: StateFlow<Boolean> = _showSuggestions.asStateFlow()
 
     private val _showCommandPalette = MutableStateFlow(false)
     val showCommandPalette: StateFlow<Boolean> = _showCommandPalette.asStateFlow()
+    val showTerminalCommands: StateFlow<Boolean> = _showCommandPalette.asStateFlow()
 
     private val _suggestions = MutableStateFlow<List<com.example.data.model.Suggestion>>(
         com.example.data.model.DefaultSuggestions.items
     )
     val suggestions: StateFlow<List<com.example.data.model.Suggestion>> = _suggestions.asStateFlow()
 
-    fun openSuggestions() {
-        _showSuggestions.value = true
-        _showCommandPalette.value = false
-    }
-
-    fun closeSuggestions() {
-        _showSuggestions.value = false
-    }
-
-    fun toggleSuggestions() {
-        if (_showSuggestions.value) {
-            _showSuggestions.value = false
-        } else {
-            _showSuggestions.value = true
+    fun setShowSuggestionChips(show: Boolean) {
+        _showSuggestions.value = show
+        if (show) {
             _showCommandPalette.value = false
         }
     }
 
+    fun setShowTerminalCommands(show: Boolean) {
+        _showCommandPalette.value = show
+        if (show) {
+            _showSuggestions.value = false
+        }
+    }
+
+    fun openSuggestions() {
+        setShowSuggestionChips(true)
+    }
+
+    fun closeSuggestions() {
+        setShowSuggestionChips(false)
+    }
+
+    fun toggleSuggestions() {
+        setShowSuggestionChips(!_showSuggestions.value)
+    }
+
     fun openCommandPalette() {
-        _showCommandPalette.value = true
-        _showSuggestions.value = false
+        setShowTerminalCommands(true)
     }
 
     fun closeCommandPalette() {
-        _showCommandPalette.value = false
+        setShowTerminalCommands(false)
     }
+
+    fun openSuggestionChips() = setShowSuggestionChips(true)
+    fun closeSuggestionChips() = setShowSuggestionChips(false)
+    fun toggleSuggestionChips() = setShowSuggestionChips(!_showSuggestions.value)
+
+    fun openTerminalCommands() = setShowTerminalCommands(true)
+    fun closeTerminalCommands() = setShowTerminalCommands(false)
 
     fun executeSuggestion(suggestion: com.example.data.model.Suggestion) {
         closeSuggestions()

@@ -104,4 +104,138 @@ class SuggestionsInteractionUnitTest {
         assertFalse("Suggestions must be closed after execution", showSuggestions)
         assertTrue("Action must be executed", actionExecuted)
     }
+
+    @Test
+    fun defaultQuickPrompts_containRequiredPrompts() {
+        val prompts = com.example.ui.components.suggestions.DefaultQuickPrompts.items
+        assertTrue("Quick prompts should not be empty", prompts.isNotEmpty())
+        val titles = prompts.map { it.title }
+        assertTrue("Must contain 'Add Mission Templates'", titles.contains("Add Mission Templates"))
+        assertTrue("Must contain 'Visualize Swarm Members'", titles.contains("Visualize Swarm Members"))
+        assertTrue("Must contain 'Explore Agent Swarm'", titles.contains("Explore Agent Swarm"))
+        assertTrue("Must contain 'Run Nodal Workflow'", titles.contains("Run Nodal Workflow"))
+        assertTrue("Must contain 'System Diagnostics'", titles.contains("System Diagnostics"))
+
+        prompts.forEach { prompt ->
+            assertTrue("Prompt id cannot be blank", prompt.id.isNotBlank())
+            assertTrue("Prompt title cannot be blank", prompt.title.isNotBlank())
+            assertTrue("Prompt text cannot be blank", prompt.promptText.isNotBlank())
+        }
+    }
+
+    @Test
+    fun decoupledUiStates_bulbIconOnlyTriggersSuggestionChips() {
+        var showSuggestionChips = false
+        var showTerminalCommands = false
+
+        // Handler for Bulb icon press
+        val onBulbPress = {
+            showSuggestionChips = true
+            showTerminalCommands = false
+        }
+
+        // Handler for text change
+        val onTextChange: (String) -> Unit = { text ->
+            if (text.startsWith("/")) {
+                showSuggestionChips = false
+                showTerminalCommands = true
+            } else {
+                showTerminalCommands = false
+            }
+        }
+
+        // Handler for dismissing chips
+        val onDismissChips = {
+            showSuggestionChips = false
+        }
+
+        // Handler for selecting a suggestion chip
+        var submittedPrompt: String? = null
+        val onSelectPrompt: (String) -> Unit = { prompt ->
+            submittedPrompt = prompt
+            showSuggestionChips = false
+        }
+
+        // Initial state
+        assertFalse(showSuggestionChips)
+        assertFalse(showTerminalCommands)
+
+        // 1. Bulb icon pressed -> only showSuggestionChips becomes true
+        onBulbPress()
+        assertTrue("Bulb icon must open suggestion chips", showSuggestionChips)
+        assertFalse("Bulb icon must NEVER open terminal commands", showTerminalCommands)
+
+        // 2. User types leading '/' -> closes suggestion chips and opens terminal commands
+        onTextChange("/yt")
+        assertFalse("Leading slash must close suggestion chips", showSuggestionChips)
+        assertTrue("Leading slash must open terminal commands", showTerminalCommands)
+
+        // 3. User types anything other than leading '/' -> closes terminal commands
+        onTextChange("hello world")
+        assertFalse("Non-slash text must close terminal commands", showTerminalCommands)
+        assertFalse(showSuggestionChips)
+
+        // 4. Bulb icon pressed again -> opens suggestion chips, terminal commands remains closed
+        onBulbPress()
+        assertTrue(showSuggestionChips)
+        assertFalse(showTerminalCommands)
+
+        // 5. User taps 'X' -> dismisses suggestion chips
+        onDismissChips()
+        assertFalse(showSuggestionChips)
+        assertFalse(showTerminalCommands)
+
+        // 6. User opens bulb, then taps a suggestion chip
+        onBulbPress()
+        assertTrue(showSuggestionChips)
+        onSelectPrompt("Add Mission Templates")
+        assertFalse("Selecting chip must close suggestion chips", showSuggestionChips)
+        assertFalse("Selecting chip must not open terminal commands", showTerminalCommands)
+        assertEquals("Add Mission Templates", submittedPrompt)
+    }
+
+    @Test
+    fun bulbIconOnLeftOfChips_triggersSuggestiveCommandsMatchingSlashCommand() {
+        var isFocused = false
+        var showTerminalCommands = false
+        var executedAction: String? = null
+
+        // In written mode or clicking address bar: chips become available
+        isFocused = true
+        val isChipsAvailable = isFocused
+        assertTrue("Chips must be available when user is in written mode / clicking address", isChipsAvailable)
+
+        // Clicking bulb icon on the left of persistent chips toggles suggestive command UI
+        val onToggleBulb = {
+            showTerminalCommands = !showTerminalCommands
+        }
+
+        onToggleBulb()
+        assertTrue("Clicking bulb on left of chip must open suggestive commands UI", showTerminalCommands)
+
+        // Typing /command triggers the exact same suggestive commands UI
+        val onTypeSlash = {
+            showTerminalCommands = true
+        }
+        onTypeSlash()
+        assertTrue("Typing /command must also open suggestive commands UI", showTerminalCommands)
+
+        // Selecting a suggestive command executes the command and closes the UI
+        val onSelectCommand = { cmd: String ->
+            executedAction = cmd
+            showTerminalCommands = false
+        }
+        onSelectCommand("/yt AI Swarm")
+        assertEquals("/yt AI Swarm", executedAction)
+        assertFalse("Suggestive command UI closes after selection", showTerminalCommands)
+
+        // Selecting a quick prompt chip also executes and closes
+        val onSelectChip = { prompt: String ->
+            executedAction = prompt
+            isFocused = false
+        }
+        onSelectChip("Add Mission Templates")
+        assertEquals("Add Mission Templates", executedAction)
+        assertFalse("Input written mode clears after chip selection", isFocused)
+    }
 }

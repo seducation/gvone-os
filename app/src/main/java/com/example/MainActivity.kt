@@ -437,10 +437,17 @@ fun BrowserApp(
                 onAddressBarInputChange = { viewModel.setAddressBarInput(it) },
                 showSuggestions = showSuggestions,
                 showCommandPalette = showCommandPalette,
+                showSuggestionChips = showSuggestions,
+                showTerminalCommands = showCommandPalette,
                 onToggleSuggestions = { viewModel.toggleSuggestions() },
                 onCloseSuggestions = { viewModel.closeSuggestions() },
                 onOpenCommandPalette = { viewModel.openCommandPalette() },
                 onCloseCommandPalette = { viewModel.closeCommandPalette() },
+                onOpenSuggestionChips = { viewModel.openSuggestionChips() },
+                onCloseSuggestionChips = { viewModel.closeSuggestionChips() },
+                onToggleSuggestionChips = { viewModel.toggleSuggestionChips() },
+                onOpenTerminalCommands = { viewModel.openTerminalCommands() },
+                onCloseTerminalCommands = { viewModel.closeTerminalCommands() },
                 modifier = Modifier
                     .align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
                     .onGloballyPositioned { coordinates ->
