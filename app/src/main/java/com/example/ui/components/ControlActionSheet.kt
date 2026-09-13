@@ -243,6 +243,47 @@ fun ControlActionSheet(
                                 fontFamily = FontFamily.Monospace
                             )
                         }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (settings?.terminalPinnedToScreen == true) Color(0x3338BDF8) else Color(0xFF1E293B),
+                            border = BorderStroke(1.dp, if (settings?.terminalPinnedToScreen == true) Color(0xFF38BDF8) else Color(0xFF334155)),
+                            modifier = Modifier
+                                .clickable {
+                                    val newPinned = !(settings?.terminalPinnedToScreen ?: false)
+                                    val updated = settings?.copy(
+                                        terminalPinnedToScreen = newPinned,
+                                        terminalHeightFraction = if (newPinned) 0.50f else 0.85f
+                                    ) ?: BrowserSettings(terminalPinnedToScreen = newPinned)
+                                    onUpdateSettings?.invoke(updated)
+                                    Toast.makeText(
+                                        context,
+                                        if (newPinned) "Terminal Pinned to Screen (50% Split View)" else "Terminal Unpinned. Normal docked mode restored.",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                                .testTag("control_sheet_pin_terminal_toggle")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PushPin,
+                                    contentDescription = null,
+                                    tint = if (settings?.terminalPinnedToScreen == true) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = if (settings?.terminalPinnedToScreen == true) "PINNED" else "PIN",
+                                    color = if (settings?.terminalPinnedToScreen == true) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))

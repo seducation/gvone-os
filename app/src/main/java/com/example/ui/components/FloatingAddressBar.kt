@@ -125,11 +125,35 @@ fun FloatingAddressBar(
     onToggleSuggestionChips: () -> Unit = onToggleSuggestions,
     onOpenTerminalCommands: () -> Unit = onOpenCommandPalette,
     onCloseTerminalCommands: () -> Unit = onCloseCommandPalette,
+    onTogglePinTerminal: (() -> Unit)? = null,
+    isTerminalPinned: Boolean = settings?.terminalPinnedToScreen ?: false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var isFocused by remember { mutableStateOf(false) }
+
+    val effectiveTerminalPinned = isTerminalPinned || (settings?.terminalPinnedToScreen == true)
+    val handleTogglePinTerminal: () -> Unit = {
+        if (onTogglePinTerminal != null) {
+            onTogglePinTerminal()
+        } else {
+            val newPinned = !effectiveTerminalPinned
+            val updated = settings?.copy(
+                terminalPinnedToScreen = newPinned,
+                terminalHeightFraction = if (newPinned) 0.50f else 0.85f
+            ) ?: BrowserSettings(terminalPinnedToScreen = newPinned)
+            onUpdateSettings?.invoke(updated)
+            if (newPinned && !isTerminalOpen) {
+                onOpenTerminal()
+            }
+            Toast.makeText(
+                context,
+                if (newPinned) "Terminal Pinned to Screen (50% Split View)" else "Terminal Unpinned. Normal docked mode restored.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
 
     val isSuggestionChipsOpen = showSuggestionChips || showSuggestions
     val isTerminalCommandsOpen = showTerminalCommands || showCommandPalette
@@ -540,6 +564,13 @@ fun FloatingAddressBar(
                             onClick = {
                                 if (effectivelyCompact) {
                                     onExpand()
+                                    if (isTerminalOpen) {
+                                        handleTogglePinTerminal()
+                                    }
+                                    return@combinedClickable
+                                }
+                                if (isTerminalOpen) {
+                                    handleTogglePinTerminal()
                                     return@combinedClickable
                                 }
                                 val currentUrl = currentTab?.url.orEmpty()
@@ -560,9 +591,15 @@ fun FloatingAddressBar(
                                     focusRequester.requestFocus()
                                 } catch (_: Exception) {}
                             },
+                            onDoubleClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                handleTogglePinTerminal()
+                            },
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                if (effectivelyCompact) {
+                                if (isTerminalOpen) {
+                                    handleTogglePinTerminal()
+                                } else if (effectivelyCompact) {
                                     onExpand()
                                 } else {
                                     isFocused = false
@@ -769,6 +806,10 @@ fun FloatingAddressBar(
                                                     interactionSource = remember { MutableInteractionSource() },
                                                     indication = null,
                                                     onClick = {
+                                                        if (isTerminalOpen) {
+                                                            handleTogglePinTerminal()
+                                                            return@combinedClickable
+                                                        }
                                                         onExpand()
                                                         isFocused = true
                                                         val currentUrl = currentTab?.url.orEmpty()
@@ -788,9 +829,15 @@ fun FloatingAddressBar(
                                                             focusRequester.requestFocus()
                                                         } catch (_: Exception) {}
                                                     },
+                                                    onDoubleClick = {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        handleTogglePinTerminal()
+                                                    },
                                                     onLongClick = {
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                        if (effectivelyCompact) {
+                                                        if (isTerminalOpen) {
+                                                            handleTogglePinTerminal()
+                                                        } else if (effectivelyCompact) {
                                                             onExpand()
                                                         } else {
                                                             isFocused = false
@@ -801,6 +848,24 @@ fun FloatingAddressBar(
                                                 )
                                         )
                                     }
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        handleTogglePinTerminal()
+                                    },
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .testTag("address_bar_terminal_pin_button")
+                                        .testTag("address_bar_pin_terminal_toggle")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.PushPin,
+                                        contentDescription = if (effectiveTerminalPinned) "Unpin Terminal (50% Split)" else "Pin Terminal to Screen",
+                                        tint = if (effectiveTerminalPinned) Color(0xFF38BDF8) else Color(0xFF8E9BAE),
+                                        modifier = Modifier.size(16.dp)
+                                    )
                                 }
 
                                 IconButton(

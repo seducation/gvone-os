@@ -1392,6 +1392,16 @@ class TerminalCommandExecutor(
                         BrowserActionType.READER_MODE -> viewModel.openSheet(ActiveSheet.ReaderMode)
                         BrowserActionType.CLEAR_DATA -> viewModel.clearBrowsingData()
                         BrowserActionType.TERMINAL -> viewModel.openSheet(ActiveSheet.Terminal)
+                        BrowserActionType.PIN_TERMINAL -> {
+                            viewModel.toggleTerminalPinnedToScreen()
+                            val isPinned = viewModel.settings.value.terminalPinnedToScreen
+                            outputLines.add(
+                                TerminalLine(
+                                    "[PIN] Terminal ${if (isPinned) "pinned to screen (50% Split View)" else "unpinned (Docked mode restored)"}",
+                                    TerminalLineType.INFO
+                                )
+                            )
+                        }
                         BrowserActionType.AGENT_DASHBOARD -> {
                             if (onOpenAgentDashboard != null) onOpenAgentDashboard() else viewModel.openAgentDashboard()
                         }

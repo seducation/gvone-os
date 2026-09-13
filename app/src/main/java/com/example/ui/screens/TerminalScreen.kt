@@ -1316,6 +1316,21 @@ private fun TerminalHeaderBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
+            // Quick Direct Button for Pin / Unpin Terminal
+            IconButton(
+                onClick = onTogglePinToScreen,
+                modifier = Modifier
+                    .size(32.dp)
+                    .testTag("terminal_header_pin_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PushPin,
+                    contentDescription = if (isPinnedToScreen) "Unpin Terminal" else "Pin Terminal to Screen",
+                    tint = if (isPinnedToScreen) Color(0xFF38BDF8) else TermTextSecondary,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+
             // Button for swiping/swapping the position between suggestions chip and terminal
             IconButton(
                 onClick = onToggleSwapPosition,

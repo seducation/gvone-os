@@ -416,6 +416,19 @@ fun BrowserApp(
                 onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
                 isTerminalOpen = activeSheet == ActiveSheet.Terminal,
                 onCloseTerminal = { viewModel.closeSheet() },
+                onTogglePinTerminal = {
+                    val newPinned = !settings.terminalPinnedToScreen
+                    viewModel.setTerminalPinnedToScreen(newPinned)
+                    if (newPinned && activeSheet != ActiveSheet.Terminal) {
+                        viewModel.openSheet(ActiveSheet.Terminal)
+                    }
+                    Toast.makeText(
+                        context,
+                        if (newPinned) "Terminal Pinned to Screen (50% Split View)" else "Terminal Unpinned. Normal docked mode restored.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                isTerminalPinned = settings.terminalPinnedToScreen,
                 onOpenConnector = { context ->
                     viewModel.openWebsiteConnector(context)
                 },

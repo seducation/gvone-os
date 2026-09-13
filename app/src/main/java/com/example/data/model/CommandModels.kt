@@ -42,6 +42,7 @@ enum class BrowserActionType(val actionId: String, val label: String) {
     READER_MODE("reader_mode", "Toggle Reader Mode"),
     CLEAR_DATA("clear_data", "Clear Browsing Data"),
     TERMINAL("terminal", "Open Terminal CLI"),
+    PIN_TERMINAL("pin_terminal", "Pin / Unpin Terminal"),
     AGENT_DASHBOARD("agent_dashboard", "Open Agentic UI Dashboard"),
     PERMISSIONS("permissions", "Open Permission & Safety Gate");
 

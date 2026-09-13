@@ -1518,6 +1518,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                             BrowserActionType.FIND_IN_PAGE -> openSheet(ActiveSheet.FindInPage)
                             BrowserActionType.READER_MODE -> openSheet(ActiveSheet.ReaderMode)
                             BrowserActionType.TERMINAL -> openSheet(ActiveSheet.Terminal)
+                            BrowserActionType.PIN_TERMINAL -> {
+                                toggleTerminalPinnedToScreen()
+                                val isPinned = _settings.value.terminalPinnedToScreen
+                                if (isPinned && _activeSheet.value != ActiveSheet.Terminal) {
+                                    openSheet(ActiveSheet.Terminal)
+                                }
+                                val msg = if (isPinned) "Terminal Pinned to Screen (50% Split View)" else "Terminal Unpinned. Normal docked mode restored."
+                                Toast.makeText(getApplication(), msg, Toast.LENGTH_SHORT).show()
+                            }
                             BrowserActionType.AGENT_DASHBOARD -> openAgentDashboard()
                             BrowserActionType.PERMISSIONS -> openPermissions()
                             BrowserActionType.CLEAR_DATA -> {

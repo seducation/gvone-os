@@ -550,6 +550,13 @@ data class QuickPrompt(
 object DefaultQuickPrompts {
     val items = listOf(
         QuickPrompt(
+            id = "pin_terminal",
+            title = "Pin Terminal",
+            promptText = "/pin",
+            icon = Icons.Rounded.PushPin,
+            category = "Terminal"
+        ),
+        QuickPrompt(
             id = "mission_templates",
             title = "Add Mission Templates",
             promptText = "Add mission templates for autonomous execution",

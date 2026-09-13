@@ -309,6 +309,19 @@ object CommandEngine {
             isBuiltIn = true
         ),
         CustomCommandEntity(
+            id = "cmd_pin_terminal",
+            command = "/pin",
+            name = "Pin / Unpin Terminal",
+            description = "Pin terminal to 50% split screen or unpin to normal docked mode",
+            type = CommandType.BROWSER_ACTION,
+            template = "pin_terminal",
+            aliasesRaw = "/pinterminal,/unpin,/split",
+            category = CommandCategory.BROWSER,
+            isEnabled = true,
+            isPinned = true,
+            isBuiltIn = true
+        ),
+        CustomCommandEntity(
             id = "cmd_agent",
             command = "/agent",
             name = "Autonomous Agent Execution",
