@@ -244,8 +244,8 @@ fun SettingsScreen(
             item {
                 SettingsSwitchItem(
                     icon = Icons.Rounded.DeveloperMode,
-                    title = "Developer Bar (Inspection & Debug)",
-                    subtitle = "Show live DevTools bar on top of websites and file viewer (Console, DOM, Network, Storage, Device)",
+                    title = "Website Developer Bar",
+                    subtitle = "Show live DevTools bar on top of website with Console, DOM inspector, Network, and Storage tools",
                     checked = settings.developerBarEnabled,
                     onCheckedChange = { onSettingsChanged(settings.copy(developerBarEnabled = it)) }
                 )
