@@ -500,6 +500,32 @@ fun TerminalScreen(
             Column(
                 modifier = Modifier.fillMaxSize()
             ) {
+                // 1. In DEFAULT position: Suggestion Chips Bar is on TOP of the Terminal!
+                // Layout hierarchy: Chip -> Terminal -> Address bar
+                if (!isSwappedPosition) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF0B0F17))
+                            .padding(vertical = 4.dp, horizontal = 4.dp)
+                            .testTag("terminal_top_suggestion_chips")
+                    ) {
+                        SuggestionChipsBar(
+                            prompts = DefaultQuickPrompts.items,
+                            isSuggestivePopupOpen = false,
+                            onToggleBulb = {
+                                viewModel.setShowTerminalCommands(!viewModel.showTerminalCommands.value)
+                            },
+                            onSelectPrompt = { promptText ->
+                                inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
+                                focusRequester.requestFocus()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
+                }
+
                 // Top drag handle when docked and not swapped
                 if (!isFullScreen && !isSwappedPosition) {
                     Box(
@@ -567,16 +593,6 @@ fun TerminalScreen(
                             Toast.LENGTH_SHORT
                         ).show()
                     },
-                    isPinnedToAddressBar = settings.terminalAutoAppearOnAddressBar,
-                    onTogglePinToAddressBar = {
-                        val newPinned = !settings.terminalAutoAppearOnAddressBar
-                        viewModel.updateSettings(settings.copy(terminalAutoAppearOnAddressBar = newPinned))
-                        Toast.makeText(
-                            context,
-                            if (newPinned) "Terminal Pinned to Address Bar (Always appears on tap)" else "Terminal Unpinned from Address Bar",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    },
                     terminalHeightFraction = terminalHeightFraction,
                     onAdjustHeight = {
                         val next = when {
@@ -632,30 +648,6 @@ fun TerminalScreen(
                 )
 
                 HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
-
-                // When swapped: render Suggestion Chips at the TOP of Terminal!
-                if (isSwappedPosition) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF0B0F17))
-                            .padding(vertical = 4.dp, horizontal = 4.dp)
-                    ) {
-                        SuggestionChipsBar(
-                            prompts = DefaultQuickPrompts.items,
-                            isSuggestivePopupOpen = false,
-                            onToggleBulb = {
-                                viewModel.setShowTerminalCommands(!viewModel.showTerminalCommands.value)
-                            },
-                            onSelectPrompt = { promptText ->
-                                inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
-                                focusRequester.requestFocus()
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
-                }
 
                 // 1.5 UNIFIED RUNTIME STATUS BAR & EXPANDABLE ACTIVE TASK
                 RuntimeStatusPillRow(
@@ -1133,6 +1125,32 @@ fun TerminalScreen(
                     focusRequester.requestFocus()
                 }
             )
+
+            // 6. When in SWAPPED position: Suggestion Chips Bar is at the BOTTOM!
+            // Layout hierarchy when swapped: Terminal -> Chip -> Address bar
+            if (isSwappedPosition) {
+                HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0B0F17))
+                        .padding(vertical = 4.dp, horizontal = 4.dp)
+                        .testTag("terminal_bottom_suggestion_chips")
+                ) {
+                    SuggestionChipsBar(
+                        prompts = DefaultQuickPrompts.items,
+                        isSuggestivePopupOpen = false,
+                        onToggleBulb = {
+                            viewModel.setShowTerminalCommands(!viewModel.showTerminalCommands.value)
+                        },
+                        onSelectPrompt = { promptText ->
+                            inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
+                            focusRequester.requestFocus()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         }
     }
 
@@ -1171,8 +1189,6 @@ private fun TerminalHeaderBar(
     isFullScreen: Boolean,
     isPinnedToScreen: Boolean = false,
     onTogglePinToScreen: () -> Unit,
-    isPinnedToAddressBar: Boolean = false,
-    onTogglePinToAddressBar: () -> Unit,
     terminalHeightFraction: Float = 0.85f,
     onAdjustHeight: () -> Unit,
     onToggleFullScreen: () -> Unit,
@@ -1309,7 +1325,7 @@ private fun TerminalHeaderBar(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.SwapVert,
-                    contentDescription = if (isSwappedPosition) "Restore Position (Terminal Bottom, Suggestions Top)" else "Swap Position (Terminal Top, Suggestions Bottom)",
+                    contentDescription = if (isSwappedPosition) "Restore Position (Default: Chip Top, Terminal Bottom)" else "Swap Position (Terminal Top, Chip Bottom)",
                     tint = if (isSwappedPosition) Color(0xFF38BDF8) else TermTextSecondary,
                     modifier = Modifier.size(18.dp)
                 )
@@ -1505,7 +1521,7 @@ private fun TerminalHeaderBar(
                     DropdownMenuItem(
                         text = {
                             Text(
-                                text = if (isSwappedPosition) "Restore Position (Default)" else "Swap Terminal & Suggestions Position",
+                                text = if (isSwappedPosition) "Restore Default (Chip on Top, Terminal Bottom)" else "Swap Position (Terminal on Top, Chip Bottom)",
                                 color = Color(0xFFE6EDF6),
                                 fontSize = 13.sp
                             )
@@ -1523,47 +1539,6 @@ private fun TerminalHeaderBar(
                             onToggleSwapPosition()
                         },
                         modifier = Modifier.testTag("terminal_menu_swap_position")
-                    )
-
-                    // 6. Pin to Address Bar (Auto-appear on tap - Previous functionality unchanged)
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(
-                                    text = "Auto-appear on Address Bar",
-                                    color = Color(0xFFC9D1D9),
-                                    fontSize = 12.sp
-                                )
-                                Text(
-                                    text = if (isPinnedToAddressBar) "Enabled (auto-appears on address tap)" else "Disabled (click to enable)",
-                                    color = Color(0xFF6E7681),
-                                    fontSize = 10.5.sp
-                                )
-                            }
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Rounded.VerticalAlignBottom,
-                                contentDescription = null,
-                                tint = if (isPinnedToAddressBar) Color(0xFF38BDF8) else Color(0xFF8B949E),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        trailingIcon = {
-                            Switch(
-                                checked = isPinnedToAddressBar,
-                                onCheckedChange = {
-                                    showMenu = false
-                                    onTogglePinToAddressBar()
-                                },
-                                modifier = Modifier.scale(0.7f)
-                            )
-                        },
-                        onClick = {
-                            showMenu = false
-                            onTogglePinToAddressBar()
-                        },
-                        modifier = Modifier.testTag("terminal_menu_pin_address_bar")
                     )
                 }
             }

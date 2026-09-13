@@ -797,7 +797,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val autoTargetUrl = prefs.getString("auto_load_target_url", ADDRESS_BAR_TARGET_URL) ?: ADDRESS_BAR_TARGET_URL
         val bridgeEnabled = prefs.getBoolean("bidirectional_bridge_enabled", true)
         val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", false)
-        val termAutoAppear = prefs.getBoolean("terminal_auto_appear_address_bar", false)
         val termHeight = prefs.getFloat("terminal_height_fraction", 0.85f)
         val termPinnedScreen = prefs.getBoolean("terminal_pinned_to_screen", false)
         val termSwappedPos = prefs.getBoolean("terminal_swapped_position", false)
@@ -820,7 +819,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             autoLoadTargetUrl = autoTargetUrl,
             bidirectionalBridgeEnabled = bridgeEnabled,
             bridgeApplyToAllWebsites = bridgeApplyAll,
-            terminalAutoAppearOnAddressBar = termAutoAppear,
             terminalHeightFraction = termHeight,
             terminalPinnedToScreen = termPinnedScreen,
             terminalSwappedPosition = termSwappedPos,
@@ -845,7 +843,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             .putString("auto_load_target_url", s.autoLoadTargetUrl)
             .putBoolean("bidirectional_bridge_enabled", s.bidirectionalBridgeEnabled)
             .putBoolean("bridge_apply_all_websites", s.bridgeApplyToAllWebsites)
-            .putBoolean("terminal_auto_appear_address_bar", s.terminalAutoAppearOnAddressBar)
             .putFloat("terminal_height_fraction", s.terminalHeightFraction)
             .putBoolean("terminal_pinned_to_screen", s.terminalPinnedToScreen)
             .putBoolean("terminal_swapped_position", s.terminalSwappedPosition)

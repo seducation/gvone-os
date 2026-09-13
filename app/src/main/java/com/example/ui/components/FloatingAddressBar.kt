@@ -160,14 +160,6 @@ fun FloatingAddressBar(
         bridgeEnabled && (isGVONEActive || bridgeApplyToAll)
     }
 
-    val handleTerminalAddressBarTrigger: () -> Unit = {
-        if (settings?.terminalAutoAppearOnAddressBar == true) {
-            onOpenTerminal()
-        } else if (isTerminalOpen) {
-            onCloseTerminal()
-        }
-    }
-
     var inputText by remember { mutableStateOf(addressBarInput) }
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -345,8 +337,15 @@ fun FloatingAddressBar(
                 }
 
                 // 2. Floating Suggestion Chips UI with Bulb Icon on Left:
-                // Available when user is in written mode / clicking address bar or suggestions open
-                val isChipsBarVisible = isFocused || isSuggestionChipsOpen
+                // Only one chip layout is rendered. When terminal is open:
+                // In default mode, chips are on top of terminal.
+                // In swapped mode, chips are docked here above address bar.
+                val isSwapped = settings?.terminalSwappedPosition == true
+                val isChipsBarVisible = if (isTerminalOpen) {
+                    isSwapped
+                } else {
+                    isFocused || isSuggestionChipsOpen
+                }
                 AnimatedVisibility(
                     visible = isChipsBarVisible,
                     enter = fadeIn() + slideInVertically { it / 2 },
@@ -541,7 +540,6 @@ fun FloatingAddressBar(
                             onClick = {
                                 if (effectivelyCompact) {
                                     onExpand()
-                                    handleTerminalAddressBarTrigger()
                                     return@combinedClickable
                                 }
                                 val currentUrl = currentTab?.url.orEmpty()
@@ -561,8 +559,6 @@ fun FloatingAddressBar(
                                 try {
                                     focusRequester.requestFocus()
                                 } catch (_: Exception) {}
-
-                                handleTerminalAddressBarTrigger()
                             },
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -678,7 +674,6 @@ fun FloatingAddressBar(
                                                         } else {
                                                             inputText = currentUrl
                                                         }
-                                                        handleTerminalAddressBarTrigger()
                                                     }
                                                 }
                                             }
@@ -792,8 +787,6 @@ fun FloatingAddressBar(
                                                         try {
                                                             focusRequester.requestFocus()
                                                         } catch (_: Exception) {}
-
-                                                        handleTerminalAddressBarTrigger()
                                                     },
                                                     onLongClick = {
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)

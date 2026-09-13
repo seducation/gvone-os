@@ -13,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -91,7 +90,6 @@ fun WebsiteDeveloperBar(
     // Page metadata
     var pageTitle by remember(tab.title) { mutableStateOf(tab.title.ifBlank { "Untitled Page" }) }
     var pageUrl by remember(tab.url) { mutableStateOf(tab.url) }
-    var showInfoDialog by remember { mutableStateOf(false) }
 
     // Host domain display
     val hostDomain = remember(tab.url) {
@@ -117,19 +115,16 @@ fun WebsiteDeveloperBar(
         }
     }
 
-    Column(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF0B0F17))
             .statusBarsPadding()
-            .testTag("website_developer_bar")
+            .testTag("website_developer_bar"),
+        color = Color(0xFF111726),
+        border = BorderStroke(1.dp, Color(0xFF1E293B))
     ) {
-        // ================= TOP APP BAR / VIEWER CONTROLS (Identical to File Developer Bar) =================
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFF111726),
-            border = BorderStroke(1.dp, Color(0xFF1E293B))
-        ) {
+        Column {
+            // ================= TOP COMPACT BAR (Matching File Developer Bar) =================
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -137,10 +132,12 @@ fun WebsiteDeveloperBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Left: File / Web icon & Breadcrumb Name
+                // Left: File-developer-bar style Icon & Title/Subtitle
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { isExpanded = !isExpanded },
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Surface(
@@ -149,13 +146,12 @@ fun WebsiteDeveloperBar(
                         border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
                         modifier = Modifier
                             .size(36.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { isExpanded = !isExpanded }
+                            .testTag("dev_bar_brand_badge")
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = Icons.Rounded.Code,
-                                contentDescription = "DevTools",
+                                imageVector = Icons.Rounded.DeveloperMode,
+                                contentDescription = "Developer Tools",
                                 tint = Color(0xFF38BDF8),
                                 modifier = Modifier.size(20.dp)
                             )
@@ -165,7 +161,7 @@ fun WebsiteDeveloperBar(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = if (pageTitle.isNotBlank() && pageTitle != "Untitled Page") pageTitle else hostDomain,
+                                text = tab.title.takeIf { it.isNotBlank() } ?: "Web Developer Tools",
                                 color = Color.White,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
@@ -177,73 +173,36 @@ fun WebsiteDeveloperBar(
                                 modifier = Modifier
                                     .size(7.dp)
                                     .clip(CircleShape)
-                                    .background(
-                                        if (isTorActive) Color(0xFFA855F7)
-                                        else if (isHttps) Color(0xFF10B981)
-                                        else Color(0xFFFBBF24)
-                                    )
+                                    .background(if (isTorActive) Color(0xFFC084FC) else Color(0xFF4ADE80))
                             )
                         }
-                        Text(
-                            text = if (pageUrl.isNotBlank()) pageUrl else hostDomain,
-                            color = Color(0xFF64748B),
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isHttps) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                                contentDescription = null,
+                                tint = if (isHttps) Color(0xFF4ADE80) else Color(0xFFFBBF24),
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Text(
+                                text = hostDomain.ifBlank { "localhost" },
+                                color = Color(0xFF64748B),
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
 
-                // Right: Action Buttons (Exact 34.dp size and styling matching File Viewer Bar)
+                // Right: Action buttons matching file developer bar
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Outlines / Inspect Toggle (like Markdown Preview / Edit toggle)
-                    IconButton(
-                        onClick = {
-                            outlinesEnabled = !outlinesEnabled
-                            val script = if (outlinesEnabled) {
-                                "(function(){var s=document.createElement('style');s.id='__gvone_dev_outlines__';s.innerHTML='* { outline: 1px dashed rgba(56,189,248,0.7) !important; }';document.head.appendChild(s);return 'Outlines Active';})()"
-                            } else {
-                                "(function(){var s=document.getElementById('__gvone_dev_outlines__');if(s)s.remove();return 'Outlines Removed';})()"
-                            }
-                            executeJs(script) {
-                                Toast.makeText(
-                                    context,
-                                    if (outlinesEnabled) "DOM Outlines Enabled" else "DOM Outlines Disabled",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        },
-                        modifier = Modifier
-                            .size(34.dp)
-                            .testTag("dev_bar_outlines_btn")
-                    ) {
-                        Icon(
-                            imageVector = if (outlinesEnabled) Icons.Rounded.Visibility else Icons.Rounded.Edit,
-                            contentDescription = if (outlinesEnabled) "DOM Outlines" else "Edit Outlines",
-                            tint = if (outlinesEnabled) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-                            modifier = Modifier.size(19.dp)
-                        )
-                    }
-
-                    // DevTools Drawer Toggle (like HTML Live Preview toggle)
-                    IconButton(
-                        onClick = { isExpanded = !isExpanded },
-                        modifier = Modifier
-                            .size(34.dp)
-                            .testTag("dev_bar_expand_toggle_btn")
-                    ) {
-                        Icon(
-                            imageVector = if (isExpanded) Icons.Rounded.Terminal else Icons.Rounded.PlayArrow,
-                            contentDescription = if (isExpanded) "Close DevTools" else "Run DevTools",
-                            tint = if (isExpanded) Color(0xFFA78BFA) else Color(0xFF10B981),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // Hard Reload (Cache cleared)
+                    // Quick Hard Reload
                     IconButton(
                         onClick = {
                             activeWebView?.clearCache(true)
@@ -258,111 +217,133 @@ fun WebsiteDeveloperBar(
                             imageVector = Icons.Rounded.Refresh,
                             contentDescription = "Hard Reload",
                             tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(19.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
-                    // Site Info Dialog
+                    // Expand / Collapse Chevron
+                    val rotation by animateFloatAsState(targetValue = if (isExpanded) 180f else 0f, label = "chevron")
                     IconButton(
-                        onClick = { showInfoDialog = true },
+                        onClick = { isExpanded = !isExpanded },
                         modifier = Modifier
                             .size(34.dp)
-                            .testTag("dev_bar_info_btn")
+                            .testTag("dev_bar_expand_toggle_btn")
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Info,
-                            contentDescription = "Info",
-                            tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(19.dp)
+                            imageVector = Icons.Rounded.ExpandMore,
+                            contentDescription = if (isExpanded) "Collapse Tools" else "Expand Tools",
+                            tint = if (isExpanded) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                            modifier = Modifier
+                                .size(20.dp)
+                                .rotate(rotation)
                         )
                     }
 
-                    // Close Tab / Turn Off Developer Bar
-                    IconButton(
-                        onClick = onToggleOff,
+                    // Prominent ON / OFF Button
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF064E3B),
+                        border = BorderStroke(1.dp, Color(0xFF10B981)),
                         modifier = Modifier
-                            .size(34.dp)
+                            .clickable { onToggleOff() }
                             .testTag("dev_bar_toggle_off_btn")
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Close",
-                            tint = Color(0xFFE2E8F0),
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .background(Color(0xFF34D399), CircleShape)
+                            )
+                            Text(
+                                text = "DEV ON",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFF34D399)
+                            )
+                            Icon(
+                                imageVector = Icons.Rounded.PowerSettingsNew,
+                                contentDescription = "Turn Developer Bar OFF",
+                                tint = Color(0xFF34D399),
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        // ================= SUB-TOOLBAR TABS (Identical to File Viewer action toolbars) =================
-        AnimatedVisibility(
-            visible = isExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF0B0F17))
+            // ================= EXPANDABLE DEV DRAWER =================
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFF141C2B),
-                    border = BorderStroke(1.dp, Color(0xFF222F43))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                        .background(Color(0xFF06090F))
                 ) {
+                    HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
+
+                    // Category Tabs inside drawer
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .background(Color(0xFF0D121D))
                             .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         DevBarTab.values().forEach { tabType ->
                             val isSelected = selectedTab == tabType
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
                                 color = if (isSelected) Color(0xFF1E293B) else Color.Transparent,
-                                border = if (isSelected) BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.6f)) else null,
+                                border = if (isSelected) BorderStroke(1.dp, Color(0xFF38BDF8)) else BorderStroke(0.5.dp, Color(0xFF1E293B)),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(6.dp))
                                     .clickable { selectedTab = tabType }
+                                    .padding(horizontal = 8.dp, vertical = 5.dp)
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Icon(
                                         imageVector = tabType.icon,
                                         contentDescription = tabType.label,
-                                        tint = if (isSelected) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-                                        modifier = Modifier.size(15.dp)
+                                        tint = if (isSelected) Color(0xFF38BDF8) else Color(0xFF64748B),
+                                        modifier = Modifier.size(14.dp)
                                     )
                                     Text(
                                         text = tabType.label,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color(0xFFE2E8F0) else Color(0xFF64748B)
                                     )
                                 }
                             }
                         }
                     }
-                }
 
-                // DevTools Panel Body
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 280.dp)
-                        .background(Color(0xFF0B0F17))
-                        .padding(horizontal = 10.dp, vertical = 8.dp)
-                ) {
-                    when (selectedTab) {
-                    DevBarTab.CONSOLE -> {
-                        DevConsolePanel(
+                    HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        when (selectedTab) {
+                            DevBarTab.CONSOLE -> {
+                                DevConsolePanel(
                             consoleLogs = consoleLogs,
                             jsInput = jsInput,
                             onJsInputChange = { jsInput = it },
@@ -520,132 +501,8 @@ fun WebsiteDeveloperBar(
             }
         }
     }
-
-    if (showInfoDialog) {
-        WebSiteInfoModalDialog(
-            tab = tab,
-            hostDomain = hostDomain,
-            isHttps = isHttps,
-            isTorActive = isTorActive,
-            onDismiss = { showInfoDialog = false }
-        )
-    }
 }
 }
-
-/**
- * Floating chip shown at the top-right of the website when Developer Bar is toggled OFF.
- * Provides effortless 1-tap toggling to restore the Developer Bar at any time.
- * Styled with the same badge visual language as the File Developer Bar.
- */
-@Composable
-fun DeveloperBarToggleChip(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF111726).copy(alpha = 0.95f),
-        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
-        modifier = modifier
-            .statusBarsPadding()
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick() }
-            .testTag("dev_bar_toggle_chip")
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Code,
-                contentDescription = null,
-                tint = Color(0xFF38BDF8),
-                modifier = Modifier.size(16.dp)
-            )
-            Text(
-                text = "Developer",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF38BDF8))
-            )
-        }
-    }
-}
-
-/**
- * Information modal dialog matching GVONE FileInfoModalDialog styling.
- */
-@Composable
-fun WebSiteInfoModalDialog(
-    tab: BrowserTab,
-    hostDomain: String,
-    isHttps: Boolean,
-    isTorActive: Boolean,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Info, contentDescription = null, tint = Color(0xFF38BDF8))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Site Information", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                DevInfoRow("Domain", hostDomain)
-                DevInfoRow("URL", tab.url)
-                DevInfoRow("Security", if (isHttps) "HTTPS (Encrypted TLS)" else "HTTP (Unencrypted)")
-                DevInfoRow("Routing", if (isTorActive) "Tor Onion Circuit Active" else "Direct Connection")
-                DevInfoRow("Title", tab.title.ifBlank { "N/A" })
-                DevInfoRow("Viewport", "Mobile Responsive")
-                DevInfoRow("Engine", "Chromium WebView")
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close", color = Color(0xFF38BDF8))
-            }
-        },
-        containerColor = Color(0xFF141C2B)
-    )
-}
-
-@Composable
-private fun DevInfoRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            text = label,
-            color = Color(0xFF64748B),
-            fontSize = 12.sp,
-            modifier = Modifier.width(80.dp)
-        )
-        Text(
-            text = value,
-            color = Color(0xFFE2E8F0),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f)
-        )
-    }
 }
 
 @Composable

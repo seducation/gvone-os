@@ -58,6 +58,8 @@ fun GVONEFileViewerScreen(
     fileSystem: GVONEFileSystem,
     onCloseTab: () -> Unit,
     onOpenTerminalWithCommand: (String) -> Unit = {},
+    isDeveloperBarEnabled: Boolean = true,
+    onToggleDeveloperBar: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -148,168 +150,223 @@ fun GVONEFileViewerScreen(
             .background(Color(0xFF0B0F17))
             .testTag("gvone_file_viewer_screen")
     ) {
-        // TOP APP BAR / VIEWER CONTROLS
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFF111726),
-            border = BorderStroke(1.dp, Color(0xFF1E293B))
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        // TOP APP BAR / VIEWER CONTROLS (Respects developerBarEnabled setting)
+        if (isDeveloperBarEnabled) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF111726),
+                border = BorderStroke(1.dp, Color(0xFF1E293B))
             ) {
-                // Left: File icon & Breadcrumb Name
                 Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = fileType.color.copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, fileType.color.copy(alpha = 0.4f)),
-                        modifier = Modifier.size(36.dp)
+                    // Left: File icon & Breadcrumb Name
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = when (fileType) {
-                                    FileType.MARKDOWN -> Icons.Rounded.Description
-                                    FileType.TEXT -> Icons.Rounded.Article
-                                    FileType.JSON -> Icons.Rounded.DataObject
-                                    FileType.CODE -> Icons.Rounded.Code
-                                    FileType.PDF -> Icons.Rounded.PictureAsPdf
-                                    FileType.IMAGE -> Icons.Rounded.Image
-                                    FileType.ARCHIVE -> Icons.Rounded.FolderZip
-                                    else -> Icons.Rounded.InsertDriveFile
-                                },
-                                contentDescription = null,
-                                tint = fileType.color,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = fileName,
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            if (hasUnsavedChanges) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(7.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF38BDF8))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = fileType.color.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, fileType.color.copy(alpha = 0.4f)),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = when (fileType) {
+                                        FileType.MARKDOWN -> Icons.Rounded.Description
+                                        FileType.TEXT -> Icons.Rounded.Article
+                                        FileType.JSON -> Icons.Rounded.DataObject
+                                        FileType.CODE -> Icons.Rounded.Code
+                                        FileType.PDF -> Icons.Rounded.PictureAsPdf
+                                        FileType.IMAGE -> Icons.Rounded.Image
+                                        FileType.ARCHIVE -> Icons.Rounded.FolderZip
+                                        else -> Icons.Rounded.InsertDriveFile
+                                    },
+                                    contentDescription = null,
+                                    tint = fileType.color,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
-                        Text(
-                            text = fileRelativePath,
-                            color = Color(0xFF64748B),
-                            fontSize = 11.sp,
-                            maxLines = 1
-                        )
-                    }
-                }
 
-                // Right: Action Buttons
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // Markdown Mode Toggle
-                    if (fileType == FileType.MARKDOWN) {
-                        IconButton(
-                            onClick = { mdEditMode = !mdEditMode },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (mdEditMode) Icons.Rounded.Visibility else Icons.Rounded.Edit,
-                                contentDescription = if (mdEditMode) "Preview" else "Edit",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(19.dp)
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = fileName,
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (hasUnsavedChanges) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF38BDF8))
+                                    )
+                                }
+                            }
+                            Text(
+                                text = fileRelativePath,
+                                color = Color(0xFF64748B),
+                                fontSize = 11.sp,
+                                maxLines = 1
                             )
                         }
                     }
 
-                    // HTML Live Website Preview Toggle
-                    if (isHtmlFile) {
+                    // Right: Action Buttons
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Markdown Mode Toggle
+                        if (fileType == FileType.MARKDOWN) {
+                            IconButton(
+                                onClick = { mdEditMode = !mdEditMode },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (mdEditMode) Icons.Rounded.Visibility else Icons.Rounded.Edit,
+                                    contentDescription = if (mdEditMode) "Preview" else "Edit",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                        }
+
+                        // HTML Live Website Preview Toggle
+                        if (isHtmlFile) {
+                            IconButton(
+                                onClick = { htmlLivePreviewMode = !htmlLivePreviewMode },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (htmlLivePreviewMode) Icons.Rounded.Code else Icons.Rounded.PlayArrow,
+                                    contentDescription = if (htmlLivePreviewMode) "Source Code" else "Run Website",
+                                    tint = if (htmlLivePreviewMode) Color(0xFFA78BFA) else Color(0xFF10B981),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // Save Button
+                        if (hasUnsavedChanges) {
+                            Button(
+                                onClick = { saveChanges() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Save", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Favorite Toggle
                         IconButton(
-                            onClick = { htmlLivePreviewMode = !htmlLivePreviewMode },
+                            onClick = {
+                                coroutineScope.launch {
+                                    isFavorite = fileSystem.toggleFavorite(fileRelativePath)
+                                    toastMessage = if (isFavorite) "Added to Favorites" else "Removed from Favorites"
+                                }
+                            },
                             modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
-                                imageVector = if (htmlLivePreviewMode) Icons.Rounded.Code else Icons.Rounded.PlayArrow,
-                                contentDescription = if (htmlLivePreviewMode) "Source Code" else "Run Website",
-                                tint = if (htmlLivePreviewMode) Color(0xFFA78BFA) else Color(0xFF10B981),
+                                imageVector = if (isFavorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                contentDescription = "Favorite",
+                                tint = if (isFavorite) Color(0xFFFBBF24) else Color(0xFF94A3B8),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-                    }
 
-                    // Save Button
-                    if (hasUnsavedChanges) {
-                        Button(
-                            onClick = { saveChanges() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.height(32.dp)
+                        // Share
+                        IconButton(
+                            onClick = { shareFile() },
+                            modifier = Modifier.size(34.dp)
                         ) {
-                            Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Save", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Rounded.Share, contentDescription = "Share", tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
+                        }
+
+                        // Info Dialog
+                        IconButton(
+                            onClick = { showInfoDialog = true },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(Icons.Rounded.Info, contentDescription = "Info", tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
+                        }
+
+                        // Developer Bar ON/OFF Toggle Button
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF064E3B),
+                            border = BorderStroke(1.dp, Color(0xFF10B981)),
+                            modifier = Modifier
+                                .clickable { onToggleDeveloperBar() }
+                                .testTag("file_dev_bar_toggle_off_btn")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .background(Color(0xFF34D399), CircleShape)
+                                )
+                                Text(
+                                    text = "DEV ON",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFF34D399)
+                                )
+                                Icon(
+                                    imageVector = Icons.Rounded.PowerSettingsNew,
+                                    contentDescription = "Turn Developer Bar OFF",
+                                    tint = Color(0xFF34D399),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
+                        }
+
+                        // Close Tab
+                        IconButton(
+                            onClick = onCloseTab,
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color(0xFFE2E8F0), modifier = Modifier.size(20.dp))
                         }
                     }
-
-                    // Favorite Toggle
-                    IconButton(
-                        onClick = {
-                            coroutineScope.launch {
-                                isFavorite = fileSystem.toggleFavorite(fileRelativePath)
-                                toastMessage = if (isFavorite) "Added to Favorites" else "Removed from Favorites"
-                            }
-                        },
-                        modifier = Modifier.size(34.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isFavorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                            contentDescription = "Favorite",
-                            tint = if (isFavorite) Color(0xFFFBBF24) else Color(0xFF94A3B8),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // Share
-                    IconButton(
-                        onClick = { shareFile() },
-                        modifier = Modifier.size(34.dp)
-                    ) {
-                        Icon(Icons.Rounded.Share, contentDescription = "Share", tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
-                    }
-
-                    // Info Dialog
-                    IconButton(
-                        onClick = { showInfoDialog = true },
-                        modifier = Modifier.size(34.dp)
-                    ) {
-                        Icon(Icons.Rounded.Info, contentDescription = "Info", tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
-                    }
-
-                    // Close Tab
-                    IconButton(
-                        onClick = onCloseTab,
-                        modifier = Modifier.size(34.dp)
-                    ) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color(0xFFE2E8F0), modifier = Modifier.size(20.dp))
-                    }
+                }
+            }
+        } else {
+            // When Developer Bar is toggled OFF: Bar is hidden from files too!
+            // Provide a minimal tab close button at top-end
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onCloseTab,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Close Tab", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
                 }
             }
         }

@@ -71,9 +71,6 @@ fun ControlActionSheet(
     var tempBridgeApplyToAll by remember(settings?.bridgeApplyToAllWebsites) {
         mutableStateOf(settings?.bridgeApplyToAllWebsites ?: false)
     }
-    var tempTerminalAutoAppear by remember(settings?.terminalAutoAppearOnAddressBar) {
-        mutableStateOf(settings?.terminalAutoAppearOnAddressBar ?: false)
-    }
 
     val presetSites = listOf(
         Pair("GVONE CharAssist", "https://charassist-c4uzg7hb.manus.space"),
@@ -246,58 +243,9 @@ fun ControlActionSheet(
                                 fontFamily = FontFamily.Monospace
                             )
                         }
-
-                        // Auto-appear / Always on tap pin badge
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (tempTerminalAutoAppear) Color(0xFF064E3B) else Color(0xFF1E293B),
-                            border = BorderStroke(
-                                1.dp,
-                                if (tempTerminalAutoAppear) Color(0xFF10B981) else Color(0xFF475569)
-                            ),
-                            modifier = Modifier
-                                .clickable {
-                                    tempTerminalAutoAppear = !tempTerminalAutoAppear
-                                    if (settings != null && onUpdateSettings != null) {
-                                        onUpdateSettings(
-                                            settings.copy(
-                                                autoLoadTargetOnFocus = tempAutoLoad,
-                                                autoLoadTargetUrl = tempUrl,
-                                                bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                                bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                                terminalAutoAppearOnAddressBar = tempTerminalAutoAppear
-                                            )
-                                        )
-                                    }
-                                    val msg = if (tempTerminalAutoAppear) "Terminal CLI will always appear when clicking address bar" else "Auto-appear disabled (Terminal CLI disappears on tap)"
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                }
-                                .testTag("bridge_dialog_auto_appear_badge")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(if (tempTerminalAutoAppear) Color(0xFF4ADE80) else Color(0xFF94A3B8))
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = if (tempTerminalAutoAppear) "ALWAYS ON TAP" else "CLICK TO PIN",
-                                    color = if (tempTerminalAutoAppear) Color(0xFF4ADE80) else Color(0xFF94A3B8),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
-
-                    // Terminal Code Display Canvas (Big Screen view - Tap to launch CLI)
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = Color(0xFF0D121D),
@@ -345,111 +293,11 @@ fun ControlActionSheet(
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = "● Bridge Engine: ACTIVE (HTTP/WS v2.4)\n" +
-                                        "● Address Bar Tap: " + (if (tempTerminalAutoAppear) "ALWAYS APPEAR" else "DISAPPEAR") + "\n" +
                                         "● Quick Action: Tap here to open full Terminal CLI",
                                 color = Color(0xFF94A3B8),
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
                                 lineHeight = 16.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Terminal Behavior Options (Always Appear vs Disappear)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                tempTerminalAutoAppear = true
-                                if (settings != null && onUpdateSettings != null) {
-                                    onUpdateSettings(
-                                        settings.copy(
-                                            autoLoadTargetOnFocus = tempAutoLoad,
-                                            autoLoadTargetUrl = tempUrl,
-                                            bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                            bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                            terminalAutoAppearOnAddressBar = true
-                                        )
-                                    )
-                                }
-                                Toast.makeText(context, "Terminal CLI will always appear when clicking address bar", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(38.dp)
-                                .testTag("bridge_terminal_always_appear_btn"),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(
-                                1.2.dp,
-                                if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF334155)
-                            ),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = if (tempTerminalAutoAppear) Color(0xFF0F2B48) else Color(0xFF131923),
-                                contentColor = if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF94A3B8)
-                            ),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (tempTerminalAutoAppear) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp),
-                                tint = if (tempTerminalAutoAppear) Color(0xFF38BDF8) else Color(0xFF64748B)
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = "Always Appear",
-                                fontSize = 11.sp,
-                                fontWeight = if (tempTerminalAutoAppear) FontWeight.Bold else FontWeight.Medium
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                tempTerminalAutoAppear = false
-                                if (settings != null && onUpdateSettings != null) {
-                                    onUpdateSettings(
-                                        settings.copy(
-                                            autoLoadTargetOnFocus = tempAutoLoad,
-                                            autoLoadTargetUrl = tempUrl,
-                                            bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                            bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                            terminalAutoAppearOnAddressBar = false
-                                        )
-                                    )
-                                }
-                                Toast.makeText(context, "Terminal CLI will disappear when clicking address bar", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(38.dp)
-                                .testTag("bridge_terminal_disappear_btn"),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(
-                                1.2.dp,
-                                if (!tempTerminalAutoAppear) Color(0xFFF59E0B) else Color(0xFF334155)
-                            ),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = if (!tempTerminalAutoAppear) Color(0xFF3B270A) else Color(0xFF131923),
-                                contentColor = if (!tempTerminalAutoAppear) Color(0xFFFBBF24) else Color(0xFF94A3B8)
-                            ),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (!tempTerminalAutoAppear) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp),
-                                tint = if (!tempTerminalAutoAppear) Color(0xFFFBBF24) else Color(0xFF64748B)
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = "Disappear",
-                                fontSize = 11.sp,
-                                fontWeight = if (!tempTerminalAutoAppear) FontWeight.Bold else FontWeight.Medium
                             )
                         }
                     }
@@ -869,8 +717,7 @@ fun ControlActionSheet(
                                         autoLoadTargetOnFocus = tempAutoLoad,
                                         autoLoadTargetUrl = finalUrl,
                                         bidirectionalBridgeEnabled = tempBridgeEnabled,
-                                        bridgeApplyToAllWebsites = tempBridgeApplyToAll,
-                                        terminalAutoAppearOnAddressBar = tempTerminalAutoAppear
+                                        bridgeApplyToAllWebsites = tempBridgeApplyToAll
                                     )
                                 )
                             }

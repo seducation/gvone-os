@@ -1090,10 +1090,8 @@ class TerminalCommandExecutor(
             }
 
             "/addressbar" -> {
-                val autoAppear = viewModel.settings.value.terminalAutoAppearOnAddressBar
                 outputLines.add(TerminalLine("── ADDRESS BAR & TERMINAL LINK REPORT ──", TerminalLineType.SYSTEM))
                 outputLines.add(TerminalLine("● Connection State: CONNECTED", TerminalLineType.SUCCESS))
-                outputLines.add(TerminalLine("● Address Bar Click Action: " + (if (autoAppear) "ALWAYS APPEAR (Terminal Opens)" else "DISAPPEAR (Terminal Closes)"), TerminalLineType.INFO))
                 outputLines.add(TerminalLine("● Command Routing: Address bar commands dispatch to CLI and Web App Bridge", TerminalLineType.SUCCESS))
                 commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                 return

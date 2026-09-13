@@ -243,19 +243,9 @@ fun SettingsScreen(
 
             item {
                 SettingsSwitchItem(
-                    icon = Icons.Rounded.DesktopWindows,
-                    title = "Always appear on address bar click",
-                    subtitle = "Terminal CLI automatically appears when clicking address bar; disable so it disappears",
-                    checked = settings.terminalAutoAppearOnAddressBar,
-                    onCheckedChange = { onSettingsChanged(settings.copy(terminalAutoAppearOnAddressBar = it)) }
-                )
-            }
-
-            item {
-                SettingsSwitchItem(
                     icon = Icons.Rounded.DeveloperMode,
-                    title = "Website Developer Bar",
-                    subtitle = "Show live DevTools bar on top of website with Console, DOM inspector, Network, and Storage tools",
+                    title = "Developer Bar (Inspection & Debug)",
+                    subtitle = "Show live DevTools bar on top of websites and file viewer (Console, DOM, Network, Storage, Device)",
                     checked = settings.developerBarEnabled,
                     onCheckedChange = { onSettingsChanged(settings.copy(developerBarEnabled = it)) }
                 )
