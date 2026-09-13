@@ -42,7 +42,6 @@ import androidx.core.content.FileProvider
 import com.example.data.files.FileType
 import com.example.data.files.GVONEFileItem
 import com.example.data.files.GVONEFileSystem
-import com.example.ui.components.DeveloperBarToggleChip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -354,13 +353,13 @@ fun GVONEFileViewerScreen(
             }
         } else {
             // When Developer Bar is toggled OFF: Bar is hidden from files too!
-            // Provide a minimal tab close button and the toggle chip to restore the bar
+            // Provide a minimal tab close button at top-end
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
@@ -369,10 +368,6 @@ fun GVONEFileViewerScreen(
                 ) {
                     Icon(Icons.Rounded.Close, contentDescription = "Close Tab", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
                 }
-
-                DeveloperBarToggleChip(
-                    onClick = onToggleDeveloperBar
-                )
             }
         }
 

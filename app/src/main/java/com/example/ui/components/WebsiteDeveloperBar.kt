@@ -505,46 +505,6 @@ fun WebsiteDeveloperBar(
 }
 }
 
-/**
- * Floating chip shown at the top-right of the website when Developer Bar is toggled OFF.
- * Provides effortless 1-tap toggling to restore the Developer Bar at any time.
- */
-@Composable
-fun DeveloperBarToggleChip(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = Color(0xEE0F172A),
-        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
-        modifier = modifier
-            .statusBarsPadding()
-            .clickable { onClick() }
-            .testTag("dev_bar_toggle_chip")
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.PowerSettingsNew,
-                contentDescription = "Turn Developer Bar ON",
-                tint = Color(0xFF38BDF8),
-                modifier = Modifier.size(13.dp)
-            )
-            Text(
-                text = "</> DEV OFF",
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF38BDF8)
-            )
-        }
-    }
-}
-
 @Composable
 private fun DevConsolePanel(
     consoleLogs: List<DevConsoleLog>,

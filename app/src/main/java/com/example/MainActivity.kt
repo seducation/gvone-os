@@ -38,7 +38,6 @@ import com.example.ui.components.GVONEWebView
 import com.example.ui.components.PermissionPromptDialog
 import com.example.ui.components.ShortsAudioPill
 import com.example.ui.components.WebsiteDeveloperBar
-import com.example.ui.components.DeveloperBarToggleChip
 import com.example.ui.contextmenu.LinkContextMenuBottomSheet
 import com.example.ui.contextmenu.PagePreviewSheet
 import com.example.ui.contextmenu.TabGroupPickerSheet
@@ -348,15 +347,6 @@ fun BrowserApp(
                                         modifier = Modifier
                                             .weight(1f)
                                             .fillMaxWidth()
-                                    )
-                                }
-
-                                if (!settings.developerBarEnabled && isCurrent) {
-                                    DeveloperBarToggleChip(
-                                        onClick = { viewModel.toggleDeveloperBar() },
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .padding(top = 8.dp, end = 8.dp)
                                     )
                                 }
                             }
