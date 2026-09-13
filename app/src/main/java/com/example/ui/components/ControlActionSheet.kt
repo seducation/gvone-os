@@ -244,21 +244,21 @@ fun ControlActionSheet(
                             )
                         }
 
+                        val isPinnedToAddressBar = settings?.terminalPinnedAboveAddressBar == true
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = if (settings?.terminalPinnedToScreen == true) Color(0x3338BDF8) else Color(0xFF1E293B),
-                            border = BorderStroke(1.dp, if (settings?.terminalPinnedToScreen == true) Color(0xFF38BDF8) else Color(0xFF334155)),
+                            color = if (isPinnedToAddressBar) Color(0x3338BDF8) else Color(0xFF1E293B),
+                            border = BorderStroke(1.dp, if (isPinnedToAddressBar) Color(0xFF38BDF8) else Color(0xFF334155)),
                             modifier = Modifier
                                 .clickable {
-                                    val newPinned = !(settings?.terminalPinnedToScreen ?: false)
+                                    val newPinned = !isPinnedToAddressBar
                                     val updated = settings?.copy(
-                                        terminalPinnedToScreen = newPinned,
-                                        terminalHeightFraction = if (newPinned) 0.50f else 0.85f
-                                    ) ?: BrowserSettings(terminalPinnedToScreen = newPinned)
+                                        terminalPinnedAboveAddressBar = newPinned
+                                    ) ?: BrowserSettings(terminalPinnedAboveAddressBar = newPinned)
                                     onUpdateSettings?.invoke(updated)
                                     Toast.makeText(
                                         context,
-                                        if (newPinned) "Terminal Pinned to Screen (50% Split View)" else "Terminal Unpinned. Normal docked mode restored.",
+                                        if (newPinned) "Terminal pinned: appears on top of address bar while writing" else "Terminal unpinned from address bar",
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }
@@ -271,13 +271,13 @@ fun ControlActionSheet(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.PushPin,
-                                    contentDescription = null,
-                                    tint = if (settings?.terminalPinnedToScreen == true) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                    contentDescription = "Pin to Address Bar",
+                                    tint = if (isPinnedToAddressBar) Color(0xFF38BDF8) else Color(0xFF94A3B8),
                                     modifier = Modifier.size(12.dp)
                                 )
                                 Text(
-                                    text = if (settings?.terminalPinnedToScreen == true) "PINNED" else "PIN",
-                                    color = if (settings?.terminalPinnedToScreen == true) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                    text = if (isPinnedToAddressBar) "PINNED TO BAR" else "PIN TO BAR",
+                                    color = if (isPinnedToAddressBar) Color(0xFF38BDF8) else Color(0xFF94A3B8),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace
@@ -285,6 +285,14 @@ fun ControlActionSheet(
                             }
                         }
                     }
+
+                    Text(
+                        text = "Pin terminal above address bar while writing",
+                        color = Color(0xFF64748B),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
 
                     Spacer(modifier = Modifier.height(10.dp))
                     Surface(

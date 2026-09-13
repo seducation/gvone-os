@@ -447,7 +447,7 @@ fun TerminalScreen(
             color = TermBgColor,
             shape = if (isFullScreen) {
                 RoundedCornerShape(0.dp)
-            } else if (isSwappedPosition) {
+            } else if (isPinnedToScreen || isSwappedPosition) {
                 RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
             } else {
                 RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
@@ -455,7 +455,7 @@ fun TerminalScreen(
             border = if (isFullScreen) null else BorderStroke(1.dp, TermBorderColor),
             shadowElevation = 16.dp,
             modifier = Modifier
-                .align(if (isSwappedPosition) Alignment.TopCenter else Alignment.BottomCenter)
+                .align(if (isPinnedToScreen || isSwappedPosition) Alignment.TopCenter else Alignment.BottomCenter)
                 .fillMaxWidth()
                 .then(
                     if (isFullScreen) {
@@ -465,14 +465,8 @@ fun TerminalScreen(
                             .imePadding()
                     } else if (isPinnedToScreen) {
                         Modifier
-                            .fillMaxHeight(0.50f)
-                            .then(
-                                if (isSwappedPosition) {
-                                    Modifier.statusBarsPadding()
-                                } else {
-                                    Modifier.navigationBarsPadding().imePadding()
-                                }
-                            )
+                            .statusBarsPadding()
+                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.20f, 0.85f))
                     } else {
                         Modifier
                             .statusBarsPadding()
@@ -492,10 +486,10 @@ fun TerminalScreen(
                                     Modifier
                                 }
                             )
-                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.50f, 0.98f))
+                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.25f, 0.98f))
                     }
                 )
-                .offset { IntOffset(0, if (isSwappedPosition) -dragOffsetY.coerceAtLeast(0f).toInt() else dragOffsetY.coerceAtLeast(0f).toInt()) }
+                .offset { IntOffset(0, if (isPinnedToScreen || isSwappedPosition) -dragOffsetY.coerceAtLeast(0f).toInt() else dragOffsetY.coerceAtLeast(0f).toInt()) }
         ) {
             Column(
                 modifier = Modifier.fillMaxSize()
@@ -526,8 +520,8 @@ fun TerminalScreen(
                     HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
                 }
 
-                // Top drag handle when docked and not swapped
-                if (!isFullScreen && !isSwappedPosition) {
+                // Top drag handle when docked and not swapped and not pinned
+                if (!isFullScreen && !isSwappedPosition && !isPinnedToScreen) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1149,6 +1143,63 @@ fun TerminalScreen(
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+            }
+
+            // 7. When PINNED to top of screen: Bottom Drag/Resize Handle to adjust height while working with website
+            if (!isFullScreen && isPinnedToScreen) {
+                HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF161B22))
+                        .pointerInput(totalHeightPx) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { _, dragAmount ->
+                                    val deltaFraction = dragAmount / totalHeightPx
+                                    val candidate = (terminalHeightFraction + deltaFraction).coerceIn(0.20f, 0.85f)
+                                    terminalHeightFraction = candidate
+                                    viewModel.updateTerminalHeightFraction(candidate)
+                                }
+                            )
+                        }
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            val next = when {
+                                terminalHeightFraction < 0.35f -> 0.45f
+                                terminalHeightFraction < 0.55f -> 0.65f
+                                terminalHeightFraction < 0.75f -> 0.80f
+                                else -> 0.30f
+                            }
+                            terminalHeightFraction = next
+                            viewModel.updateTerminalHeightFraction(next)
+                            Toast.makeText(context, "Terminal height: ${(next * 100).toInt()}%", Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(vertical = 5.dp)
+                        .testTag("terminal_pinned_resize_handle"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(0xFF38BDF8))
+                        )
+                        Text(
+                            text = "${(terminalHeightFraction * 100).toInt()}% • Drag or tap to adjust height",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
         }

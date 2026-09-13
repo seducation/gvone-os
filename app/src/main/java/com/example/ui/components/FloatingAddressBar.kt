@@ -125,35 +125,12 @@ fun FloatingAddressBar(
     onToggleSuggestionChips: () -> Unit = onToggleSuggestions,
     onOpenTerminalCommands: () -> Unit = onOpenCommandPalette,
     onCloseTerminalCommands: () -> Unit = onCloseCommandPalette,
-    onTogglePinTerminal: (() -> Unit)? = null,
-    isTerminalPinned: Boolean = settings?.terminalPinnedToScreen ?: false,
+    onWritingStateChanged: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var isFocused by remember { mutableStateOf(false) }
-
-    val effectiveTerminalPinned = isTerminalPinned || (settings?.terminalPinnedToScreen == true)
-    val handleTogglePinTerminal: () -> Unit = {
-        if (onTogglePinTerminal != null) {
-            onTogglePinTerminal()
-        } else {
-            val newPinned = !effectiveTerminalPinned
-            val updated = settings?.copy(
-                terminalPinnedToScreen = newPinned,
-                terminalHeightFraction = if (newPinned) 0.50f else 0.85f
-            ) ?: BrowserSettings(terminalPinnedToScreen = newPinned)
-            onUpdateSettings?.invoke(updated)
-            if (newPinned && !isTerminalOpen) {
-                onOpenTerminal()
-            }
-            Toast.makeText(
-                context,
-                if (newPinned) "Terminal Pinned to Screen (50% Split View)" else "Terminal Unpinned. Normal docked mode restored.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
 
     val isSuggestionChipsOpen = showSuggestionChips || showSuggestions
     val isTerminalCommandsOpen = showTerminalCommands || showCommandPalette
@@ -564,13 +541,6 @@ fun FloatingAddressBar(
                             onClick = {
                                 if (effectivelyCompact) {
                                     onExpand()
-                                    if (isTerminalOpen) {
-                                        handleTogglePinTerminal()
-                                    }
-                                    return@combinedClickable
-                                }
-                                if (isTerminalOpen) {
-                                    handleTogglePinTerminal()
                                     return@combinedClickable
                                 }
                                 val currentUrl = currentTab?.url.orEmpty()
@@ -582,6 +552,7 @@ fun FloatingAddressBar(
                                     }
                                 }
                                 isFocused = true
+                                onWritingStateChanged?.invoke(true)
                                 if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
                                     inputText = ""
                                 } else {
@@ -593,16 +564,14 @@ fun FloatingAddressBar(
                             },
                             onDoubleClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                handleTogglePinTerminal()
                             },
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                if (isTerminalOpen) {
-                                    handleTogglePinTerminal()
-                                } else if (effectivelyCompact) {
+                                if (effectivelyCompact) {
                                     onExpand()
                                 } else {
                                     isFocused = false
+                                    onWritingStateChanged?.invoke(false)
                                     focusManager.clearFocus()
                                     onContract()
                                 }
@@ -696,6 +665,7 @@ fun FloatingAddressBar(
                                             .onFocusChanged { state ->
                                                 if (state.isFocused != isFocused) {
                                                     isFocused = state.isFocused
+                                                    onWritingStateChanged?.invoke(state.isFocused)
                                                     if (state.isFocused) {
                                                         onExpand()
                                                         val currentUrl = currentTab?.url.orEmpty()
@@ -730,6 +700,7 @@ fun FloatingAddressBar(
                                             onSearch = {
                                                 val query = inputText.trim()
                                                 isFocused = false
+                                                onWritingStateChanged?.invoke(false)
                                                 focusManager.clearFocus()
                                                 if (query.isNotEmpty()) {
                                                     onNavigate(query)
@@ -738,6 +709,7 @@ fun FloatingAddressBar(
                                             onSend = {
                                                 val query = inputText.trim()
                                                 isFocused = false
+                                                onWritingStateChanged?.invoke(false)
                                                 focusManager.clearFocus()
                                                 if (query.isNotEmpty()) {
                                                     onNavigate(query)
@@ -746,6 +718,7 @@ fun FloatingAddressBar(
                                             onGo = {
                                                 val query = inputText.trim()
                                                 isFocused = false
+                                                onWritingStateChanged?.invoke(false)
                                                 focusManager.clearFocus()
                                                 if (query.isNotEmpty()) {
                                                     onNavigate(query)
@@ -754,6 +727,7 @@ fun FloatingAddressBar(
                                             onDone = {
                                                 val query = inputText.trim()
                                                 isFocused = false
+                                                onWritingStateChanged?.invoke(false)
                                                 focusManager.clearFocus()
                                                 if (query.isNotEmpty()) {
                                                     onNavigate(query)
@@ -806,12 +780,9 @@ fun FloatingAddressBar(
                                                     interactionSource = remember { MutableInteractionSource() },
                                                     indication = null,
                                                     onClick = {
-                                                        if (isTerminalOpen) {
-                                                            handleTogglePinTerminal()
-                                                            return@combinedClickable
-                                                        }
                                                         onExpand()
                                                         isFocused = true
+                                                        onWritingStateChanged?.invoke(true)
                                                         val currentUrl = currentTab?.url.orEmpty()
                                                         if (autoLoadEnabled && targetUrl.isNotBlank()) {
                                                             val cleanTarget = targetUrl.removePrefix("https://").removePrefix("http://").trimEnd('/')
@@ -831,16 +802,14 @@ fun FloatingAddressBar(
                                                     },
                                                     onDoubleClick = {
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                        handleTogglePinTerminal()
                                                     },
                                                     onLongClick = {
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                        if (isTerminalOpen) {
-                                                            handleTogglePinTerminal()
-                                                        } else if (effectivelyCompact) {
+                                                        if (effectivelyCompact) {
                                                             onExpand()
                                                         } else {
                                                             isFocused = false
+                                                            onWritingStateChanged?.invoke(false)
                                                             focusManager.clearFocus()
                                                             onContract()
                                                         }
@@ -852,25 +821,8 @@ fun FloatingAddressBar(
 
                                 IconButton(
                                     onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        handleTogglePinTerminal()
-                                    },
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .testTag("address_bar_terminal_pin_button")
-                                        .testTag("address_bar_pin_terminal_toggle")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.PushPin,
-                                        contentDescription = if (effectiveTerminalPinned) "Unpin Terminal (50% Split)" else "Pin Terminal to Screen",
-                                        tint = if (effectiveTerminalPinned) Color(0xFF38BDF8) else Color(0xFF8E9BAE),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = {
                                         isFocused = false
+                                        onWritingStateChanged?.invoke(false)
                                         focusManager.clearFocus()
                                         inputText = ""
                                         onNavigate(HOME_WEB_APP_URL)

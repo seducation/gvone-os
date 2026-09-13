@@ -185,11 +185,13 @@ fun BrowserApp(
 
     // Termux CLI full screen state
     var isTerminalFullScreen by remember { mutableStateOf(false) }
+    var isAddressBarWriting by remember { mutableStateOf(false) }
     LaunchedEffect(activeSheet) {
         if (activeSheet != ActiveSheet.Terminal) {
             isTerminalFullScreen = false
         }
     }
+    val isTerminalShown = (activeSheet == ActiveSheet.Terminal) || (settings.terminalPinnedAboveAddressBar && isAddressBarWriting)
 
     // Reset address bar to full expanded state when switching tabs
     LaunchedEffect(currentTabId) {
@@ -372,7 +374,7 @@ fun BrowserApp(
 
         // Termux-Style CLI Drawer/Overlay (Displays docked on top of address bar or bottom bar, with fullscreen toggle)
         AnimatedVisibility(
-            visible = activeSheet == ActiveSheet.Terminal,
+            visible = isTerminalShown,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
         ) {
@@ -383,12 +385,15 @@ fun BrowserApp(
                 isFullScreen = isTerminalFullScreen,
                 onToggleFullScreen = { isTerminalFullScreen = it },
                 onOpenAgentDashboard = { viewModel.openAgentDashboard() },
-                onClose = { viewModel.closeSheet() }
+                onClose = {
+                    isAddressBarWriting = false
+                    viewModel.closeSheet()
+                }
             )
         }
 
         // Floating Bottom Address Bar Pill matching Safari Compact Design (Visible when no modal or when Terminal is docked)
-        if ((activeSheet == ActiveSheet.None || activeSheet == ActiveSheet.FindInPage || activeSheet == ActiveSheet.Terminal) && !isTerminalFullScreen) {
+        if ((activeSheet == ActiveSheet.None || activeSheet == ActiveSheet.FindInPage || activeSheet == ActiveSheet.Terminal || isTerminalShown) && !isTerminalFullScreen) {
             FloatingAddressBar(
                 currentTab = currentTab,
                 tabCount = tabs.count { it.isPrivate == isPrivateMode },
@@ -414,21 +419,12 @@ fun BrowserApp(
                 customCommands = customCommands,
                 onOpenCommandManager = { viewModel.openSheet(ActiveSheet.CustomCommands) },
                 onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
-                isTerminalOpen = activeSheet == ActiveSheet.Terminal,
-                onCloseTerminal = { viewModel.closeSheet() },
-                onTogglePinTerminal = {
-                    val newPinned = !settings.terminalPinnedToScreen
-                    viewModel.setTerminalPinnedToScreen(newPinned)
-                    if (newPinned && activeSheet != ActiveSheet.Terminal) {
-                        viewModel.openSheet(ActiveSheet.Terminal)
-                    }
-                    Toast.makeText(
-                        context,
-                        if (newPinned) "Terminal Pinned to Screen (50% Split View)" else "Terminal Unpinned. Normal docked mode restored.",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                isTerminalOpen = isTerminalShown,
+                onCloseTerminal = {
+                    isAddressBarWriting = false
+                    viewModel.closeSheet()
                 },
-                isTerminalPinned = settings.terminalPinnedToScreen,
+                onWritingStateChanged = { isAddressBarWriting = it },
                 onOpenConnector = { context ->
                     viewModel.openWebsiteConnector(context)
                 },

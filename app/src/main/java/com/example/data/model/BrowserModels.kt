@@ -143,6 +143,7 @@ data class BrowserSettings(
     val bridgeApplyToAllWebsites: Boolean = false,
     val terminalHeightFraction: Float = 0.85f,
     val terminalPinnedToScreen: Boolean = false,
+    val terminalPinnedAboveAddressBar: Boolean = false,
     val terminalSwappedPosition: Boolean = false,
     val shortsAudioMode: ShortsAudioMode = ShortsAudioMode.ALWAYS_UNMUTED,
     val backgroundPlayEnabled: Boolean = true,

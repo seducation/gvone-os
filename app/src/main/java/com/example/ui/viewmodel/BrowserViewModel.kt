@@ -799,6 +799,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", false)
         val termHeight = prefs.getFloat("terminal_height_fraction", 0.85f)
         val termPinnedScreen = prefs.getBoolean("terminal_pinned_to_screen", false)
+        val termPinnedAboveAddr = prefs.getBoolean("terminal_pinned_above_address_bar", false)
         val termSwappedPos = prefs.getBoolean("terminal_swapped_position", false)
         val shortsModeName = prefs.getString("shorts_audio_mode", ShortsAudioMode.ALWAYS_UNMUTED.name) ?: ShortsAudioMode.ALWAYS_UNMUTED.name
         val shortsMode = try { ShortsAudioMode.valueOf(shortsModeName) } catch (_: Exception) { ShortsAudioMode.ALWAYS_UNMUTED }
@@ -821,6 +822,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             bridgeApplyToAllWebsites = bridgeApplyAll,
             terminalHeightFraction = termHeight,
             terminalPinnedToScreen = termPinnedScreen,
+            terminalPinnedAboveAddressBar = termPinnedAboveAddr,
             terminalSwappedPosition = termSwappedPos,
             shortsAudioMode = shortsMode,
             backgroundPlayEnabled = bgPlay,
@@ -845,6 +847,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             .putBoolean("bridge_apply_all_websites", s.bridgeApplyToAllWebsites)
             .putFloat("terminal_height_fraction", s.terminalHeightFraction)
             .putBoolean("terminal_pinned_to_screen", s.terminalPinnedToScreen)
+            .putBoolean("terminal_pinned_above_address_bar", s.terminalPinnedAboveAddressBar)
             .putBoolean("terminal_swapped_position", s.terminalSwappedPosition)
             .putString("shorts_audio_mode", s.shortsAudioMode.name)
             .putBoolean("background_play_enabled", s.backgroundPlayEnabled)
@@ -862,7 +865,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateTerminalHeightFraction(fraction: Float) {
-        val clamped = fraction.coerceIn(0.50f, 0.98f)
+        val clamped = fraction.coerceIn(0.20f, 0.95f)
         updateSettings(_settings.value.copy(terminalHeightFraction = clamped))
     }
 
@@ -871,7 +874,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         updateSettings(
             _settings.value.copy(
                 terminalPinnedToScreen = newPinned,
-                terminalHeightFraction = if (newPinned) 0.50f else 0.85f
+                terminalHeightFraction = if (newPinned) 0.45f else 0.85f
             )
         )
     }
@@ -880,8 +883,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         updateSettings(
             _settings.value.copy(
                 terminalPinnedToScreen = pinned,
-                terminalHeightFraction = if (pinned) 0.50f else 0.85f
+                terminalHeightFraction = if (pinned) 0.45f else 0.85f
             )
+        )
+    }
+
+    fun toggleTerminalPinnedAboveAddressBar() {
+        val newPinned = !_settings.value.terminalPinnedAboveAddressBar
+        updateSettings(
+            _settings.value.copy(terminalPinnedAboveAddressBar = newPinned)
+        )
+    }
+
+    fun setTerminalPinnedAboveAddressBar(pinned: Boolean) {
+        updateSettings(
+            _settings.value.copy(terminalPinnedAboveAddressBar = pinned)
         )
     }
 
