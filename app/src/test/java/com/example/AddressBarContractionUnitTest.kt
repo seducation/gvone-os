@@ -16,7 +16,7 @@ class AddressBarContractionUnitTest {
         assertNotNull("Command /pin must be registered in BUILT_IN_COMMANDS", pinCmd)
         assertEquals(CommandType.BROWSER_ACTION, pinCmd?.type)
         assertEquals("pin_terminal", pinCmd?.template)
-        assertTrue("Aliases should include /unpin or /split", pinCmd?.aliases?.contains("/unpin") == true)
+        assertTrue("Aliases should include /unpin or /split", pinCmd?.getAliasesList()?.contains("/unpin") == true)
         
         val action = BrowserActionType.fromActionId(pinCmd!!.template)
         assertEquals(BrowserActionType.PIN_TERMINAL, action)

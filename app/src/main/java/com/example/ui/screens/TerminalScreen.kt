@@ -107,6 +107,8 @@ fun TerminalScreen(
     isAddressBarBottom: Boolean = true,
     addressBarBottomPadding: Dp = 0.dp,
     isFullScreen: Boolean = false,
+    autoFocus: Boolean = true,
+    isAddressBarWriting: Boolean = false,
     onToggleFullScreen: (Boolean) -> Unit = {},
     onOpenAgentDashboard: () -> Unit = {},
     onClose: () -> Unit,
@@ -238,15 +240,17 @@ fun TerminalScreen(
         }
     }
 
-    // Request keyboard focus immediately on launch
-    LaunchedEffect(Unit) {
-        delay(120)
-        focusRequester.requestFocus()
-        keyboardController?.show()
+    // Request keyboard focus immediately on launch only if actively opened as sheet
+    LaunchedEffect(autoFocus) {
+        if (autoFocus) {
+            delay(120)
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        }
     }
 
     // Hardware/system back button handling
-    BackHandler {
+    BackHandler(enabled = autoFocus) {
         onClose()
     }
 
@@ -427,8 +431,14 @@ fun TerminalScreen(
         val isPinnedToScreen = settings.terminalPinnedToScreen
         val isSwappedPosition = settings.terminalSwappedPosition
 
-        // Semi-transparent backdrop scrim over the background webpage when docked (Disabled when pinned to screen so web is interactive)
-        if (!isFullScreen && !isPinnedToScreen) {
+        // When pinned to screen: default is Top (attached above website). Swapped is Bottom (moved down below website)!
+        // When not pinned: default is Bottom (docked above address bar). Swapped is Top.
+        val isAtTop = if (isPinnedToScreen) !isSwappedPosition else isSwappedPosition
+        val isAtBottom = !isAtTop
+
+        // Semi-transparent backdrop scrim over the background webpage when docked
+        // (Disabled when pinned to screen or in companion mode so web and address bar are 100% interactive)
+        if (!isFullScreen && !isPinnedToScreen && autoFocus) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -447,7 +457,7 @@ fun TerminalScreen(
             color = TermBgColor,
             shape = if (isFullScreen) {
                 RoundedCornerShape(0.dp)
-            } else if (isPinnedToScreen || isSwappedPosition) {
+            } else if (isAtTop) {
                 RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
             } else {
                 RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
@@ -455,7 +465,7 @@ fun TerminalScreen(
             border = if (isFullScreen) null else BorderStroke(1.dp, TermBorderColor),
             shadowElevation = 16.dp,
             modifier = Modifier
-                .align(if (isPinnedToScreen || isSwappedPosition) Alignment.TopCenter else Alignment.BottomCenter)
+                .align(if (isAtTop) Alignment.TopCenter else Alignment.BottomCenter)
                 .fillMaxWidth()
                 .then(
                     if (isFullScreen) {
@@ -464,21 +474,35 @@ fun TerminalScreen(
                             .statusBarsPadding()
                             .imePadding()
                     } else if (isPinnedToScreen) {
+                        if (isAtTop) {
+                            Modifier
+                                .statusBarsPadding()
+                                .fillMaxHeight(terminalHeightFraction.coerceIn(0.20f, 0.85f))
+                        } else {
+                            Modifier
+                                .navigationBarsPadding()
+                                .imePadding()
+                                .fillMaxHeight(terminalHeightFraction.coerceIn(0.20f, 0.85f))
+                        }
+                    } else if (isAddressBarWriting) {
                         Modifier
                             .statusBarsPadding()
-                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.20f, 0.85f))
+                            .padding(
+                                bottom = if (isAddressBarBottom) addressBarBottomPadding else 0.dp
+                            )
+                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.18f, 0.70f))
                     } else {
                         Modifier
                             .statusBarsPadding()
                             .padding(
-                                bottom = if (isAddressBarBottom && !isSwappedPosition) {
+                                bottom = if (isAddressBarBottom && isAtBottom) {
                                     addressBarBottomPadding
                                 } else {
                                     0.dp
                                 }
                             )
                             .then(
-                                if (!isAddressBarBottom || isSwappedPosition) {
+                                if (!isAddressBarBottom || isAtTop) {
                                     Modifier
                                         .navigationBarsPadding()
                                         .imePadding()
@@ -489,7 +513,7 @@ fun TerminalScreen(
                             .fillMaxHeight(terminalHeightFraction.coerceIn(0.25f, 0.98f))
                     }
                 )
-                .offset { IntOffset(0, if (isPinnedToScreen || isSwappedPosition) -dragOffsetY.coerceAtLeast(0f).toInt() else dragOffsetY.coerceAtLeast(0f).toInt()) }
+                .offset { IntOffset(0, if (isAtTop) -dragOffsetY.coerceAtLeast(0f).toInt() else dragOffsetY.coerceAtLeast(0f).toInt()) }
         ) {
             Column(
                 modifier = Modifier.fillMaxSize()
@@ -520,8 +544,8 @@ fun TerminalScreen(
                     HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
                 }
 
-                // Top drag handle when docked and not swapped and not pinned
-                if (!isFullScreen && !isSwappedPosition && !isPinnedToScreen) {
+                // Top drag/resize handle when terminal is at the BOTTOM (pinned at bottom or docked at bottom)
+                if (!isFullScreen && isAtBottom) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -529,7 +553,13 @@ fun TerminalScreen(
                             .pointerInput(totalHeightPx) {
                                 detectVerticalDragGestures(
                                     onDragEnd = {
-                                        if (dragOffsetY > 120f) {
+                                        if (isAddressBarWriting) {
+                                            if (dragOffsetY > 100f) {
+                                                onClose()
+                                            } else {
+                                                viewModel.updateTerminalHeightFraction(terminalHeightFraction)
+                                            }
+                                        } else if (!isPinnedToScreen && dragOffsetY > 120f) {
                                             onClose()
                                         } else {
                                             viewModel.updateTerminalHeightFraction(terminalHeightFraction)
@@ -538,12 +568,11 @@ fun TerminalScreen(
                                     },
                                     onVerticalDrag = { _, dragAmount ->
                                         val deltaFraction = -dragAmount / totalHeightPx
-                                        val candidate = terminalHeightFraction + deltaFraction
-                                        if (candidate in 0.55f..0.98f) {
-                                            terminalHeightFraction = candidate
-                                        } else if (candidate < 0.55f && dragAmount > 0) {
-                                            dragOffsetY += dragAmount
-                                        }
+                                        val minH = if (isAddressBarWriting) 0.18f else 0.20f
+                                        val maxH = if (isAddressBarWriting) 0.70f else 0.85f
+                                        val candidate = (terminalHeightFraction + deltaFraction).coerceIn(minH, maxH)
+                                        terminalHeightFraction = candidate
+                                        viewModel.updateTerminalHeightFraction(candidate)
                                     }
                                 )
                             }
@@ -551,10 +580,20 @@ fun TerminalScreen(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
                             ) {
-                                val next = when {
-                                    terminalHeightFraction < 0.80f -> 0.85f
-                                    terminalHeightFraction < 0.90f -> 0.95f
-                                    else -> 0.75f
+                                val next = if (isAddressBarWriting) {
+                                    when {
+                                        terminalHeightFraction < 0.28f -> 0.35f
+                                        terminalHeightFraction < 0.45f -> 0.55f
+                                        terminalHeightFraction < 0.62f -> 0.68f
+                                        else -> 0.22f
+                                    }
+                                } else {
+                                    when {
+                                        terminalHeightFraction < 0.35f -> 0.45f
+                                        terminalHeightFraction < 0.55f -> 0.65f
+                                        terminalHeightFraction < 0.75f -> 0.80f
+                                        else -> 0.30f
+                                    }
                                 }
                                 terminalHeightFraction = next
                                 viewModel.updateTerminalHeightFraction(next)
@@ -562,12 +601,57 @@ fun TerminalScreen(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .width(42.dp)
-                                .height(4.dp)
-                                .background(Color(0xFF484F58), CircleShape)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(36.dp)
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(if (isPinnedToScreen || isAddressBarWriting) Color(0xFF38BDF8) else Color(0xFF484F58))
+                            )
+                            if (isPinnedToScreen || isAddressBarWriting) {
+                                Text(
+                                    text = "${(terminalHeightFraction * 100).toInt()}% • Drag or tap to resize",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            if (isPinnedToScreen) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFF21262D),
+                                    modifier = Modifier.clickable {
+                                        viewModel.toggleTerminalSwappedPosition()
+                                        Toast.makeText(context, "Terminal moved up to top (Split View)", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.ArrowUpward,
+                                            contentDescription = "Move Up",
+                                            tint = Color(0xFF38BDF8),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(
+                                            text = "MOVE UP",
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -583,7 +667,7 @@ fun TerminalScreen(
                         viewModel.setTerminalPinnedToScreen(newPinned)
                         Toast.makeText(
                             context,
-                            if (newPinned) "Terminal Pinned to Screen (50% Split View). Website below is fully interactive!" else "Terminal Unpinned. Normal docked mode restored.",
+                            if (newPinned) "Terminal Pinned to Screen (Split View). Website is fully interactive!" else "Terminal Unpinned. Normal docked mode restored.",
                             Toast.LENGTH_SHORT
                         ).show()
                     },
@@ -603,11 +687,12 @@ fun TerminalScreen(
                     onToggleSwapPosition = {
                         viewModel.toggleTerminalSwappedPosition()
                         val nextSwapped = !isSwappedPosition
-                        Toast.makeText(
-                            context,
-                            if (nextSwapped) "Position swapped: Terminal at Top, Suggestions below" else "Position swapped: Terminal at Bottom, Suggestions above",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        val msg = if (isPinnedToScreen) {
+                            if (nextSwapped) "Terminal moved down to bottom (Split View)" else "Terminal moved up to top (Split View)"
+                        } else {
+                            if (nextSwapped) "Position swapped: Terminal at Top, Suggestions below" else "Position swapped: Terminal at Bottom, Suggestions above"
+                        }
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     },
                     onOpenConversationHistory = {
                         showConversationHistorySheet = true
@@ -1146,8 +1231,8 @@ fun TerminalScreen(
                 }
             }
 
-            // 7. When PINNED to top of screen: Bottom Drag/Resize Handle to adjust height while working with website
-            if (!isFullScreen && isPinnedToScreen) {
+            // 7. When at TOP: Bottom Drag/Resize Handle to adjust height while working with website
+            if (!isFullScreen && isAtTop) {
                 HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
                 Box(
                     modifier = Modifier
@@ -1157,7 +1242,9 @@ fun TerminalScreen(
                             detectVerticalDragGestures(
                                 onVerticalDrag = { _, dragAmount ->
                                     val deltaFraction = dragAmount / totalHeightPx
-                                    val candidate = (terminalHeightFraction + deltaFraction).coerceIn(0.20f, 0.85f)
+                                    val minH = if (isAddressBarWriting) 0.18f else 0.20f
+                                    val maxH = if (isAddressBarWriting) 0.70f else 0.85f
+                                    val candidate = (terminalHeightFraction + deltaFraction).coerceIn(minH, maxH)
                                     terminalHeightFraction = candidate
                                     viewModel.updateTerminalHeightFraction(candidate)
                                 }
@@ -1167,11 +1254,20 @@ fun TerminalScreen(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) {
-                            val next = when {
-                                terminalHeightFraction < 0.35f -> 0.45f
-                                terminalHeightFraction < 0.55f -> 0.65f
-                                terminalHeightFraction < 0.75f -> 0.80f
-                                else -> 0.30f
+                            val next = if (isAddressBarWriting) {
+                                when {
+                                    terminalHeightFraction < 0.28f -> 0.35f
+                                    terminalHeightFraction < 0.45f -> 0.55f
+                                    terminalHeightFraction < 0.62f -> 0.68f
+                                    else -> 0.22f
+                                }
+                            } else {
+                                when {
+                                    terminalHeightFraction < 0.35f -> 0.45f
+                                    terminalHeightFraction < 0.55f -> 0.65f
+                                    terminalHeightFraction < 0.75f -> 0.80f
+                                    else -> 0.30f
+                                }
                             }
                             terminalHeightFraction = next
                             viewModel.updateTerminalHeightFraction(next)
@@ -1199,6 +1295,36 @@ fun TerminalScreen(
                             fontWeight = FontWeight.Medium,
                             fontFamily = FontFamily.Monospace
                         )
+                        if (isPinnedToScreen) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF21262D),
+                                modifier = Modifier.clickable {
+                                    viewModel.toggleTerminalSwappedPosition()
+                                    Toast.makeText(context, "Terminal moved down to bottom (Split View)", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ArrowDownward,
+                                        contentDescription = "Move Down",
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text(
+                                        text = "MOVE DOWN",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1382,16 +1508,26 @@ private fun TerminalHeaderBar(
                 )
             }
 
-            // Button for swiping/swapping the position between suggestions chip and terminal
+            // Button for swiping/swapping the position between suggestions chip and terminal or moving down/up
             IconButton(
                 onClick = onToggleSwapPosition,
                 modifier = Modifier
                     .size(32.dp)
                     .testTag("terminal_swap_position_btn")
             ) {
+                val icon = if (isPinnedToScreen) {
+                    if (isSwappedPosition) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward
+                } else {
+                    Icons.Rounded.SwapVert
+                }
+                val desc = if (isPinnedToScreen) {
+                    if (isSwappedPosition) "Move Terminal Up (Top Split)" else "Move Terminal Down (Bottom Split)"
+                } else {
+                    if (isSwappedPosition) "Restore Position (Default: Chip Top, Terminal Bottom)" else "Swap Position (Terminal Top, Chip Bottom)"
+                }
                 Icon(
-                    imageVector = Icons.Rounded.SwapVert,
-                    contentDescription = if (isSwappedPosition) "Restore Position (Default: Chip Top, Terminal Bottom)" else "Swap Position (Terminal Top, Chip Bottom)",
+                    imageVector = icon,
+                    contentDescription = desc,
                     tint = if (isSwappedPosition) Color(0xFF38BDF8) else TermTextSecondary,
                     modifier = Modifier.size(18.dp)
                 )
@@ -1498,6 +1634,40 @@ private fun TerminalHeaderBar(
                             .testTag("terminal_pin_toggle_btn")
                             .testTag("terminal_menu_pin_screen")
                     )
+
+                    // 1b. Move Terminal Down / Up (when pinned)
+                    if (isPinnedToScreen) {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = if (isSwappedPosition) "Move Terminal Up (Top Split)" else "Move Terminal Down (Bottom Split)",
+                                        color = Color(0xFFE6EDF6),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = if (isSwappedPosition) "Position terminal at top of screen" else "Position terminal at bottom of screen",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 10.5.sp
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (isSwappedPosition) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward,
+                                    contentDescription = null,
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onToggleSwapPosition()
+                            },
+                            modifier = Modifier.testTag("terminal_menu_move_position")
+                        )
+                    }
 
                     HorizontalDivider(color = Color(0xFF21262D), thickness = 0.5.dp)
 

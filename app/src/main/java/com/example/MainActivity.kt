@@ -191,7 +191,7 @@ fun BrowserApp(
             isTerminalFullScreen = false
         }
     }
-    val isTerminalShown = (activeSheet == ActiveSheet.Terminal) || (settings.terminalPinnedAboveAddressBar && isAddressBarWriting)
+    val isTerminalShown = (activeSheet == ActiveSheet.Terminal) || settings.terminalPinnedToScreen || (settings.terminalPinnedAboveAddressBar && isAddressBarWriting)
 
     // Reset address bar to full expanded state when switching tabs
     LaunchedEffect(currentTabId) {
@@ -216,6 +216,9 @@ fun BrowserApp(
     }
 
     // Handle back button presses gracefully
+    BackHandler(enabled = isAddressBarWriting) {
+        isAddressBarWriting = false
+    }
     BackHandler(enabled = activeSheet != ActiveSheet.None) {
         viewModel.closeSheet()
     }
@@ -383,10 +386,15 @@ fun BrowserApp(
                 isAddressBarBottom = settings.addressBarBottom,
                 addressBarBottomPadding = effectiveAddressBarHeight,
                 isFullScreen = isTerminalFullScreen,
+                autoFocus = (activeSheet == ActiveSheet.Terminal),
+                isAddressBarWriting = isAddressBarWriting,
                 onToggleFullScreen = { isTerminalFullScreen = it },
                 onOpenAgentDashboard = { viewModel.openAgentDashboard() },
                 onClose = {
                     isAddressBarWriting = false
+                    if (settings.terminalPinnedToScreen) {
+                        viewModel.setTerminalPinnedToScreen(false)
+                    }
                     viewModel.closeSheet()
                 }
             )
