@@ -172,11 +172,9 @@ fun FloatingAddressBar(
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
-    val commandSuggestions = remember(inputText, customCommands, isFocused, isTerminalCommandsOpen) {
+    val commandSuggestions = remember(inputText, customCommands, isFocused) {
         if (isFocused && (inputText.startsWith("/") || (inputText.isNotBlank() && customCommands.any { it.matchesTrigger(inputText) }))) {
             CommandEngine.getSuggestions(inputText, customCommands)
-        } else if (isTerminalCommandsOpen) {
-            CommandEngine.getSuggestions("/", customCommands)
         } else {
             emptyList()
         }
@@ -314,11 +312,9 @@ fun FloatingAddressBar(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (isBottom) {
-                // 1. Suggestive Commands UI (`/` trigger OR bulb icon on left of persistence chip):
-                // Card filtering as user types or showing commands list when bulb clicked
-                val isSuggestiveCommandsPopupOpen = isTerminalCommandsOpen && (isFocused || isSuggestionChipsOpen) && commandSuggestions.isNotEmpty()
+                // 1. Terminal Commands UI (`/` trigger): Command list card filtering as user types
                 AnimatedVisibility(
-                    visible = isSuggestiveCommandsPopupOpen,
+                    visible = isTerminalCommandsOpen && isFocused && commandSuggestions.isNotEmpty(),
                     enter = fadeIn() + slideInVertically { it / 2 },
                     exit = fadeOut() + slideOutVertically { it / 2 }
                 ) {
@@ -344,25 +340,13 @@ fun FloatingAddressBar(
                     )
                 }
 
-                // 2. Floating Suggestion Chips UI with Bulb Icon on Left:
-                // Available when user is in written mode / clicking address bar or suggestions open
-                val isChipsBarVisible = isFocused || isSuggestionChipsOpen
+                // 2. Suggestion Chips UI (bulb icon trigger): Horizontal scrollable row directly above input bar
                 AnimatedVisibility(
-                    visible = isChipsBarVisible,
+                    visible = isSuggestionChipsOpen,
                     enter = fadeIn() + slideInVertically { it / 2 },
                     exit = fadeOut() + slideOutVertically { it / 2 }
                 ) {
                     SuggestionChipsBar(
-                        isSuggestivePopupOpen = isSuggestiveCommandsPopupOpen,
-                        onToggleBulb = {
-                            if (isTerminalCommandsOpen) {
-                                onCloseTerminalCommands()
-                                onCloseCommandPalette()
-                            } else {
-                                onOpenTerminalCommands()
-                                onOpenCommandPalette()
-                            }
-                        },
                         onSelectPrompt = { promptText ->
                             inputText = promptText
                             onAddressBarInputChange?.invoke(promptText)
@@ -371,16 +355,12 @@ fun FloatingAddressBar(
                             focusManager.clearFocus()
                             onCloseSuggestionChips()
                             onCloseSuggestions()
-                            onCloseTerminalCommands()
-                            onCloseCommandPalette()
                         },
                         onClose = {
                             onCloseSuggestionChips()
                             onCloseSuggestions()
-                            onCloseTerminalCommands()
-                            onCloseCommandPalette()
                         },
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        modifier = Modifier.padding(bottom = 10.dp)
                     )
                 }
             }
@@ -636,6 +616,31 @@ fun FloatingAddressBar(
                                     )
                                 }
 
+                                // Lightbulb Icon (Left of input bar): Standalone trigger for Suggestion Chips UI
+                                IconButton(
+                                    onClick = {
+                                        if (isSuggestionChipsOpen) {
+                                            onCloseSuggestionChips()
+                                            onCloseSuggestions()
+                                        } else {
+                                            onCloseTerminalCommands()
+                                            onCloseCommandPalette()
+                                            onOpenSuggestionChips()
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .testTag("bulb_button_left")
+                                        .testTag("lightbulb_icon")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Lightbulb,
+                                        contentDescription = "Suggestion Chips",
+                                        tint = if (isSuggestionChipsOpen) Color(0xFFFBBF24) else Color(0xFF8E9BAE),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
                                 Spacer(modifier = Modifier.width(4.dp))
 
                                 Box(
@@ -853,7 +858,7 @@ fun FloatingAddressBar(
                     }
                 }
 
-                // 3. RIGHT CIRCULAR BUTTON: Safari Actions Menu
+                // 3. RIGHT CIRCULAR BUTTON: Suggestions Bulb (Home Screen) / Safari Actions Menu
                 Box(
                     modifier = Modifier
                         .width(sideButtonWidth)
@@ -861,58 +866,90 @@ fun FloatingAddressBar(
                     contentAlignment = Alignment.Center
                 ) {
                     if (sideButtonWidth > 4.dp) {
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .scale(rightScale * sideButtonsScale)
-                                .alpha(sideButtonsAlpha)
-                                .shadow(
-                                    elevation = 16.dp,
-                                    shape = CircleShape,
-                                    spotColor = Color.Black.copy(alpha = 0.6f)
-                                )
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color(0xDD222B3A),
-                                            Color(0xEE141A24)
+                        val isStartPage = currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url)
+                        if (isStartPage) {
+                            SuggestionsButton(
+                                isActive = isSuggestionChipsOpen,
+                                onClick = {
+                                    if (isFocused) {
+                                        focusManager.clearFocus()
+                                        isFocused = false
+                                    }
+                                    if (isSuggestionChipsOpen) {
+                                        onCloseSuggestionChips()
+                                        onCloseSuggestions()
+                                    } else {
+                                        onCloseTerminalCommands()
+                                        onCloseCommandPalette()
+                                        onOpenSuggestionChips()
+                                    }
+                                },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onActionsMenuClick()
+                                },
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .scale(rightScale * sideButtonsScale)
+                                    .alpha(sideButtonsAlpha)
+                                    .testTag("suggestions_button")
+                                    .testTag("bulb_button")
+                                    .testTag("safari_more_actions_button")
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .scale(rightScale * sideButtonsScale)
+                                    .alpha(sideButtonsAlpha)
+                                    .shadow(
+                                        elevation = 16.dp,
+                                        shape = CircleShape,
+                                        spotColor = Color.Black.copy(alpha = 0.6f)
+                                    )
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.verticalGradient(
+                                            colors = listOf(
+                                                Color(0xDD222B3A),
+                                                Color(0xEE141A24)
+                                            )
                                         )
                                     )
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    brush = Brush.linearGradient(
-                                        colors = listOf(
-                                            Color(0x66FFFFFF),
-                                            Color(0x11FFFFFF)
-                                        )
-                                    ),
-                                    shape = CircleShape
-                                )
-                                .combinedClickable(
-                                    interactionSource = rightButtonSource,
-                                    indication = null,
-                                    enabled = !effectivelyCompact,
-                                    onClick = {
-                                        onActionsMenuClick()
-                                    },
-                                    onLongClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        if (effectivelyCompact) {
-                                            onExpand()
-                                        } else {
-                                            onContract()
+                                    .border(
+                                        width = 1.dp,
+                                        brush = Brush.linearGradient(
+                                            colors = listOf(
+                                                Color(0x66FFFFFF),
+                                                Color(0x11FFFFFF)
+                                            )
+                                        ),
+                                        shape = CircleShape
+                                    )
+                                    .combinedClickable(
+                                        interactionSource = rightButtonSource,
+                                        indication = null,
+                                        enabled = !effectivelyCompact,
+                                        onClick = {
+                                            onActionsMenuClick()
+                                        },
+                                        onLongClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            if (effectivelyCompact) {
+                                                onExpand()
+                                            } else {
+                                                onContract()
+                                            }
                                         }
-                                    }
+                                    )
+                                    .testTag("safari_more_actions_button"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                SafariThreeDotsIcon(
+                                    color = Color(0xFFF0F3F8),
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                .testTag("safari_more_actions_button"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            SafariThreeDotsIcon(
-                                color = Color(0xFFF0F3F8),
-                                modifier = Modifier.size(20.dp)
-                            )
+                            }
                         }
                     }
                 }
@@ -920,50 +957,9 @@ fun FloatingAddressBar(
         }
 
         if (!isBottom) {
-            val isChipsBarVisible = isFocused || isSuggestionChipsOpen
-            val isSuggestiveCommandsPopupOpen = isTerminalCommandsOpen && (isFocused || isSuggestionChipsOpen) && commandSuggestions.isNotEmpty()
-
-            // 1. Floating Suggestion Chips UI with Bulb Icon on Left: Top address bar mode
+            // 1. Terminal Commands UI (`/` trigger): Top address bar mode
             AnimatedVisibility(
-                visible = isChipsBarVisible,
-                enter = fadeIn() + slideInVertically { -it / 2 },
-                exit = fadeOut() + slideOutVertically { -it / 2 }
-            ) {
-                SuggestionChipsBar(
-                    isSuggestivePopupOpen = isSuggestiveCommandsPopupOpen,
-                    onToggleBulb = {
-                        if (isTerminalCommandsOpen) {
-                            onCloseTerminalCommands()
-                            onCloseCommandPalette()
-                        } else {
-                            onOpenTerminalCommands()
-                            onOpenCommandPalette()
-                        }
-                    },
-                    onSelectPrompt = { promptText ->
-                        inputText = promptText
-                        onAddressBarInputChange?.invoke(promptText)
-                        onNavigate(promptText)
-                        isFocused = false
-                        focusManager.clearFocus()
-                        onCloseSuggestionChips()
-                        onCloseSuggestions()
-                        onCloseTerminalCommands()
-                        onCloseCommandPalette()
-                    },
-                    onClose = {
-                        onCloseSuggestionChips()
-                        onCloseSuggestions()
-                        onCloseTerminalCommands()
-                        onCloseCommandPalette()
-                    },
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-
-            // 2. Suggestive Commands UI (`/` trigger OR bulb icon on left of persistence chip): Top mode
-            AnimatedVisibility(
-                visible = isSuggestiveCommandsPopupOpen,
+                visible = isTerminalCommandsOpen && isFocused && commandSuggestions.isNotEmpty(),
                 enter = fadeIn() + slideInVertically { -it / 2 },
                 exit = fadeOut() + slideOutVertically { -it / 2 }
             ) {
@@ -979,12 +975,34 @@ fun FloatingAddressBar(
                             isFocused = false
                             focusManager.clearFocus()
                         } else {
-                            val filled = "${suggestion.matchedTrigger} "
-                            inputText = filled
-                            onAddressBarInputChange?.invoke(filled)
+                            inputText = "${suggestion.matchedTrigger} "
                         }
                     },
                     onOpenCommandManager = onOpenCommandManager,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+            }
+
+            // 2. Suggestion Chips UI (bulb icon trigger): Top address bar mode
+            AnimatedVisibility(
+                visible = isSuggestionChipsOpen,
+                enter = fadeIn() + slideInVertically { -it / 2 },
+                exit = fadeOut() + slideOutVertically { -it / 2 }
+            ) {
+                SuggestionChipsBar(
+                    onSelectPrompt = { promptText ->
+                        inputText = promptText
+                        onAddressBarInputChange?.invoke(promptText)
+                        onNavigate(promptText)
+                        isFocused = false
+                        focusManager.clearFocus()
+                        onCloseSuggestionChips()
+                        onCloseSuggestions()
+                    },
+                    onClose = {
+                        onCloseSuggestionChips()
+                        onCloseSuggestions()
+                    },
                     modifier = Modifier.padding(top = 10.dp)
                 )
             }
