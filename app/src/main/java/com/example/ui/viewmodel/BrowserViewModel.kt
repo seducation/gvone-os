@@ -799,9 +799,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val bridgeApplyAll = prefs.getBoolean("bridge_apply_all_websites", false)
         val termAutoAppear = prefs.getBoolean("terminal_auto_appear_address_bar", false)
         val termHeight = prefs.getFloat("terminal_height_fraction", 0.85f)
+        val termPinnedScreen = prefs.getBoolean("terminal_pinned_to_screen", false)
+        val termSwappedPos = prefs.getBoolean("terminal_swapped_position", false)
         val shortsModeName = prefs.getString("shorts_audio_mode", ShortsAudioMode.ALWAYS_UNMUTED.name) ?: ShortsAudioMode.ALWAYS_UNMUTED.name
         val shortsMode = try { ShortsAudioMode.valueOf(shortsModeName) } catch (_: Exception) { ShortsAudioMode.ALWAYS_UNMUTED }
         val bgPlay = prefs.getBoolean("background_play_enabled", true)
+        val devBar = prefs.getBoolean("developer_bar_enabled", false)
 
         return BrowserSettings(
             searchEngine = engine,
@@ -819,8 +822,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             bridgeApplyToAllWebsites = bridgeApplyAll,
             terminalAutoAppearOnAddressBar = termAutoAppear,
             terminalHeightFraction = termHeight,
+            terminalPinnedToScreen = termPinnedScreen,
+            terminalSwappedPosition = termSwappedPos,
             shortsAudioMode = shortsMode,
-            backgroundPlayEnabled = bgPlay
+            backgroundPlayEnabled = bgPlay,
+            developerBarEnabled = devBar
         )
     }
 
@@ -841,14 +847,50 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             .putBoolean("bridge_apply_all_websites", s.bridgeApplyToAllWebsites)
             .putBoolean("terminal_auto_appear_address_bar", s.terminalAutoAppearOnAddressBar)
             .putFloat("terminal_height_fraction", s.terminalHeightFraction)
+            .putBoolean("terminal_pinned_to_screen", s.terminalPinnedToScreen)
+            .putBoolean("terminal_swapped_position", s.terminalSwappedPosition)
             .putString("shorts_audio_mode", s.shortsAudioMode.name)
             .putBoolean("background_play_enabled", s.backgroundPlayEnabled)
+            .putBoolean("developer_bar_enabled", s.developerBarEnabled)
             .apply()
+    }
+
+    fun toggleDeveloperBar() {
+        val next = !_settings.value.developerBarEnabled
+        updateSettings(_settings.value.copy(developerBarEnabled = next))
+    }
+
+    fun setDeveloperBarEnabled(enabled: Boolean) {
+        updateSettings(_settings.value.copy(developerBarEnabled = enabled))
     }
 
     fun updateTerminalHeightFraction(fraction: Float) {
         val clamped = fraction.coerceIn(0.50f, 0.98f)
         updateSettings(_settings.value.copy(terminalHeightFraction = clamped))
+    }
+
+    fun toggleTerminalPinnedToScreen() {
+        val newPinned = !_settings.value.terminalPinnedToScreen
+        updateSettings(
+            _settings.value.copy(
+                terminalPinnedToScreen = newPinned,
+                terminalHeightFraction = if (newPinned) 0.50f else 0.85f
+            )
+        )
+    }
+
+    fun setTerminalPinnedToScreen(pinned: Boolean) {
+        updateSettings(
+            _settings.value.copy(
+                terminalPinnedToScreen = pinned,
+                terminalHeightFraction = if (pinned) 0.50f else 0.85f
+            )
+        )
+    }
+
+    fun toggleTerminalSwappedPosition() {
+        val newSwapped = !_settings.value.terminalSwappedPosition
+        updateSettings(_settings.value.copy(terminalSwappedPosition = newSwapped))
     }
 
     fun openSheet(sheet: ActiveSheet) {

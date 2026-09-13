@@ -351,6 +351,11 @@ class ConversationTreeManager() {
         _tasks.value = _tasks.value.filter { it.status == AgentStatus.EXECUTING || it.status == AgentStatus.PLANNING }
     }
 
+    fun clearAllTasks() {
+        _tasks.value = emptyList()
+        _activeTaskId.value = null
+    }
+
     /**
      * Seed initial tasks matching user specification examples.
      */

@@ -252,6 +252,16 @@ fun SettingsScreen(
             }
 
             item {
+                SettingsSwitchItem(
+                    icon = Icons.Rounded.DeveloperMode,
+                    title = "Website Developer Bar",
+                    subtitle = "Show live DevTools bar on top of website with Console, DOM inspector, Network, and Storage tools",
+                    checked = settings.developerBarEnabled,
+                    onCheckedChange = { onSettingsChanged(settings.copy(developerBarEnabled = it)) }
+                )
+            }
+
+            item {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()

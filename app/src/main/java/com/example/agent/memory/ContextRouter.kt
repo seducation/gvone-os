@@ -51,6 +51,13 @@ class ContextRouter(
         globalPreferences["system_name"] = "GVONE OS"
         globalPreferences["browser_engine"] = "Chromium"
         globalPreferences["version"] = "2.0.0"
+
+        if (conversationHistory.isEmpty()) {
+            conversationHistory.add(ConversationMessage("user", "Hello! What autonomous agent tools are available in GVONE OS?", System.currentTimeMillis() - 3600000))
+            conversationHistory.add(ConversationMessage("assistant", "GVONE OS includes specialized agents for Coding, Browser automation, File I/O, and Voice interaction, all orchestrated through the Central Nervous System.", System.currentTimeMillis() - 3500000))
+            conversationHistory.add(ConversationMessage("user", "How can I trigger an autonomous task in the terminal?", System.currentTimeMillis() - 1800000))
+            conversationHistory.add(ConversationMessage("assistant", "You can type '/agent <goal>' to dispatch a multi-step task, or '/voice' to enter continuous speech conversational mode.", System.currentTimeMillis() - 1700000))
+        }
     }
 
     /**
@@ -153,6 +160,16 @@ class ContextRouter(
     @Synchronized
     fun assembleConversationContext(limit: Int = 10): List<ConversationMessage> {
         return conversationHistory.takeLast(limit)
+    }
+
+    @Synchronized
+    fun getAllConversationMessages(): List<ConversationMessage> {
+        return conversationHistory.toList()
+    }
+
+    @Synchronized
+    fun clearConversationHistory() {
+        conversationHistory.clear()
     }
 
     /**

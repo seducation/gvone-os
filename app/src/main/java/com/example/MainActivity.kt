@@ -37,6 +37,8 @@ import com.example.ui.components.FloatingAddressBar
 import com.example.ui.components.GVONEWebView
 import com.example.ui.components.PermissionPromptDialog
 import com.example.ui.components.ShortsAudioPill
+import com.example.ui.components.WebsiteDeveloperBar
+import com.example.ui.components.DeveloperBarToggleChip
 import com.example.ui.contextmenu.LinkContextMenuBottomSheet
 import com.example.ui.contextmenu.PagePreviewSheet
 import com.example.ui.contextmenu.TabGroupPickerSheet
@@ -279,59 +281,83 @@ fun BrowserApp(
                                 modifier = Modifier.fillMaxSize()
                             )
                         } else {
-                            GVONEWebView(
-                                tab = tab,
-                                isTorActive = settings.torEnabled,
-                                torConnectionState = torStatus.state,
-                                torLastError = torStatus.lastError,
-                                webAppBridge = viewModel.webAppBridge,
-                                bridgeEnabled = settings.bidirectionalBridgeEnabled,
-                                bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
-                                shortsAudioMode = settings.shortsAudioMode,
-                                backgroundPlayEnabled = settings.backgroundPlayEnabled,
-                                dataSaverManager = viewModel.dataSaverManager,
-                                onRegisterWebView = { tabId, wv ->
-                                    viewModel.registerWebView(tabId, wv)
-                                },
-                                onRetryTor = { viewModel.retryTorConnection() },
-                                onDisableTor = { viewModel.disableTorAndReload() },
-                                onLaunchOrbot = launchOrbot,
-                                onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
-                                onOpenDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
-                                onTitleChanged = { title ->
-                                    viewModel.updateTabState(tabId = tab.id, title = title)
-                                },
-                                onUrlChanged = { url ->
-                                    viewModel.updateTabState(tabId = tab.id, url = url)
-                                },
-                                onFaviconChanged = { favicon ->
-                                    viewModel.updateTabState(tabId = tab.id, faviconUrl = favicon)
-                                },
-                                onProgressChanged = { progress ->
-                                    viewModel.updateTabState(tabId = tab.id, progress = progress, isLoading = progress < 100)
-                                },
-                                onContextMenuDetected = { data ->
-                                    viewModel.triggerContextMenu(data)
-                                },
-                                onPageScroll = { scrollY, dy ->
-                                    if (isCurrent) {
-                                        if (scrollY <= 24) {
-                                            // Top of page: always restore full address bar
-                                            isAddressBarCompact = false
-                                        } else if (dy > 14) {
-                                            // Scrolling down into content: smoothly transform into compact pill
-                                            isAddressBarCompact = true
-                                        } else if (dy < -14) {
-                                            // Scrolling up toward top: smoothly expand back to full address bar
-                                            isAddressBarCompact = false
-                                        }
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    if (settings.developerBarEnabled) {
+                                        WebsiteDeveloperBar(
+                                            tab = tab,
+                                            activeWebView = viewModel.getActiveWebView(tab.id),
+                                            isTorActive = settings.torEnabled,
+                                            onToggleOff = { viewModel.toggleDeveloperBar() },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
                                     }
-                                },
-                                onStartDownload = { url, userAgent, contentDisposition, mimeType ->
-                                    viewModel.downloadResource(url, mimeType, context)
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            )
+                                    GVONEWebView(
+                                        tab = tab,
+                                        isTorActive = settings.torEnabled,
+                                        torConnectionState = torStatus.state,
+                                        torLastError = torStatus.lastError,
+                                        webAppBridge = viewModel.webAppBridge,
+                                        bridgeEnabled = settings.bidirectionalBridgeEnabled,
+                                        bridgeApplyToAll = settings.bridgeApplyToAllWebsites,
+                                        shortsAudioMode = settings.shortsAudioMode,
+                                        backgroundPlayEnabled = settings.backgroundPlayEnabled,
+                                        dataSaverManager = viewModel.dataSaverManager,
+                                        onRegisterWebView = { tabId, wv ->
+                                            viewModel.registerWebView(tabId, wv)
+                                        },
+                                        onRetryTor = { viewModel.retryTorConnection() },
+                                        onDisableTor = { viewModel.disableTorAndReload() },
+                                        onLaunchOrbot = launchOrbot,
+                                        onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
+                                        onOpenDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
+                                        onTitleChanged = { title ->
+                                            viewModel.updateTabState(tabId = tab.id, title = title)
+                                        },
+                                        onUrlChanged = { url ->
+                                            viewModel.updateTabState(tabId = tab.id, url = url)
+                                        },
+                                        onFaviconChanged = { favicon ->
+                                            viewModel.updateTabState(tabId = tab.id, faviconUrl = favicon)
+                                        },
+                                        onProgressChanged = { progress ->
+                                            viewModel.updateTabState(tabId = tab.id, progress = progress, isLoading = progress < 100)
+                                        },
+                                        onContextMenuDetected = { data ->
+                                            viewModel.triggerContextMenu(data)
+                                        },
+                                        onPageScroll = { scrollY, dy ->
+                                            if (isCurrent) {
+                                                if (scrollY <= 24) {
+                                                    // Top of page: always restore full address bar
+                                                    isAddressBarCompact = false
+                                                } else if (dy > 14) {
+                                                    // Scrolling down into content: smoothly transform into compact pill
+                                                    isAddressBarCompact = true
+                                                } else if (dy < -14) {
+                                                    // Scrolling up toward top: smoothly expand back to full address bar
+                                                    isAddressBarCompact = false
+                                                }
+                                            }
+                                        },
+                                        onStartDownload = { url, userAgent, contentDisposition, mimeType ->
+                                            viewModel.downloadResource(url, mimeType, context)
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxWidth()
+                                    )
+                                }
+
+                                if (!settings.developerBarEnabled && isCurrent) {
+                                    DeveloperBarToggleChip(
+                                        onClick = { viewModel.toggleDeveloperBar() },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 8.dp, end = 8.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -629,6 +655,8 @@ fun BrowserApp(
                 onOpenHistory = { viewModel.openSheet(ActiveSheet.History) },
                 onOpenBookmarks = { viewModel.openSheet(ActiveSheet.Bookmarks) },
                 onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
+                isDeveloperBarEnabled = settings.developerBarEnabled,
+                onToggleDeveloperBar = { viewModel.toggleDeveloperBar() },
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                 onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
                 onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },

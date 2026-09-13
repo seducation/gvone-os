@@ -30,6 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import com.example.ui.components.suggestions.SuggestionChipsBar
+import com.example.ui.components.suggestions.DefaultQuickPrompts
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -39,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -67,6 +71,8 @@ import com.example.ui.components.ExpandableAgentTaskCard
 import com.example.ui.components.ConversationHierarchyTreeView
 import com.example.ui.components.Level1TaskItem
 import com.example.ui.components.CnsDashboardSheet
+import com.example.ui.components.ConversationHistorySheet
+import com.example.agent.memory.ContextRouter
 import com.example.data.command.CommandEngine
 import com.example.data.files.GVONEFileSystem
 import com.example.data.model.*
@@ -168,6 +174,7 @@ fun TerminalScreen(
     // 3-Level Collapsible Conversation Tree & CNS Dashboard states
     val conversationTreeManager = remember { ConversationTreeManager.global }
     var showCnsDashboard by remember { mutableStateOf(false) }
+    var showConversationHistorySheet by remember { mutableStateOf(false) }
 
     var terminalHeightFraction by remember(settings.terminalHeightFraction) {
         mutableFloatStateOf(settings.terminalHeightFraction)
@@ -417,8 +424,11 @@ fun TerminalScreen(
     ) {
         val totalHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
 
-        // Semi-transparent backdrop scrim over the background webpage when docked
-        if (!isFullScreen) {
+        val isPinnedToScreen = settings.terminalPinnedToScreen
+        val isSwappedPosition = settings.terminalSwappedPosition
+
+        // Semi-transparent backdrop scrim over the background webpage when docked (Disabled when pinned to screen so web is interactive)
+        if (!isFullScreen && !isPinnedToScreen) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -432,14 +442,20 @@ fun TerminalScreen(
             )
         }
 
-        // Terminal Panel (Docked on top of address bar / bottom bar, or Fullscreen)
+        // Terminal Panel (Docked on top of address bar / bottom bar, Half-Screen Pinned, or Fullscreen)
         Surface(
             color = TermBgColor,
-            shape = if (isFullScreen) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+            shape = if (isFullScreen) {
+                RoundedCornerShape(0.dp)
+            } else if (isSwappedPosition) {
+                RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
+            } else {
+                RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+            },
             border = if (isFullScreen) null else BorderStroke(1.dp, TermBorderColor),
             shadowElevation = 16.dp,
             modifier = Modifier
-                .align(Alignment.BottomCenter)
+                .align(if (isSwappedPosition) Alignment.TopCenter else Alignment.BottomCenter)
                 .fillMaxWidth()
                 .then(
                     if (isFullScreen) {
@@ -447,18 +463,28 @@ fun TerminalScreen(
                             .fillMaxSize()
                             .statusBarsPadding()
                             .imePadding()
+                    } else if (isPinnedToScreen) {
+                        Modifier
+                            .fillMaxHeight(0.50f)
+                            .then(
+                                if (isSwappedPosition) {
+                                    Modifier.statusBarsPadding()
+                                } else {
+                                    Modifier.navigationBarsPadding().imePadding()
+                                }
+                            )
                     } else {
                         Modifier
                             .statusBarsPadding()
                             .padding(
-                                bottom = if (isAddressBarBottom) {
+                                bottom = if (isAddressBarBottom && !isSwappedPosition) {
                                     addressBarBottomPadding
                                 } else {
                                     0.dp
                                 }
                             )
                             .then(
-                                if (!isAddressBarBottom) {
+                                if (!isAddressBarBottom || isSwappedPosition) {
                                     Modifier
                                         .navigationBarsPadding()
                                         .imePadding()
@@ -469,13 +495,13 @@ fun TerminalScreen(
                             .fillMaxHeight(terminalHeightFraction.coerceIn(0.50f, 0.98f))
                     }
                 )
-                .offset { IntOffset(0, dragOffsetY.coerceAtLeast(0f).toInt()) }
+                .offset { IntOffset(0, if (isSwappedPosition) -dragOffsetY.coerceAtLeast(0f).toInt() else dragOffsetY.coerceAtLeast(0f).toInt()) }
         ) {
             Column(
                 modifier = Modifier.fillMaxSize()
             ) {
-                // Top drag handle when docked
-                if (!isFullScreen) {
+                // Top drag handle when docked and not swapped
+                if (!isFullScreen && !isSwappedPosition) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -531,13 +557,23 @@ fun TerminalScreen(
                     activeSessionId = activeSessionId,
                     isTorActive = isTorActive,
                     isFullScreen = isFullScreen,
-                    isPinned = settings.terminalAutoAppearOnAddressBar,
-                    onTogglePin = {
+                    isPinnedToScreen = isPinnedToScreen,
+                    onTogglePinToScreen = {
+                        val newPinned = !isPinnedToScreen
+                        viewModel.setTerminalPinnedToScreen(newPinned)
+                        Toast.makeText(
+                            context,
+                            if (newPinned) "Terminal Pinned to Screen (50% Split View). Website below is fully interactive!" else "Terminal Unpinned. Normal docked mode restored.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    isPinnedToAddressBar = settings.terminalAutoAppearOnAddressBar,
+                    onTogglePinToAddressBar = {
                         val newPinned = !settings.terminalAutoAppearOnAddressBar
                         viewModel.updateSettings(settings.copy(terminalAutoAppearOnAddressBar = newPinned))
                         Toast.makeText(
                             context,
-                            if (newPinned) "Terminal Pinned (Always appears on address bar tap)" else "Terminal Unpinned (Disappears on address bar tap)",
+                            if (newPinned) "Terminal Pinned to Address Bar (Always appears on tap)" else "Terminal Unpinned from Address Bar",
                             Toast.LENGTH_SHORT
                         ).show()
                     },
@@ -553,6 +589,19 @@ fun TerminalScreen(
                         Toast.makeText(context, "Terminal height: ${(next * 100).toInt()}%", Toast.LENGTH_SHORT).show()
                     },
                     onToggleFullScreen = { onToggleFullScreen(!isFullScreen) },
+                    isSwappedPosition = isSwappedPosition,
+                    onToggleSwapPosition = {
+                        viewModel.toggleTerminalSwappedPosition()
+                        val nextSwapped = !isSwappedPosition
+                        Toast.makeText(
+                            context,
+                            if (nextSwapped) "Position swapped: Terminal at Top, Suggestions below" else "Position swapped: Terminal at Bottom, Suggestions above",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    onOpenConversationHistory = {
+                        showConversationHistorySheet = true
+                    },
                     onSelectSession = { activeSessionId = it },
                     onNewSession = {
                         val newId = "sess_${sessions.size + 1}"
@@ -583,6 +632,30 @@ fun TerminalScreen(
                 )
 
                 HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
+
+                // When swapped: render Suggestion Chips at the TOP of Terminal!
+                if (isSwappedPosition) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF0B0F17))
+                            .padding(vertical = 4.dp, horizontal = 4.dp)
+                    ) {
+                        SuggestionChipsBar(
+                            prompts = DefaultQuickPrompts.items,
+                            isSuggestivePopupOpen = false,
+                            onToggleBulb = {
+                                viewModel.setShowTerminalCommands(!viewModel.showTerminalCommands.value)
+                            },
+                            onSelectPrompt = { promptText ->
+                                inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
+                                focusRequester.requestFocus()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
+                }
 
                 // 1.5 UNIFIED RUNTIME STATUS BAR & EXPANDABLE ACTIVE TASK
                 RuntimeStatusPillRow(
@@ -1072,6 +1145,21 @@ fun TerminalScreen(
             }
         )
     }
+
+    // Sovereign Conversation History Sheet
+    if (showConversationHistorySheet) {
+        ConversationHistorySheet(
+            onDismiss = { showConversationHistorySheet = false },
+            onSelectPrompt = { prompt ->
+                inputText = TextFieldValue(prompt, TextRange(prompt.length))
+                focusRequester.requestFocus()
+                keyboardController?.show()
+            },
+            commandHistory = commandHistory,
+            treeManager = conversationTreeManager,
+            contextRouter = ContextRouter.global
+        )
+    }
 }
 }
 
@@ -1081,17 +1169,24 @@ private fun TerminalHeaderBar(
     activeSessionId: String,
     isTorActive: Boolean,
     isFullScreen: Boolean,
-    isPinned: Boolean = false,
-    onTogglePin: (() -> Unit)? = null,
+    isPinnedToScreen: Boolean = false,
+    onTogglePinToScreen: () -> Unit,
+    isPinnedToAddressBar: Boolean = false,
+    onTogglePinToAddressBar: () -> Unit,
     terminalHeightFraction: Float = 0.85f,
-    onAdjustHeight: (() -> Unit)? = null,
+    onAdjustHeight: () -> Unit,
     onToggleFullScreen: () -> Unit,
+    isSwappedPosition: Boolean = false,
+    onToggleSwapPosition: () -> Unit,
+    onOpenConversationHistory: () -> Unit,
     onSelectSession: (String) -> Unit,
     onNewSession: () -> Unit,
     onCloseSession: (String) -> Unit,
     onClearScreen: () -> Unit,
     onClose: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1099,25 +1194,27 @@ private fun TerminalHeaderBar(
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left: Terminal Prompt Brand Badge (">_")
+        // Left: Conversation History Icon Button (History Icon placed on top left)
         Surface(
-            shape = RoundedCornerShape(4.dp),
+            shape = RoundedCornerShape(6.dp),
             color = Color(0xFF161B22),
             border = BorderStroke(1.dp, Color(0xFF30363D)),
-            modifier = Modifier.padding(end = 6.dp)
+            modifier = Modifier
+                .padding(end = 6.dp)
+                .clickable { onOpenConversationHistory() }
+                .testTag("terminal_history_button")
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(
-                    text = ">_",
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TermPromptGreen
+                Icon(
+                    imageVector = Icons.Rounded.History,
+                    contentDescription = "Show Conversation History",
+                    tint = TermPromptCyan,
+                    modifier = Modifier.size(16.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
                 Box(
                     modifier = Modifier
                         .size(6.dp)
@@ -1126,7 +1223,7 @@ private fun TerminalHeaderBar(
             }
         }
 
-        // Center / Sessions: Horizontally scrollable row taking remaining width!
+        // Center / Sessions: Horizontally scrollable row taking remaining width
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -1198,71 +1295,280 @@ private fun TerminalHeaderBar(
 
         Spacer(modifier = Modifier.width(6.dp))
 
-        // Right: Window action buttons with ample touch targets & zero overlap!
+        // Right: Window action buttons (Swap Button + Consolidated Dropdown Menu + Close)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            if (onTogglePin != null) {
-                IconButton(
-                    onClick = onTogglePin,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .testTag("terminal_pin_toggle_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PushPin,
-                        contentDescription = if (isPinned) "Unpin Terminal (Auto-appear off)" else "Pin Terminal (Always appear on tap)",
-                        tint = if (isPinned) Color(0xFF38BDF8) else TermTextSecondary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-
-            if (!isFullScreen && onAdjustHeight != null) {
-                IconButton(
-                    onClick = onAdjustHeight,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .testTag("terminal_adjust_height_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.SwapVert,
-                        contentDescription = "Adjust Terminal Height (${(terminalHeightFraction * 100).toInt()}%)",
-                        tint = TermPromptGreen,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-
+            // Button for swiping/swapping the position between suggestions chip and terminal
             IconButton(
-                onClick = onClearScreen,
+                onClick = onToggleSwapPosition,
                 modifier = Modifier
                     .size(32.dp)
-                    .testTag("terminal_clear_btn")
+                    .testTag("terminal_swap_position_btn")
             ) {
                 Icon(
-                    imageVector = Icons.Rounded.DeleteSweep,
-                    contentDescription = "Clear Screen",
-                    tint = TermTextSecondary,
+                    imageVector = Icons.Rounded.SwapVert,
+                    contentDescription = if (isSwappedPosition) "Restore Position (Terminal Bottom, Suggestions Top)" else "Swap Position (Terminal Top, Suggestions Bottom)",
+                    tint = if (isSwappedPosition) Color(0xFF38BDF8) else TermTextSecondary,
                     modifier = Modifier.size(18.dp)
                 )
             }
 
-            IconButton(
-                onClick = onToggleFullScreen,
-                modifier = Modifier
-                    .size(32.dp)
-                    .testTag("terminal_fullscreen_toggle_btn")
-            ) {
-                Icon(
-                    imageVector = if (isFullScreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                    contentDescription = if (isFullScreen) "Dock Terminal" else "Maximize Terminal",
-                    tint = TermPromptCyan,
-                    modifier = Modifier.size(18.dp)
-                )
+            // Single Drop-Down Menu housing: Full Screen, Adjust Height, Pin to Screen, Clear Chat
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("terminal_more_menu_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "Terminal Menu",
+                        tint = if (isPinnedToScreen) Color(0xFF38BDF8) else TermTextPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    modifier = Modifier
+                        .background(Color(0xFF161B22))
+                        .border(1.dp, Color(0xFF30363D), RoundedCornerShape(8.dp))
+                ) {
+                    // 0. Conversation History
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = "Conversation History",
+                                    color = Color(0xFFE6EDF6),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "History of all tasks, agent trees & dialogue",
+                                    color = Color(0xFF8B949E),
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.History,
+                                contentDescription = null,
+                                tint = TermPromptCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onOpenConversationHistory()
+                        },
+                        modifier = Modifier.testTag("terminal_menu_conversation_history")
+                    )
+
+                    HorizontalDivider(color = Color(0xFF21262D), thickness = 0.5.dp)
+
+                    // 1. Pin to Screen (Half Screen Split) - simultaneous interaction with website
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = if (isPinnedToScreen) "Unpin from Screen" else "Pin to Screen (50% Split)",
+                                    color = Color(0xFFE6EDF6),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = if (isPinnedToScreen) "Simultaneous web browsing active" else "Pin half-screen & interact simultaneously",
+                                    color = if (isPinnedToScreen) Color(0xFF38BDF8) else Color(0xFF8B949E),
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.PushPin,
+                                contentDescription = null,
+                                tint = if (isPinnedToScreen) Color(0xFF38BDF8) else Color(0xFF8E9BAE),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (isPinnedToScreen) {
+                                Text(
+                                    text = "PINNED",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onTogglePinToScreen()
+                        },
+                        modifier = Modifier
+                            .testTag("terminal_pin_toggle_btn")
+                            .testTag("terminal_menu_pin_screen")
+                    )
+
+                    HorizontalDivider(color = Color(0xFF21262D), thickness = 0.5.dp)
+
+                    // 2. Adjust Height
+                    if (!isFullScreen) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Adjust Height (${(terminalHeightFraction * 100).toInt()}%)",
+                                    color = Color(0xFFE6EDF6),
+                                    fontSize = 13.sp
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Height,
+                                    contentDescription = null,
+                                    tint = TermPromptGreen,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onAdjustHeight()
+                            },
+                            modifier = Modifier
+                                .testTag("terminal_adjust_height_btn")
+                                .testTag("terminal_menu_adjust_height")
+                        )
+                    }
+
+                    // 3. Full Screen / Dock Toggle
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = if (isFullScreen) "Dock Terminal" else "Full Screen Mode",
+                                color = Color(0xFFE6EDF6),
+                                fontSize = 13.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isFullScreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                                contentDescription = null,
+                                tint = TermPromptCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onToggleFullScreen()
+                        },
+                        modifier = Modifier
+                            .testTag("terminal_fullscreen_toggle_btn")
+                            .testTag("terminal_menu_fullscreen")
+                    )
+
+                    // 4. Clear Chat / Screen
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "Clear Chat / Screen",
+                                color = Color(0xFFEF4444),
+                                fontSize = 13.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteSweep,
+                                contentDescription = null,
+                                tint = Color(0xFFEF4444),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onClearScreen()
+                        },
+                        modifier = Modifier
+                            .testTag("terminal_clear_btn")
+                            .testTag("terminal_menu_clear_chat")
+                    )
+
+                    HorizontalDivider(color = Color(0xFF21262D), thickness = 0.5.dp)
+
+                    // 5. Swap Suggestions & Terminal Position
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = if (isSwappedPosition) "Restore Position (Default)" else "Swap Terminal & Suggestions Position",
+                                color = Color(0xFFE6EDF6),
+                                fontSize = 13.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.SwapVert,
+                                contentDescription = null,
+                                tint = Color(0xFFFBBF24),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onToggleSwapPosition()
+                        },
+                        modifier = Modifier.testTag("terminal_menu_swap_position")
+                    )
+
+                    // 6. Pin to Address Bar (Auto-appear on tap - Previous functionality unchanged)
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = "Auto-appear on Address Bar",
+                                    color = Color(0xFFC9D1D9),
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = if (isPinnedToAddressBar) "Enabled (auto-appears on address tap)" else "Disabled (click to enable)",
+                                    color = Color(0xFF6E7681),
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.VerticalAlignBottom,
+                                contentDescription = null,
+                                tint = if (isPinnedToAddressBar) Color(0xFF38BDF8) else Color(0xFF8B949E),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            Switch(
+                                checked = isPinnedToAddressBar,
+                                onCheckedChange = {
+                                    showMenu = false
+                                    onTogglePinToAddressBar()
+                                },
+                                modifier = Modifier.scale(0.7f)
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onTogglePinToAddressBar()
+                        },
+                        modifier = Modifier.testTag("terminal_menu_pin_address_bar")
+                    )
+                }
             }
 
+            // Close button
             IconButton(
                 onClick = onClose,
                 modifier = Modifier

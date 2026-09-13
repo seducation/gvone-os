@@ -69,6 +69,7 @@ fun GVONEWebView(
     onContextMenuDetected: ((LinkContextMenuData) -> Unit)? = null,
     onStartDownload: (url: String, userAgent: String?, contentDisposition: String?, mimeType: String?) -> Unit,
     onPageScroll: ((scrollY: Int, dy: Int) -> Unit)? = null,
+    onConsoleMessageReceived: ((ConsoleMessage) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var loadProgress by remember { mutableIntStateOf(0) }
@@ -221,6 +222,13 @@ fun GVONEWebView(
 
                             override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
                                 onFaviconChanged(null)
+                            }
+
+                            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                                if (consoleMessage != null) {
+                                    onConsoleMessageReceived?.invoke(consoleMessage)
+                                }
+                                return super.onConsoleMessage(consoleMessage)
                             }
 
                             override fun onGeolocationPermissionsShowPrompt(

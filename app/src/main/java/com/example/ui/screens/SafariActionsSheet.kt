@@ -97,6 +97,8 @@ fun SafariActionsSheet(
     onOpenHistory: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onOpenTerminal: () -> Unit = {},
+    isDeveloperBarEnabled: Boolean = false,
+    onToggleDeveloperBar: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onOpenTorDiagnostics: () -> Unit = {},
     onOpenCustomCommands: () -> Unit = {},
@@ -845,6 +847,16 @@ fun SafariActionsSheet(
                                                 onClick = {
                                                     onClose()
                                                     onOpenTerminal()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.DeveloperMode,
+                                                label = "Website Developer Bar",
+                                                trailingText = if (isDeveloperBarEnabled) "ON" else "OFF",
+                                                onClick = {
+                                                    onToggleDeveloperBar()
+                                                    onClose()
                                                 }
                                             )
                                             HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
