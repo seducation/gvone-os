@@ -610,75 +610,151 @@ object DefaultQuickPrompts {
 
 /**
  * SuggestionChipsBar:
- * Floating row of quick-prompt chips matching the address bar theme,
- * with the bulb icon placed on the left of the persistent chips.
- * No header word, no swipe arrow, and no cross button.
+ * Horizontal, scrollable row of quick-prompt chips rendered directly above the input bar.
+ * Triggered by the bulb icon.
+ * Features:
+ * - Standalone component (does not read or set terminal-command state)
+ * - Scrollable row of quick prompts ('Add Mission Templates', 'Visualize Swarm Members', etc.)
+ * - '>' arrow button to scroll for more
+ * - 'X' button to dismiss
+ * - Tapping a chip inserts/sends that prompt text and closes the suggestion chips
  */
 @Composable
 fun SuggestionChipsBar(
     prompts: List<QuickPrompt> = DefaultQuickPrompts.items,
-    isSuggestivePopupOpen: Boolean = false,
-    onToggleBulb: () -> Unit = {},
     onSelectPrompt: (String) -> Unit,
-    onClose: () -> Unit = {},
+    onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
+    val coroutineScope = rememberCoroutineScope()
 
-    Row(
+    Card(
         modifier = modifier
             .fillMaxWidth()
             .widthIn(max = 440.dp)
-            .padding(horizontal = 4.dp, vertical = 2.dp)
-            .testTag("floating_suggestion_chips_bar")
+            .shadow(elevation = 16.dp, shape = RoundedCornerShape(18.dp), spotColor = Color.Black.copy(alpha = 0.7f))
+            .clip(RoundedCornerShape(18.dp))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xF5131A24),
+                        Color(0xFA0B0F15)
+                    )
+                )
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(0x66F59E0B),
+                        Color(0x3338BDF8),
+                        Color(0x22FFFFFF)
+                    )
+                ),
+                shape = RoundedCornerShape(18.dp)
+            )
             .testTag("suggestion_chips_bar")
             .testTag("suggestion_chips_ui"),
-        verticalAlignment = Alignment.CenterVertically
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
-        // Bulb icon on the LEFT of persistence chips
-        Surface(
+        Column(
             modifier = Modifier
-                .size(36.dp)
-                .shadow(elevation = 10.dp, shape = CircleShape, spotColor = Color.Black.copy(alpha = 0.6f))
-                .clip(CircleShape)
-                .clickable { onToggleBulb() }
-                .testTag("bulb_button_left")
-                .testTag("lightbulb_icon")
-                .testTag("bulb_button"),
-            shape = CircleShape,
-            color = if (isSuggestivePopupOpen) Color(0xFF2D2312) else Color(0xEB131A24),
-            border = BorderStroke(
-                1.dp,
-                if (isSuggestivePopupOpen) Color(0xFFFBBF24) else Color(0x33FFFFFF)
-            )
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 10.dp)
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.Lightbulb,
-                    contentDescription = "Suggestions & Commands",
-                    tint = if (isSuggestivePopupOpen) Color(0xFFFBBF24) else Color(0xFFE2E8F0),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
+            // Header Row: Sparkle/Bulb indicator + Title + Scroll '>' + Dismiss 'X'
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Lightbulb,
+                        contentDescription = null,
+                        tint = Color(0xFFFBBF24),
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = "SUGGESTION PROMPTS",
+                        color = Color(0xFFFBBF24),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 0.8.sp
+                    )
+                }
 
-        Spacer(modifier = Modifier.width(8.dp))
-
-        // Horizontal scrollable floating chips
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .horizontalScroll(scrollState),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            prompts.forEach { prompt ->
-                QuickPromptChip(
-                    prompt = prompt,
-                    onClick = {
-                        onSelectPrompt(prompt.promptText)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // '>' Arrow button to scroll for more
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                val target = (scrollState.value + 260).coerceAtMost(scrollState.maxValue)
+                                scrollState.animateScrollTo(target)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color(0x18FFFFFF))
+                            .testTag("suggestion_chips_scroll_next"),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ChevronRight,
+                            contentDescription = "Scroll for more suggestions",
+                            tint = Color(0xFFCBD5E1),
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
-                )
+
+                    // 'X' Dismiss button
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Color(0x18FFFFFF))
+                            .testTag("suggestion_chips_close_button"),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Dismiss Suggestions",
+                            tint = Color(0xFFCBD5E1),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Horizontal scrollable row of quick-prompt chips
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(scrollState)
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                prompts.forEach { prompt ->
+                    QuickPromptChip(
+                        prompt = prompt,
+                        onClick = {
+                            onSelectPrompt(prompt.promptText)
+                        }
+                    )
+                }
             }
         }
     }
@@ -686,7 +762,7 @@ fun SuggestionChipsBar(
 
 /**
  * QuickPromptChip:
- * Sleek floating prompt chip matching the dark glassmorphic address bar theme.
+ * Interactive chip inside the SuggestionChipsBar.
  */
 @Composable
 fun QuickPromptChip(
@@ -696,49 +772,42 @@ fun QuickPromptChip(
 ) {
     Surface(
         modifier = modifier
-            .height(34.dp)
-            .shadow(elevation = 8.dp, shape = RoundedCornerShape(17.dp), spotColor = Color.Black.copy(alpha = 0.4f))
-            .clip(RoundedCornerShape(17.dp))
-            .clickable { onClick() }
-            .testTag("quick_prompt_chip_${prompt.id}")
-            .testTag("suggestion_chip_${prompt.id}"),
-        shape = RoundedCornerShape(17.dp),
-        color = Color(0xEB131A24),
-        border = BorderStroke(
-            1.dp,
-            Brush.linearGradient(
-                listOf(
-                    Color(0x33FFFFFF),
-                    Color(0x1838BDF8)
-                )
+            .clip(RoundedCornerShape(12.dp))
+            .border(
+                width = 1.dp,
+                color = Color(0x33FFFFFF),
+                shape = RoundedCornerShape(12.dp)
             )
-        )
+            .clickable { onClick() }
+            .testTag("quick_prompt_chip_${prompt.id}"),
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0x331E293B)
     ) {
         Row(
             modifier = Modifier
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            Color(0xEB131A24),
-                            Color(0xF00D131C)
+                            Color(0x331E293B),
+                            Color(0x440F172A)
                         )
                     )
                 )
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             Icon(
                 imageVector = prompt.icon,
                 contentDescription = null,
                 tint = Color(0xFFFBBF24),
-                modifier = Modifier.size(13.dp)
+                modifier = Modifier.size(14.dp)
             )
             Text(
                 text = prompt.title,
                 color = Color(0xFFF1F5F9),
                 fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1
             )
         }
