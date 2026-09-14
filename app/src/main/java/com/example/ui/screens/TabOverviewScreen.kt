@@ -8,7 +8,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -22,7 +21,6 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,9 +29,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -168,40 +163,12 @@ fun TabOverviewScreen(
         }
     }
 
-    var isShortcutsExpanded by rememberSaveable { mutableStateOf(false) }
-
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                // Swiping up when shortcuts are expanded collapses them
-                if (available.y < -20f && isShortcutsExpanded) {
-                    isShortcutsExpanded = false
-                }
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource
-            ): Offset {
-                // Pulling down from anywhere on the tabs list expands shortcuts
-                if (available.y > 10f && !isShortcutsExpanded) {
-                    isShortcutsExpanded = true
-                    return Offset(0f, available.y)
-                }
-                return Offset.Zero
-            }
-        }
-    }
-
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF0B0E14))
             .statusBarsPadding()
             .navigationBarsPadding()
-            .nestedScroll(nestedScrollConnection)
     ) {
         Column(
             modifier = Modifier
@@ -211,79 +178,43 @@ fun TabOverviewScreen(
             // --- TOP NAVIGATION / BREADCRUMB BAR ---
             if (currentFolderId != null && currentFolder != null) {
                 // FOLDER VIEW HEADER: "‹ All Tabs" | "📁 Folder Name (count)" | "＋" | "⋮"
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .pointerInput(isShortcutsExpanded) {
-                            detectVerticalDragGestures(
-                                onVerticalDrag = { change, dragAmount ->
-                                    if (dragAmount > 12f && !isShortcutsExpanded) {
-                                        isShortcutsExpanded = true
-                                        change.consume()
-                                    } else if (dragAmount < -12f && isShortcutsExpanded) {
-                                        isShortcutsExpanded = false
-                                        change.consume()
-                                    }
-                                }
-                            )
-                        }
-                ) {
-                    FolderViewHeader(
-                        folder = currentFolder,
-                        tabCount = folderTabs.size,
-                        onBack = { currentFolderId = null },
-                        onAddTab = { onNewTab(currentFolder.id) },
-                        onRename = { groupToRename = currentFolder },
-                        onCloseAllInFolder = { onCloseTabsInGroup(currentFolder.id) },
-                        onDeleteFolder = { groupToDelete = currentFolder }
-                    )
-                }
+                FolderViewHeader(
+                    folder = currentFolder,
+                    tabCount = folderTabs.size,
+                    onBack = { currentFolderId = null },
+                    onAddTab = { onNewTab(currentFolder.id) },
+                    onRename = { groupToRename = currentFolder },
+                    onCloseAllInFolder = { onCloseTabsInGroup(currentFolder.id) },
+                    onDeleteFolder = { groupToDelete = currentFolder }
+                )
             } else {
                 // ROOT "ALL TABS" HEADER
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .pointerInput(isShortcutsExpanded) {
-                            detectVerticalDragGestures(
-                                onVerticalDrag = { change, dragAmount ->
-                                    if (dragAmount > 12f && !isShortcutsExpanded) {
-                                        isShortcutsExpanded = true
-                                        change.consume()
-                                    } else if (dragAmount < -12f && isShortcutsExpanded) {
-                                        isShortcutsExpanded = false
-                                        change.consume()
-                                    }
-                                }
-                            )
-                        }
-                ) {
-                    RootAllTabsHeader(
-                        isSearchActive = isSearchActive,
-                        searchQuery = searchQuery,
-                        onSearchQueryChange = { searchQuery = it },
-                        onToggleSearch = {
-                            isSearchActive = !isSearchActive
-                            if (!isSearchActive) searchQuery = ""
-                        },
-                        isSelectionMode = isSelectionMode,
-                        selectedCount = selectedTabIds.size,
-                        onToggleSelectionMode = {
-                            isSelectionMode = !isSelectionMode
-                            if (!isSelectionMode) selectedTabIds = emptySet()
-                        },
-                        showSortMenu = showSortMenu,
-                        onToggleSortMenu = { showSortMenu = !showSortMenu },
-                        onSortTabs = onSortTabs,
-                        currentEnvironment = currentEnvironment,
-                        onManageEnvironmentClick = { showEnvironmentSheet = true },
-                        onCreateEnvironmentClick = { showCreateEnvironmentDialog = true },
-                        onCreateFolderClick = {
-                            initialTabsForNewGroup = emptyList()
-                            showCreateGroupDialog = true
-                        },
-                        onCloseOverview = onCloseOverview
-                    )
-                }
+                RootAllTabsHeader(
+                    isSearchActive = isSearchActive,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    onToggleSearch = {
+                        isSearchActive = !isSearchActive
+                        if (!isSearchActive) searchQuery = ""
+                    },
+                    isSelectionMode = isSelectionMode,
+                    selectedCount = selectedTabIds.size,
+                    onToggleSelectionMode = {
+                        isSelectionMode = !isSelectionMode
+                        if (!isSelectionMode) selectedTabIds = emptySet()
+                    },
+                    showSortMenu = showSortMenu,
+                    onToggleSortMenu = { showSortMenu = !showSortMenu },
+                    onSortTabs = onSortTabs,
+                    currentEnvironment = currentEnvironment,
+                    onManageEnvironmentClick = { showEnvironmentSheet = true },
+                    onCreateEnvironmentClick = { showCreateEnvironmentDialog = true },
+                    onCreateFolderClick = {
+                        initialTabsForNewGroup = emptyList()
+                        showCreateGroupDialog = true
+                    },
+                    onCloseOverview = onCloseOverview
+                )
 
                 // Shortcuts UI: matching the one in the bottom-right three-dot menu, positioned below "Arrange Tabs By"
                 if (!isSearching) {
@@ -305,9 +236,7 @@ fun TabOverviewScreen(
                         onRemoveShortcut = { target ->
                             customShortcuts = customShortcuts.filter { it.title != target.title || it.url != target.url }
                         },
-                        testTagPrefix = "overview_shortcut",
-                        expanded = isShortcutsExpanded,
-                        onExpandedChange = { isShortcutsExpanded = it }
+                        testTagPrefix = "overview_shortcut"
                     )
                 }
             }
