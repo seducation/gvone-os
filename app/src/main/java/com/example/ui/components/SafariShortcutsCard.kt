@@ -174,9 +174,20 @@ fun SafariShortcutsCard(
     customShortcuts: List<MenuShortcut> = emptyList(),
     onAddCustomShortcut: ((MenuShortcut) -> Unit)? = null,
     onRemoveShortcut: ((MenuShortcut) -> Unit)? = null,
-    testTagPrefix: String = "overview_shortcut"
+    testTagPrefix: String = "overview_shortcut",
+    expanded: Boolean? = null,
+    onExpandedChange: ((Boolean) -> Unit)? = null
 ) {
-    var isExpanded by rememberSaveable { mutableStateOf(false) }
+    var internalExpanded by rememberSaveable { mutableStateOf(false) }
+    val isExpanded = expanded ?: internalExpanded
+    val setExpanded: (Boolean) -> Unit = { newVal ->
+        if (expanded != null) {
+            onExpandedChange?.invoke(newVal)
+        } else {
+            internalExpanded = newVal
+        }
+    }
+
     var showAddDialog by remember { mutableStateOf(false) }
     var shortcutForOptions by remember { mutableStateOf<MenuShortcut?>(null) }
     var shortcutToDelete by remember { mutableStateOf<MenuShortcut?>(null) }
@@ -211,98 +222,117 @@ fun SafariShortcutsCard(
                 detectVerticalDragGestures(
                     onDragStart = { cardDragY = 0f },
                     onDragEnd = {
-                        if (!isExpanded && cardDragY > 25f) isExpanded = true
-                        else if (isExpanded && cardDragY < -25f) isExpanded = false
+                        if (!isExpanded && cardDragY > 20f) setExpanded(true)
+                        else if (isExpanded && cardDragY < -20f) setExpanded(false)
                         cardDragY = 0f
                     },
                     onDragCancel = { cardDragY = 0f },
                     onVerticalDrag = { change, dragAmount ->
                         cardDragY += dragAmount
-                        if (!isExpanded && cardDragY > 30f) {
-                            isExpanded = true
+                        if (!isExpanded && cardDragY > 25f) {
+                            setExpanded(true)
                             change.consume()
-                        } else if (isExpanded && cardDragY < -30f) {
-                            isExpanded = false
+                        } else if (isExpanded && cardDragY < -25f) {
+                            setExpanded(false)
                             change.consume()
                         }
                     }
                 )
             }
             .testTag("${testTagPrefix}_card"),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = Color(0xFF161C26),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
-        shadowElevation = 2.dp
+        shadowElevation = 3.dp
     ) {
         Column(
-            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp, start = 6.dp, end = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+            modifier = Modifier.padding(top = 10.dp, bottom = 6.dp, start = 8.dp, end = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // -----------------------------------------------------------------
-            // 1. PIN SHORTCUTS ROW (Compact horizontal carousel of pinned icons + Add new)
+            // 1. PIN SHORTCUTS ROW (Horizontal carousel of pinned shortcuts + Add new)
             // -----------------------------------------------------------------
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Spacer(modifier = Modifier.width(2.dp))
+
                 pinnedShortcuts.forEach { shortcut ->
-                    Box(
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
+                            .clip(RoundedCornerShape(12.dp))
                             .combinedClickable(
                                 onClick = { onShortcutClick(shortcut) },
                                 onLongClick = {
                                     shortcutForOptions = shortcut
                                 }
                             )
-                            .testTag("${testTagPrefix}_item_${shortcut.title.lowercase().replace(" ", "_")}"),
-                        contentAlignment = Alignment.Center
+                            .padding(horizontal = 4.dp, vertical = 4.dp)
+                            .widthIn(min = 58.dp, max = 74.dp)
+                            .testTag("${testTagPrefix}_item_${shortcut.title.lowercase().replace(" ", "_")}")
                     ) {
                         Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(shortcut.badgeBg),
+                            modifier = Modifier.size(44.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = shortcut.initialLetters,
-                                color = shortcut.textColor,
-                                fontSize = if (shortcut.initialLetters.length > 2) 9.sp else if (shortcut.initialLetters.length > 1) 11.sp else 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(shortcut.badgeBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = shortcut.initialLetters,
+                                    color = shortcut.textColor,
+                                    fontSize = if (shortcut.initialLetters.length > 2) 11.sp else if (shortcut.initialLetters.length > 1) 13.sp else 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            // Pin badge on pinned shortcut tile
+                            Box(
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 2.dp, y = (-2).dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF0F172A))
+                                    .border(1.dp, Color(0xFF38BDF8), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PushPin,
+                                    contentDescription = "Pinned",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(9.dp)
+                                )
+                            }
                         }
 
-                        // Subtle pin badge on pinned shortcut tile
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .align(Alignment.TopEnd)
-                                .offset(x = (-2).dp, y = 2.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF0F172A))
-                                .border(1.dp, Color(0xFF38BDF8), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.PushPin,
-                                contentDescription = "Pinned",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(7.dp)
-                            )
-                        }
+                        Spacer(modifier = Modifier.height(5.dp))
+
+                        Text(
+                            text = shortcut.title,
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
 
-                // "+ Add new" shortcut circular button
-                Box(
+                // "+ Add new" shortcut button
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
+                        .clip(RoundedCornerShape(12.dp))
                         .clickable {
                             if (onAddCustomShortcut != null) {
                                 showAddDialog = true
@@ -310,12 +340,13 @@ fun SafariShortcutsCard(
                                 onAddFavorite()
                             }
                         }
-                        .testTag("${testTagPrefix}_add_new"),
-                    contentAlignment = Alignment.Center
+                        .padding(horizontal = 4.dp, vertical = 4.dp)
+                        .widthIn(min = 58.dp, max = 74.dp)
+                        .testTag("${testTagPrefix}_add_new")
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(34.dp)
+                            .size(44.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF263244)),
                         contentAlignment = Alignment.Center
@@ -324,67 +355,76 @@ fun SafariShortcutsCard(
                             imageVector = Icons.Rounded.Add,
                             contentDescription = "Add new shortcut",
                             tint = Color(0xFFCBD5E1),
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
+                    Spacer(modifier = Modifier.height(5.dp))
+                    Text(
+                        text = "Add new",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        maxLines = 1
+                    )
                 }
+
+                Spacer(modifier = Modifier.width(2.dp))
             }
 
             // -----------------------------------------------------------------
-            // 2. PULL TO EXPAND / COLLAPSE HANDLE (Interactive drag & tap, zero words)
+            // 2. PULL TO EXPAND / COLLAPSE HANDLE (Drag & tap interactive handle)
             // -----------------------------------------------------------------
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
-                    .clickable { isExpanded = !isExpanded }
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { setExpanded(!isExpanded) }
                     .pointerInput(isExpanded) {
                         detectVerticalDragGestures(
                             onDragStart = { handleDragY = 0f },
                             onDragEnd = {
-                                if (!isExpanded && handleDragY > 15f) isExpanded = true
-                                else if (isExpanded && handleDragY < -15f) isExpanded = false
+                                if (!isExpanded && handleDragY > 15f) setExpanded(true)
+                                else if (isExpanded && handleDragY < -15f) setExpanded(false)
                                 handleDragY = 0f
                             },
                             onDragCancel = { handleDragY = 0f },
                             onVerticalDrag = { change, dragAmount ->
                                 handleDragY += dragAmount
                                 if (!isExpanded && handleDragY > 20f) {
-                                    isExpanded = true
+                                    setExpanded(true)
                                     change.consume()
                                 } else if (isExpanded && handleDragY < -20f) {
-                                    isExpanded = false
+                                    setExpanded(false)
                                     change.consume()
                                 }
                             }
                         )
                     }
-                    .padding(vertical = 1.dp)
+                    .padding(vertical = 4.dp)
                     .testTag("${testTagPrefix}_toggle_expand"),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .width(32.dp)
-                            .height(3.dp)
-                            .clip(RoundedCornerShape(1.5.dp))
+                            .width(36.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
                             .background(Color(0xFF475569))
                     )
                     Icon(
                         imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        contentDescription = if (isExpanded) "Collapse" else "Pull down to expand",
                         tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
 
             // -----------------------------------------------------------------
-            // 3. EXPANDING & COLLAPSIBLE ALL SHORTCUTS PANEL (Zero words, compact 6-col grid)
+            // 3. EXPANDING & COLLAPSIBLE ALL SHORTCUTS PANEL (4-column grid with titles)
             // -----------------------------------------------------------------
             AnimatedVisibility(
                 visible = isExpanded,
@@ -393,13 +433,13 @@ fun SafariShortcutsCard(
                         dampingRatio = Spring.DampingRatioLowBouncy,
                         stiffness = Spring.StiffnessMedium
                     )
-                ) + fadeIn(animationSpec = tween(180)),
+                ) + fadeIn(animationSpec = tween(200)),
                 exit = shrinkVertically(
                     animationSpec = spring(
                         dampingRatio = Spring.DampingRatioNoBouncy,
                         stiffness = Spring.StiffnessMedium
                     )
-                ) + fadeOut(animationSpec = tween(140)),
+                ) + fadeOut(animationSpec = tween(160)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("${testTagPrefix}_expanded_container")
@@ -407,24 +447,24 @@ fun SafariShortcutsCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 2.dp, bottom = 2.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                        .padding(top = 4.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     HorizontalDivider(
-                        color = Color(0xFF243042).copy(alpha = 0.5f),
+                        color = Color(0xFF243042).copy(alpha = 0.7f),
                         thickness = 1.dp
                     )
 
-                    // 6-column compact icon grid displaying all shortcuts
+                    // 4-column grid displaying all shortcuts
                     val chunkedShortcuts = remember(allShortcuts) {
-                        allShortcuts.chunked(6)
+                        allShortcuts.chunked(4)
                     }
 
                     chunkedShortcuts.forEach { rowShortcuts ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceAround,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.Top
                         ) {
                             rowShortcuts.forEach { shortcut ->
                                 val isShortcutPinned = pinnedUrls.contains(shortcut.url)
@@ -439,8 +479,8 @@ fun SafariShortcutsCard(
                                 )
                             }
                             // Fill remaining columns in the last row to maintain spacing
-                            repeat(6 - rowShortcuts.size) {
-                                Spacer(modifier = Modifier.size(44.dp))
+                            repeat(4 - rowShortcuts.size) {
+                                Spacer(modifier = Modifier.width(74.dp))
                             }
                         }
                     }
@@ -798,7 +838,7 @@ fun SafariShortcutsCard(
 }
 
 /**
- * Grid tile used in the expanded "All Shortcuts" view (compact icon-only tile, zero words)
+ * Grid tile used in the expanded "All Shortcuts" view
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -809,51 +849,68 @@ private fun ShortcutGridTile(
     onLongClick: () -> Unit,
     testTagPrefix: String
 ) {
-    Box(
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .size(44.dp)
-            .clip(CircleShape)
+            .width(74.dp)
+            .clip(RoundedCornerShape(12.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            .testTag("${testTagPrefix}_item_${shortcut.title.lowercase().replace(" ", "_")}"),
-        contentAlignment = Alignment.Center
+            .padding(vertical = 4.dp, horizontal = 2.dp)
+            .testTag("${testTagPrefix}_item_${shortcut.title.lowercase().replace(" ", "_")}")
     ) {
         Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(shortcut.badgeBg),
+            modifier = Modifier.size(44.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = shortcut.initialLetters,
-                color = shortcut.textColor,
-                fontSize = if (shortcut.initialLetters.length > 2) 9.sp else if (shortcut.initialLetters.length > 1) 11.sp else 15.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        if (isPinned) {
             Box(
                 modifier = Modifier
-                    .size(12.dp)
-                    .align(Alignment.TopEnd)
-                    .offset(x = (-2).dp, y = 2.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF0F172A))
-                    .border(1.dp, Color(0xFF38BDF8), CircleShape),
+                    .background(shortcut.badgeBg),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.PushPin,
-                    contentDescription = "Pinned",
-                    tint = Color(0xFF38BDF8),
-                    modifier = Modifier.size(7.dp)
+                Text(
+                    text = shortcut.initialLetters,
+                    color = shortcut.textColor,
+                    fontSize = if (shortcut.initialLetters.length > 2) 11.sp else if (shortcut.initialLetters.length > 1) 13.sp else 18.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
+
+            if (isPinned) {
+                Box(
+                    modifier = Modifier
+                        .size(15.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = 2.dp, y = (-2).dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF0F172A))
+                        .border(1.dp, Color(0xFF38BDF8), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PushPin,
+                        contentDescription = "Pinned",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(9.dp)
+                    )
+                }
+            }
         }
+
+        Spacer(modifier = Modifier.height(5.dp))
+
+        Text(
+            text = shortcut.title,
+            color = Color(0xFFCBD5E1),
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
