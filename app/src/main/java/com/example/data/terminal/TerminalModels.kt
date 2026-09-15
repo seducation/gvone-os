@@ -31,5 +31,7 @@ data class TerminalSession(
     val title: String = "Session 1",
     val lines: List<TerminalLine> = emptyList(),
     val currentInput: String = "",
-    val historyIndex: Int = -1
+    val historyIndex: Int = -1,
+    val createdAt: Long = System.currentTimeMillis(),
+    val lastActiveAt: Long = System.currentTimeMillis()
 )

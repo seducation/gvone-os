@@ -61,6 +61,7 @@ class MemoryContextUnitTest {
         val assembledA = contextRouter.assembleAgentContext(taskA.taskId)
         @Suppress("UNCHECKED_CAST")
         val taskDataA = assembledA["task"] as Map<String, Any?>
+        @Suppress("UNCHECKED_CAST")
         val stepsA = taskDataA["steps"] as List<String>
         assertTrue(stepsA.contains("Grep auth tokens"))
         assertFalse("Task A context must not contain Task B observations", stepsA.contains("Search YouTube"))
@@ -69,6 +70,7 @@ class MemoryContextUnitTest {
         val assembledB = contextRouter.assembleAgentContext(taskB.taskId)
         @Suppress("UNCHECKED_CAST")
         val taskDataB = assembledB["task"] as Map<String, Any?>
+        @Suppress("UNCHECKED_CAST")
         val stepsB = taskDataB["steps"] as List<String>
         assertTrue(stepsB.contains("Search YouTube"))
         assertFalse("Task B context must not contain Task A observations", stepsB.contains("Grep auth tokens"))

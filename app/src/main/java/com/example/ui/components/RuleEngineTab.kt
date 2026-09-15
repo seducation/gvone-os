@@ -72,6 +72,9 @@ fun RuleEngineTab(
     var showTraces by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
     var addDialogPresetIsGem by remember { mutableStateOf(true) }
+    var showManualWriterDialog by remember { mutableStateOf(false) }
+    var manualEditTargetRule by remember { mutableStateOf<RuleDefinition?>(null) }
+    var ruleSearchQuery by remember { mutableStateOf("") }
 
     // Promotion notice banner message (when user taps "Save as Global / Appear in all chats")
     var promotionNotice by remember { mutableStateOf<String?>(null) }
@@ -85,176 +88,222 @@ fun RuleEngineTab(
     val chatScopedCount = remember(rules) { rules.count { it.scope.equals("CHAT", ignoreCase = true) } }
     val gemCount = remember(rules) { rules.count { it.isGem } }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 4.dp)
             .testTag("rule_engine_dashboard")
     ) {
-        // 1. Dashboard Sovereign Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 6.dp, vertical = 4.dp)
         ) {
-            Column {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+            // 1. Dashboard Sovereign Header
+            Card(
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = CnsCardBg),
+                border = BorderStroke(1.dp, CnsBorderColor),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Top Row: Title, badge, and simulator/traces utility toggles
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "⚡ RULE ENGINE",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = CnsPurple
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = CnsPurple.copy(alpha = 0.2f),
+                                border = BorderStroke(0.5.dp, CnsPurple)
+                            ) {
+                                Text(
+                                    text = "v2.0 Orchestrator",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 7.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFF3E8FF),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+
+                        // Dry-Run Simulator & Traces toggles
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (showSimulator) CnsCyan.copy(alpha = 0.25f) else CnsCardSub,
+                                border = BorderStroke(1.dp, if (showSimulator) CnsCyan else CnsBorderColor),
+                                modifier = Modifier
+                                    .clickable {
+                                        showSimulator = !showSimulator
+                                        if (showSimulator) showTraces = false
+                                    }
+                                    .testTag("rule_simulator_toggle")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.PlayArrow,
+                                        contentDescription = "Dry Run",
+                                        tint = CnsCyan,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text(
+                                        text = "Dry-Run",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 8.5.sp,
+                                        color = CnsCyan
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (showTraces) CnsGreen.copy(alpha = 0.25f) else CnsCardSub,
+                                border = BorderStroke(1.dp, if (showTraces) CnsGreen else CnsBorderColor),
+                                modifier = Modifier
+                                    .clickable {
+                                        showTraces = !showTraces
+                                        if (showTraces) showSimulator = false
+                                    }
+                                    .testTag("rule_traces_toggle")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.List,
+                                        contentDescription = "Traces",
+                                        tint = CnsGreen,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text(
+                                        text = "Traces (${traces.size})",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 8.5.sp,
+                                        color = CnsGreen
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Subtitle Metrics
                     Text(
-                        text = "RULE ENGINE & GEMINI GEMS",
+                        text = "$gemCount Gems • $globalCount Global • $chatScopedCount Chat-Specific (${rules.size} total rules)",
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CnsPurple
+                        fontSize = 8.5.sp,
+                        color = CnsTextMuted
                     )
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = CnsPurple.copy(alpha = 0.2f),
-                        border = BorderStroke(0.5.dp, CnsPurple)
-                    ) {
-                        Text(
-                            text = "v2.0 ORCHESTRATOR",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 7.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFF3E8FF),
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
-                    }
-                }
-                Text(
-                    text = "$gemCount Gems • $globalCount Global • $chatScopedCount Chat-Specific (${rules.size} total rules)",
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 8.sp,
-                    color = CnsTextMuted
-                )
-            }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Dry-Run Simulator toggle
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (showSimulator) CnsCyan.copy(alpha = 0.2f) else CnsCardSub,
-                    border = BorderStroke(1.dp, if (showSimulator) CnsCyan else CnsBorderColor),
-                    modifier = Modifier
-                        .clickable {
-                            showSimulator = !showSimulator
-                            if (showSimulator) showTraces = false
-                        }
-                        .testTag("rule_simulator_toggle")
-                ) {
+                    // Dedicated Action Bar for creating Rules & Gems
                     Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.PlayArrow,
-                            contentDescription = "Dry Run",
-                            tint = CnsCyan,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = "Dry-Run",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 8.sp,
-                            color = CnsCyan
-                        )
-                    }
-                }
+                        // 1. Primary "+ New Rule" Button
+                        Button(
+                            onClick = {
+                                manualEditTargetRule = null
+                                showManualWriterDialog = true
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = CnsPurple),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .testTag("write_manual_rule_btn")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(imageVector = Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                                Text(
+                                    text = "+ New Rule",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
 
-                // Traces toggle
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (showTraces) CnsGreen.copy(alpha = 0.2f) else CnsCardSub,
-                    border = BorderStroke(1.dp, if (showTraces) CnsGreen else CnsBorderColor),
-                    modifier = Modifier
-                        .clickable {
-                            showTraces = !showTraces
-                            if (showTraces) showSimulator = false
+                        // 2. "+ New Gem" Button
+                        Button(
+                            onClick = {
+                                addDialogPresetIsGem = true
+                                showAddDialog = true
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E)),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(1.1f)
+                                .testTag("add_gem_btn")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(text = "💎", fontSize = 10.sp)
+                                Text(
+                                    text = "+ New Gem",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFCCFBF1)
+                                )
+                            }
                         }
-                        .testTag("rule_traces_toggle")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.List,
-                            contentDescription = "Traces",
-                            tint = CnsGreen,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = "Traces (${traces.size})",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 8.sp,
-                            color = CnsGreen
-                        )
-                    }
-                }
 
-                // Add Gem Button
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = CnsPurple.copy(alpha = 0.25f),
-                    border = BorderStroke(1.dp, CnsPurple),
-                    modifier = Modifier
-                        .clickable {
-                            addDialogPresetIsGem = true
-                            showAddDialog = true
+                        // 3. Quick Rule Button
+                        OutlinedButton(
+                            onClick = {
+                                addDialogPresetIsGem = false
+                                showAddDialog = true
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, CnsCyan.copy(alpha = 0.5f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CnsCyan),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(0.9f)
+                                .testTag("quick_add_rule_btn")
+                        ) {
+                            Text(
+                                text = "⚡ Quick",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
-                        .testTag("add_gem_btn")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text(text = "💎", fontSize = 10.sp)
-                        Text(
-                            text = "+ Gem",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFF3E8FF)
-                        )
-                    }
-                }
-
-                // Add Rule Button
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = CnsCardSub,
-                    border = BorderStroke(1.dp, CnsBorderLight),
-                    modifier = Modifier
-                        .clickable {
-                            addDialogPresetIsGem = false
-                            showAddDialog = true
-                        }
-                        .testTag("add_rule_btn")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text(text = "⚖️", fontSize = 9.sp)
-                        Text(
-                            text = "+ Rule",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 8.sp,
-                            color = CnsTextPrimary
-                        )
                     }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
         // Promotion Notification Toast Banner (Triggered when user promotes chat-specific to global)
         AnimatedVisibility(
@@ -360,6 +409,56 @@ fun RuleEngineTab(
         }
 
         Spacer(modifier = Modifier.height(6.dp))
+
+        // Search and Filter Bar
+        OutlinedTextField(
+            value = ruleSearchQuery,
+            onValueChange = { ruleSearchQuery = it },
+            placeholder = {
+                Text(
+                    text = "Search rules by name, agent, trigger, or condition...",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 8.5.sp,
+                    color = CnsTextMuted
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = "Search",
+                    tint = CnsCyan,
+                    modifier = Modifier.size(14.dp)
+                )
+            },
+            trailingIcon = {
+                if (ruleSearchQuery.isNotEmpty()) {
+                    IconButton(onClick = { ruleSearchQuery = "" }, modifier = Modifier.size(20.dp)) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Clear",
+                            tint = CnsTextMuted,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            },
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 2.dp)
+                .testTag("rule_search_field"),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = CnsCardBg,
+                unfocusedContainerColor = CnsCardBg,
+                focusedBorderColor = CnsPurple,
+                unfocusedBorderColor = CnsBorderColor,
+                focusedTextColor = CnsTextPrimary,
+                unfocusedTextColor = CnsTextPrimary
+            ),
+            shape = RoundedCornerShape(6.dp)
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
 
         // 3. Dynamic Chat Selector Bar (Active when in CHAT_SPECIFIC or GEMS mode)
         if (viewMode == RuleDashboardViewMode.CHAT_SPECIFIC || viewMode == RuleDashboardViewMode.GEMS) {
@@ -778,9 +877,9 @@ fun RuleEngineTab(
             }
         }
 
-        // 6. Content Section (Filtered according to viewMode & chat filter)
-        val displayedRules = remember(rules, viewMode, selectedChatFilterId, selectedEventFilter) {
-            when (viewMode) {
+        // 6. Content Section (Filtered according to viewMode, chat filter, and search query)
+        val displayedRules = remember(rules, viewMode, selectedChatFilterId, selectedEventFilter, ruleSearchQuery) {
+            val baseRules = when (viewMode) {
                 RuleDashboardViewMode.GEMS -> {
                     val gems = rules.filter { it.isGem }
                     if (selectedChatFilterId == "ALL") gems
@@ -797,6 +896,16 @@ fun RuleEngineTab(
                 RuleDashboardViewMode.ALL_RULES -> {
                     if (selectedEventFilter == "ALL") rules
                     else rules.filter { it.trigger.event == selectedEventFilter }
+                }
+            }
+            if (ruleSearchQuery.isBlank()) {
+                baseRules
+            } else {
+                baseRules.filter {
+                    it.name.contains(ruleSearchQuery, ignoreCase = true) ||
+                    it.description.contains(ruleSearchQuery, ignoreCase = true) ||
+                    it.trigger.event.contains(ruleSearchQuery, ignoreCase = true) ||
+                    it.actions.any { act -> act.target?.contains(ruleSearchQuery, ignoreCase = true) == true }
                 }
             }
         }
@@ -870,6 +979,10 @@ fun RuleEngineTab(
                                 simChatContextId = rule.chatId ?: "GLOBAL"
                                 showSimulator = true
                             },
+                            onEdit = {
+                                manualEditTargetRule = rule
+                                showManualWriterDialog = true
+                            },
                             onDelete = { ruleEngine.unregisterRule(rule.id) }
                         )
                     } else {
@@ -883,6 +996,10 @@ fun RuleEngineTab(
                                     promotionNotice = "✨ Rule '${promoted.name}' saved as Global! Now active across all chats."
                                 }
                             },
+                            onEdit = {
+                                manualEditTargetRule = rule
+                                showManualWriterDialog = true
+                            },
                             onDelete = { ruleEngine.unregisterRule(rule.id) }
                         )
                     }
@@ -891,7 +1008,41 @@ fun RuleEngineTab(
         }
     }
 
-    // 7. Add Gem / Rule Dialog
+    // Floating Action Button for Quick 1-Tap Rule Creation
+    FloatingActionButton(
+        onClick = {
+            manualEditTargetRule = null
+            showManualWriterDialog = true
+        },
+        containerColor = CnsPurple,
+        contentColor = Color.White,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(bottom = 12.dp, end = 12.dp)
+            .testTag("fab_create_rule")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = "Create Rule",
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                text = "New Rule",
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+    // 7. Add Gem Dialog
     if (showAddDialog) {
         AddGeminiGemDialog(
             presetIsGem = addDialogPresetIsGem,
@@ -905,11 +1056,48 @@ fun RuleEngineTab(
                 }
                 ruleEngine.registerRule(finalRule)
                 showAddDialog = false
+
+                // Auto-switch viewMode so the newly created rule/gem is IMMEDIATELY visible!
+                if (finalRule.isGem) {
+                    viewMode = RuleDashboardViewMode.GEMS
+                } else {
+                    viewMode = if (finalRule.scope == "CHAT") RuleDashboardViewMode.CHAT_SPECIFIC else RuleDashboardViewMode.GLOBAL
+                }
+                ruleSearchQuery = "" // Clear search query so the rule is not hidden
+
                 if (saveImmediatelyToGlobal) {
                     promotionNotice = "✨ '${finalRule.name}' saved directly to Global! Now active in all chats."
                 } else if (finalRule.scope == "CHAT") {
                     promotionNotice = "💬 '${finalRule.name}' scoped to chat. Tap 'Save to All Chats' anytime to promote."
+                } else {
+                    promotionNotice = "✨ '${finalRule.name}' registered into Rule Engine! Active now."
                 }
+            }
+        )
+    }
+
+    // 8. Manual Rule Writer Dialog (Visual Builder & Raw JSON Code Editor)
+    if (showManualWriterDialog) {
+        ManualRuleWriterDialog(
+            initialRule = manualEditTargetRule,
+            activeChats = chatTasks,
+            onDismiss = {
+                showManualWriterDialog = false
+                manualEditTargetRule = null
+            },
+            onSave = { rule ->
+                ruleEngine.registerRule(rule)
+                showManualWriterDialog = false
+                manualEditTargetRule = null
+
+                // Auto-switch viewMode so the newly created rule is IMMEDIATELY visible!
+                if (rule.isGem) {
+                    viewMode = RuleDashboardViewMode.GEMS
+                } else {
+                    viewMode = if (rule.scope == "CHAT") RuleDashboardViewMode.CHAT_SPECIFIC else RuleDashboardViewMode.GLOBAL
+                }
+                ruleSearchQuery = "" // Clear search filter so rule is visible
+                promotionNotice = "✨ Rule '${rule.name}' saved and registered into Rule Engine!"
             }
         )
     }
@@ -926,6 +1114,7 @@ fun GeminiGemCard(
     onToggle: (Boolean) -> Unit,
     onPromoteToGlobal: () -> Unit,
     onTestDryRun: () -> Unit,
+    onEdit: () -> Unit = {},
     onDelete: () -> Unit
 ) {
     val isChatScoped = gem.scope.equals("CHAT", ignoreCase = true)
@@ -1045,6 +1234,18 @@ fun GeminiGemCard(
                         ),
                         modifier = Modifier.height(22.dp)
                     )
+
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = "Edit Gem Manually",
+                            tint = CnsPurple,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
 
                     IconButton(
                         onClick = onDelete,
@@ -1201,6 +1402,7 @@ fun RuleRowCard(
     chatTitle: String?,
     onToggle: (Boolean) -> Unit,
     onPromoteToGlobal: () -> Unit,
+    onEdit: () -> Unit = {},
     onDelete: () -> Unit
 ) {
     val isChatScoped = rule.scope.equals("CHAT", ignoreCase = true)
@@ -1321,6 +1523,18 @@ fun RuleRowCard(
                     )
 
                     IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = "Edit Rule Manually",
+                            tint = CnsCyan,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+
+                    IconButton(
                         onClick = onDelete,
                         modifier = Modifier.size(24.dp)
                     ) {
@@ -1349,57 +1563,104 @@ fun RuleRowCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Condition & Action summary row + Global promotion button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // Condition & Action syntax blocks
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "IF: ${rule.conditions.toReadableString()}",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 7.5.sp,
-                        color = Color(0xFFA78BFA),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    val actStr = rule.actions.joinToString(", ") { "${it.type} -> ${it.target ?: "default"}" }
-                    Text(
-                        text = "THEN: $actStr",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 7.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF93C5FD),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                // IF Condition Pill
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(0xFF2E1065).copy(alpha = 0.4f),
+                    border = BorderStroke(0.5.dp, Color(0xFFA78BFA).copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(
+                            text = "IF",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFA78BFA)
+                        )
+                        Text(
+                            text = rule.conditions.toReadableString(),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.sp,
+                            color = Color(0xFFE9D5FF),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
 
-                if (isChatScoped) {
+                // THEN Action Pill + Promotion
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFF4C1D95),
-                        border = BorderStroke(1.dp, CnsPurple),
-                        modifier = Modifier
-                            .clickable { onPromoteToGlobal() }
-                            .padding(start = 4.dp)
-                            .testTag("promote_rule_${rule.id}")
+                        color = Color(0xFF0C4A6E).copy(alpha = 0.4f),
+                        border = BorderStroke(0.5.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
+                        modifier = Modifier.weight(1f)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            Text(text = "🌐", fontSize = 8.sp)
                             Text(
-                                text = "Save to All Chats",
+                                text = "THEN",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 7.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFF3E8FF)
+                                color = Color(0xFF38BDF8)
                             )
+                            val actStr = rule.actions.joinToString(", ") { "${it.type} -> ${it.target ?: "default"}" }
+                            Text(
+                                text = actStr,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 8.sp,
+                                color = Color(0xFFE0F2FE),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    if (isChatScoped) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFF4C1D95),
+                            border = BorderStroke(1.dp, CnsPurple),
+                            modifier = Modifier
+                                .clickable { onPromoteToGlobal() }
+                                .testTag("promote_rule_${rule.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(text = "🌐", fontSize = 8.sp)
+                                Text(
+                                    text = "Save to All",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 7.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFF3E8FF)
+                                )
+                            }
                         }
                     }
                 }
@@ -1767,23 +2028,35 @@ fun AddGeminiGemDialog(
             Button(
                 onClick = {
                     val p = priorityStr.toIntOrNull() ?: 200
-                    val ruleId = if (isGemMode) "gem_${name.lowercase().replace("\\s+".toRegex(), "_")}_${System.currentTimeMillis() % 1000}"
+                    val safeName = name.trim().ifBlank {
+                        if (isGemMode) "Gem #${System.currentTimeMillis() % 1000}"
+                        else "Rule #${System.currentTimeMillis() % 1000}"
+                    }
+                    val safeDesc = desc.trim().ifBlank {
+                        if (isGemMode) "Custom Gemini Persona & Instructions"
+                        else "Declarative orchestration rule"
+                    }
+                    val targetChatId = if (saveImmediatelyToGlobal || scopeChoice == "GLOBAL") null
+                        else (selectedChatId.ifBlank { activeChats.firstOrNull()?.id })
+                    val finalScope = if (targetChatId == null) "GLOBAL" else "CHAT"
+
+                    val ruleId = if (isGemMode) "gem_${safeName.lowercase().replace("\\s+".toRegex(), "_")}_${System.currentTimeMillis() % 1000}"
                     else "rule_${System.currentTimeMillis() % 10000}"
 
                     val newRule = if (isGemMode) {
                         RuleDefinition(
                             id = ruleId,
-                            name = name,
-                            description = desc,
+                            name = safeName,
+                            description = safeDesc,
                             priority = p,
                             trigger = RuleTrigger(RuleEvents.ALL),
-                            conditions = SingleCondition("request.goal", ConditionOperator.CONTAINS, name.split(" ").firstOrNull()?.lowercase() ?: "gem"),
+                            conditions = SingleCondition("request.goal", ConditionOperator.CONTAINS, safeName.split(" ").firstOrNull()?.lowercase() ?: "gem"),
                             actions = listOf(
-                                RuleAction(RuleActionTypes.ROUTE_AGENT, target = targetAgent),
-                                RuleAction(RuleActionTypes.SET_CONTEXT, target = "active_gem", parameters = mapOf("gem" to name))
+                                RuleAction(RuleActionTypes.ROUTE_AGENT, target = targetAgent.ifBlank { "CodingAgent" }),
+                                RuleAction(RuleActionTypes.SET_CONTEXT, target = "active_gem", parameters = mapOf("gem" to safeName))
                             ),
-                            scope = if (saveImmediatelyToGlobal) "GLOBAL" else scopeChoice,
-                            chatId = if (saveImmediatelyToGlobal || scopeChoice == "GLOBAL") null else selectedChatId,
+                            scope = finalScope,
+                            chatId = targetChatId,
                             isGem = true,
                             gemIcon = gemIcon,
                             gemInstructions = instructions
@@ -1791,14 +2064,14 @@ fun AddGeminiGemDialog(
                     } else {
                         RuleDefinition(
                             id = ruleId,
-                            name = name,
-                            description = desc,
+                            name = safeName,
+                            description = safeDesc,
                             priority = p,
                             trigger = RuleTrigger(event),
-                            conditions = SingleCondition(field, operator, value),
-                            actions = listOf(RuleAction(type = actionType, target = targetAgent.ifBlank { null })),
-                            scope = if (saveImmediatelyToGlobal) "GLOBAL" else scopeChoice,
-                            chatId = if (saveImmediatelyToGlobal || scopeChoice == "GLOBAL") null else selectedChatId
+                            conditions = SingleCondition(field.trim().ifBlank { "request.goal" }, operator, value.trim().ifBlank { "*" }),
+                            actions = listOf(RuleAction(type = actionType, target = targetAgent.trim().ifBlank { "CodingAgent" })),
+                            scope = finalScope,
+                            chatId = targetChatId
                         )
                     }
 

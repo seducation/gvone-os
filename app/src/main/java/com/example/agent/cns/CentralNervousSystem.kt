@@ -37,6 +37,39 @@ data class CnsWorkflowResult(
 )
 
 /**
+ * Autonomy and Approval Governance Modes for the Central Nervous System.
+ */
+enum class CnsApprovalMode(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val description: String,
+    val icon: String
+) {
+    FULL_APPROVE(
+        id = "full_approve",
+        title = "Full Approve",
+        subtitle = "Zero Prompts • Full Sovereignty",
+        description = "Agent is granted complete sovereignty. All permissions, commands, file writes, and external network requests are automatically approved without interrupting you.",
+        icon = "⚡"
+    ),
+    ASK_FOR_APPROVAL(
+        id = "ask_for_approval",
+        title = "Ask for Approval",
+        subtitle = "Strict Human-in-the-Loop",
+        description = "Maximum security boundary. The system always requests your explicit manual approval before executing any file modifications, shell commands, or external integrations.",
+        icon = "🛡️"
+    ),
+    APPROVE_FOR_ME(
+        id = "approve_for_me",
+        title = "Approve for Me",
+        subtitle = "AI Smart Adaptive Auto-Pilot",
+        description = "Intelligent sovereign governance. Routine read operations and verified safe tasks are automatically approved, while destructive operations or high-risk actions prompt you for review.",
+        icon = "✨"
+    )
+}
+
+/**
  * Central Nervous System (CNS) Orchestrator.
  * Acts as the sovereign coordinator of the GVONE organism.
  * Integrates:
@@ -68,6 +101,70 @@ class CentralNervousSystem(
 
     private val _activeMission = MutableStateFlow<String?>(null)
     val activeMission: StateFlow<String?> = _activeMission.asStateFlow()
+
+    private val _approvalMode = MutableStateFlow(CnsApprovalMode.APPROVE_FOR_ME)
+    val approvalMode: StateFlow<CnsApprovalMode> = _approvalMode.asStateFlow()
+
+    fun setApprovalMode(mode: CnsApprovalMode) {
+        _approvalMode.value = mode
+        when (mode) {
+            CnsApprovalMode.FULL_APPROVE -> {
+                PermissionSystem.ALL_DESCRIPTORS.forEach { desc ->
+                    permissionSystem.setPolicy(desc.key, com.example.agent.safety.PermissionPolicy.ALLOW)
+                    permissionSystem.grantPermission(desc.key)
+                }
+                val pending = permissionSystem.activePromptFlow.value
+                if (pending != null) {
+                    permissionSystem.respondToRequest(pending.id, approved = true, rememberPolicy = true)
+                }
+                logger.logInstant("CNS", StepType.MODIFY, "Approval Mode switched: FULL_APPROVE (Autonomous)", StepStatus.SUCCESS)
+            }
+            CnsApprovalMode.ASK_FOR_APPROVAL -> {
+                PermissionSystem.ALL_DESCRIPTORS.forEach { desc ->
+                    permissionSystem.setPolicy(desc.key, com.example.agent.safety.PermissionPolicy.ASK)
+                    if (desc.riskLevel == "CRITICAL" || desc.riskLevel == "HIGH") {
+                        permissionSystem.revokePermission(desc.key)
+                    }
+                }
+                logger.logInstant("CNS", StepType.MODIFY, "Approval Mode switched: ASK_FOR_APPROVAL (Strict)", StepStatus.SUCCESS)
+            }
+            CnsApprovalMode.APPROVE_FOR_ME -> {
+                PermissionSystem.ALL_DESCRIPTORS.forEach { desc ->
+                    when (desc.riskLevel) {
+                        "LOW" -> {
+                            permissionSystem.setPolicy(desc.key, com.example.agent.safety.PermissionPolicy.ALLOW)
+                            permissionSystem.grantPermission(desc.key)
+                        }
+                        "HIGH" -> {
+                            permissionSystem.setPolicy(desc.key, com.example.agent.safety.PermissionPolicy.ALLOW)
+                            permissionSystem.grantPermission(desc.key)
+                        }
+                        else -> { // CRITICAL
+                            permissionSystem.setPolicy(desc.key, com.example.agent.safety.PermissionPolicy.ASK)
+                            permissionSystem.revokePermission(desc.key)
+                        }
+                    }
+                }
+                logger.logInstant("CNS", StepType.MODIFY, "Approval Mode switched: APPROVE_FOR_ME (AI Adaptive)", StepStatus.SUCCESS)
+            }
+        }
+    }
+
+    fun approvePendingRequest(requestId: String, rememberPolicy: Boolean = false) {
+        permissionSystem.respondToRequest(requestId, approved = true, rememberPolicy = rememberPolicy)
+    }
+
+    fun denyPendingRequest(requestId: String, rememberPolicy: Boolean = false) {
+        permissionSystem.respondToRequest(requestId, approved = false, rememberPolicy = rememberPolicy)
+    }
+
+    fun simulateApprovalRequest() {
+        permissionSystem.triggerTestPrompt(
+            permission = PermissionSystem.PERM_SHELL_EXECUTE,
+            agentName = "CommandAgent",
+            description = "Execute shell command: git push origin main --force"
+        )
+    }
 
     override fun registerAgent(agent: Agent) {
         agentRegistry.registerAgent(agent)

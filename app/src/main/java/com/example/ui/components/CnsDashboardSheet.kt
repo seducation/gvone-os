@@ -51,6 +51,7 @@ private val CnsTextPrimary = Color(0xFFE6EDF3)
 private val CnsTextMuted = Color(0xFF8B949E)
 
 enum class CnsDashboardTab(val label: String, val icon: String) {
+    APPROVALS("Approvals & Autonomy", "🛡️"),
     AGENTS("Agents", "🤖"),
     RULES("Rule Engine & Gems", "💎"),
     SAFETY("Safety Systems", "🛡️"),
@@ -78,7 +79,7 @@ fun CnsDashboardSheet(
     val runtimeMode by runtimeState.runtimeMode.collectAsStateWithLifecycle()
     val workflows by nodalEngine.workflows.collectAsStateWithLifecycle()
 
-    var selectedTab by remember { mutableStateOf(CnsDashboardTab.AGENTS) }
+    var selectedTab by remember { mutableStateOf(CnsDashboardTab.APPROVALS) }
     var diagnosticResult by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
@@ -264,6 +265,7 @@ fun CnsDashboardSheet(
                     .fillMaxWidth()
             ) {
                 when (selectedTab) {
+                    CnsDashboardTab.APPROVALS -> CnsApprovalDashboardTab(cns = cns, permissionSystem = cns.permissionSystem)
                     CnsDashboardTab.AGENTS -> AgentsMatrixTab(agentRegistry, cns)
                     CnsDashboardTab.RULES -> RuleEngineTab(ruleEngine = cns.declarativeRuleEngine)
                     CnsDashboardTab.SAFETY -> BiologicalSafetyTab(cns) { diag -> diagnosticResult = diag }

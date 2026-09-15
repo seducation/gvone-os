@@ -1398,7 +1398,46 @@ fun TerminalScreen(
             },
             commandHistory = commandHistory,
             treeManager = conversationTreeManager,
-            contextRouter = ContextRouter.global
+            contextRouter = ContextRouter.global,
+            sessions = sessions,
+            activeSessionId = activeSessionId,
+            onSelectSession = { sessId ->
+                activeSessionId = sessId
+            },
+            onNewSession = {
+                val newId = "sess_${sessions.size + 1}"
+                val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
+                val newSess = TerminalSession(
+                    id = newId,
+                    title = "Session ${sessions.size + 1}",
+                    lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
+                )
+                sessions = sessions + newSess
+                activeSessionId = newId
+            },
+            onRenameSession = { sessId, newTitle ->
+                sessions = sessions.map {
+                    if (it.id == sessId) it.copy(title = newTitle) else it
+                }
+            },
+            onDeleteSession = { sessId ->
+                if (sessions.size > 1) {
+                    val updated = sessions.filterNot { it.id == sessId }
+                    sessions = updated
+                    if (activeSessionId == sessId) {
+                        activeSessionId = updated.first().id
+                    }
+                } else {
+                    val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
+                    val resetSess = TerminalSession(
+                        id = "sess_${System.currentTimeMillis()}",
+                        title = "Session 1",
+                        lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
+                    )
+                    sessions = listOf(resetSess)
+                    activeSessionId = resetSess.id
+                }
+            }
         )
     }
 }
