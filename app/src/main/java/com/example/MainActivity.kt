@@ -31,7 +31,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.connector.WebsiteAccessReport
 import com.example.data.model.SitePermission
-import com.example.data.model.isInternalHomeUrl
 import com.example.data.tor.TorConnectionState
 import com.example.ui.components.CustomCommandManagerSheet
 import com.example.ui.components.FloatingAddressBar
@@ -528,14 +527,6 @@ fun BrowserApp(
                 onDuplicateTab = { tabId -> viewModel.duplicateTab(tabId) },
                 onCloseOtherTabs = { tabId -> viewModel.closeOtherTabs(tabId) },
                 onCloseTabsToRight = { tabId -> viewModel.closeTabsToRight(tabId) },
-                onNavigateToUrl = { url ->
-                    if (tabs.isEmpty() || !isInternalHomeUrl(currentTab?.url)) {
-                        viewModel.createNewTab(url = url, isPrivate = isPrivateMode)
-                    } else {
-                        viewModel.loadUrlInCurrentTab(url)
-                    }
-                    viewModel.closeSheet()
-                },
                 onCloseOverview = { viewModel.closeSheet() }
             )
         }

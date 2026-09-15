@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.BrowserTab
 import com.example.data.model.ShortsAudioMode
 import com.example.data.model.isInternalHomeUrl
-import com.example.ui.components.SafariShortcutsCard
 import com.example.ui.theme.*
 
 data class MenuShortcut(
@@ -118,6 +117,7 @@ fun SafariActionsSheet(
 ) {
     var isMoreExpanded by remember { mutableStateOf(false) }
     var isExtensionsExpanded by remember { mutableStateOf(false) }
+    var isShortcutsExpanded by remember { mutableStateOf(false) }
     var isMediaPlayerExpanded by remember { mutableStateOf(false) }
     var showSignInDialog by remember { mutableStateOf(false) }
     var zoomPercentage by remember { mutableIntStateOf(100) }
@@ -139,6 +139,69 @@ fun SafariActionsSheet(
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
         label = "ext_chevron_rotation"
     )
+
+    // Primary & secondary shortcuts matching visual reference
+    val primaryShortcuts = remember {
+        listOf(
+            MenuShortcut(
+                title = "Flipkart Lite",
+                url = "https://www.flipkart.com",
+                initialLetters = "f",
+                badgeBg = Brush.linearGradient(listOf(Color(0xFFFFD200), Color(0xFF2874F0))),
+                textColor = Color(0xFF2874F0)
+            ),
+            MenuShortcut(
+                title = "Amazon India",
+                url = "https://www.amazon.in",
+                initialLetters = "a",
+                badgeBg = Brush.linearGradient(listOf(Color(0xFFFF9900), Color(0xFFFF6600))),
+                textColor = Color.White
+            ),
+            MenuShortcut(
+                title = "ESPNcricinfo",
+                url = "https://www.espncricinfo.com",
+                initialLetters = "E",
+                badgeBg = Brush.linearGradient(listOf(Color(0xFF00A3E0), Color(0xFF0072CE))),
+                textColor = Color.White
+            ),
+            MenuShortcut(
+                title = "The Financial...",
+                url = "https://www.financialexpress.com",
+                initialLetters = "FE",
+                badgeBg = Brush.linearGradient(listOf(Color(0xFF1E3A8A), Color(0xFF3B82F6))),
+                textColor = Color.White
+            )
+        )
+    }
+
+    val extraShortcuts = remember {
+        listOf(
+            MenuShortcut(
+                title = "DuckDuckGo",
+                url = "https://duckduckgo.com",
+                initialLetters = "DDG",
+                badgeBg = Brush.linearGradient(listOf(Color(0xFFDE5833), Color(0xFFE27457)))
+            ),
+            MenuShortcut(
+                title = "Wikipedia",
+                url = "https://en.wikipedia.org",
+                initialLetters = "W",
+                badgeBg = Brush.linearGradient(listOf(Color(0xFF334155), Color(0xFF475569)))
+            ),
+            MenuShortcut(
+                title = "GitHub",
+                url = "https://github.com",
+                initialLetters = "GH",
+                badgeBg = Brush.linearGradient(listOf(Color(0xFF6B21A8), Color(0xFF9333EA)))
+            ),
+            MenuShortcut(
+                title = "Reddit",
+                url = "https://reddit.com",
+                initialLetters = "R",
+                badgeBg = Brush.linearGradient(listOf(Color(0xFFFF4500), Color(0xFFFF5722)))
+            )
+        )
+    }
 
     // Auto-clear toast
     LaunchedEffect(toastMessage) {
@@ -232,20 +295,94 @@ fun SafariActionsSheet(
                     }
                 }
 
-                // 1. TOP SHORTCUTS CARD (Pin shortcuts row + expanding/collapsible view all below)
+                // 1. TOP SHORTCUTS CARD (Horizontal carousel of favorite sites + Add new)
                 item {
-                    SafariShortcutsCard(
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        onShortcutClick = { shortcut ->
-                            onClose()
-                            onNavigateToUrl(shortcut.url)
-                        },
-                        onAddFavorite = {
-                            onAddFavorite()
-                            toastMessage = "Added current tab to Shortcuts"
-                        },
-                        testTagPrefix = "safari_shortcut"
-                    )
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFF161C26),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            val shortcutsToDisplay = if (isShortcutsExpanded) (primaryShortcuts + extraShortcuts) else primaryShortcuts
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Spacer(modifier = Modifier.width(2.dp))
+
+                                shortcutsToDisplay.forEach { shortcut ->
+                                    ShortcutTile(
+                                        shortcut = shortcut,
+                                        onClick = {
+                                            onClose()
+                                            onNavigateToUrl(shortcut.url)
+                                        }
+                                    )
+                                }
+
+                                // "Add new" button matching reference image (+ icon in circular container)
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            onAddFavorite()
+                                            toastMessage = "Added current tab to Shortcuts"
+                                        }
+                                        .padding(4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF263244)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Add,
+                                            contentDescription = "Add new shortcut",
+                                            tint = Color(0xFFCBD5E1),
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "Add new",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 11.sp,
+                                        maxLines = 1
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+
+                            // "view all" toggle button below shortcuts
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { isShortcutsExpanded = !isShortcutsExpanded }
+                                    .padding(vertical = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isShortcutsExpanded) "show less" else "view all",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // 2. EXTENSIONS ROW (Puzzle icon, "Extensions", "Try a recommended extension", expandable chevron)
@@ -1105,6 +1242,48 @@ fun SafariActionsSheet(
                     Text("Cancel", color = Color(0xFF94A3B8))
                 }
             }
+        )
+    }
+}
+
+@Composable
+private fun ShortcutTile(
+    shortcut: MenuShortcut,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 4.dp, vertical = 4.dp)
+            .widthIn(min = 58.dp, max = 74.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(shortcut.badgeBg),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = shortcut.initialLetters,
+                color = shortcut.textColor,
+                fontSize = if (shortcut.initialLetters.length > 1) 14.sp else 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = shortcut.title,
+            color = Color(0xFFCBD5E1),
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
         )
     }
 }
