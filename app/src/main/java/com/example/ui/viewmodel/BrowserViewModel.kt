@@ -652,15 +652,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         val initialPersonalTabs = listOf(
             BrowserTab(
-                id = "tab_ai_companion",
-                title = "GVONE AI Companion",
-                url = COMPANION_APP_URL,
-                faviconUrl = "$COMPANION_APP_URL/favicon.ico",
-                isPrivate = false,
-                tabGroupId = null,
-                environmentId = "personal"
-            ),
-            BrowserTab(
                 id = "tab_rss_feed",
                 title = "RSS Group Feed",
                 url = "https://rssgroupfeed-jaelvwfd.manus.space",
@@ -670,7 +661,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 environmentId = "personal"
             ),
             BrowserTab(
-                id = "tab_duckduckgo",
+                id = UUID.randomUUID().toString(),
                 title = "DuckDuckGo — Privacy, Simplified.",
                 url = "https://duckduckgo.com",
                 faviconUrl = "https://duckduckgo.com/favicon.ico",
@@ -762,19 +753,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.savedTabs.take(1).collect { savedTabsList ->
                 val resolvedTabs = if (savedTabsList.isNotEmpty()) {
-                    val list = savedTabsList.map { if (it.environmentId.isBlank()) it.copy(environmentId = "personal") else it }.toMutableList()
-                    // Auto-load & quick-persist GVONE AI Companion alongside DuckDuckGo if not already present
-                    if (list.none { it.url.contains("charassist") || it.id == "tab_ai_companion" }) {
-                        val companionTab = initialPersonalTabs.first()
-                        list.add(0, companionTab)
-                        repository.saveTab(companionTab)
-                    }
-                    if (list.none { it.url.contains("duckduckgo") }) {
-                        val ddgTab = initialPersonalTabs.last()
-                        list.add(ddgTab)
-                        repository.saveTab(ddgTab)
-                    }
-                    list
+                    savedTabsList.map { if (it.environmentId.isBlank()) it.copy(environmentId = "personal") else it }
                 } else {
                     repository.saveTabs(allInitialTabs)
                     allInitialTabs
@@ -971,7 +950,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val allUpdated = otherTabs + _tabs.value
         _allTabs.value = allUpdated
         viewModelScope.launch {
-            repository.saveTabs(allUpdated)
+            repository.saveTabs(_tabs.value)
             prefs.edit()
                 .putString("last_active_tab_id", _currentTabId.value)
                 .putString("last_active_group_id", _activeGroupId.value)
@@ -994,10 +973,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun selectTab(tabId: String) {
         val tab = _tabs.value.find { it.id == tabId }
         if (tab != null) {
-            val now = System.currentTimeMillis()
-            _tabs.value = _tabs.value.map {
-                if (it.id == tabId) it.copy(lastAccessedAt = now) else it
-            }
             _currentTabId.value = tab.id
             _isPrivateMode.value = tab.isPrivate
             _activeGroupId.value = tab.tabGroupId
@@ -1018,9 +993,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val targetUrl = url ?: defaultUrl
         val targetTitle = when {
             isInternalHomeUrl(targetUrl) -> "Start Page"
-            targetUrl.contains("charassist") || targetUrl.contains("companion") -> "GVONE AI Companion"
             targetUrl.contains("rssgroupfeed") -> "RSS Group Feed"
-            targetUrl.contains("duckduckgo") -> "DuckDuckGo — Privacy, Simplified."
             targetUrl == currentEnv.startPageUrl -> "${currentEnv.name} Start"
             else -> "New Tab"
         }
@@ -1028,11 +1001,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             id = UUID.randomUUID().toString(),
             title = targetTitle,
             url = targetUrl,
-            faviconUrl = if (targetUrl.contains("charassist")) "$COMPANION_APP_URL/favicon.ico" else if (targetUrl.contains("duckduckgo")) "https://duckduckgo.com/favicon.ico" else null,
             isPrivate = isPrivate,
             tabGroupId = groupId,
-            environmentId = currentEnv.id,
-            lastAccessedAt = System.currentTimeMillis()
+            environmentId = currentEnv.id
         )
         _tabs.value = _tabs.value + newTab
         if (!inBackground) {
@@ -1045,18 +1016,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         return newTab.id
     }
 
-    fun openCompanionTab(inNewTab: Boolean = false) {
-        val existing = _tabs.value.find { it.url.contains("charassist") || it.id == "tab_ai_companion" || it.url.contains("companion") }
-        if (existing != null && !inNewTab) {
-            selectTab(existing.id)
-        } else {
-            createNewTab(url = COMPANION_APP_URL, inBackground = false)
-        }
-    }
-
     fun openFileInTab(file: com.example.data.files.GVONEFileItem, inNewTab: Boolean = false) {
         val fileUrl = "gvone-file://${file.path}"
-        val now = System.currentTimeMillis()
         if (inNewTab || _tabs.value.isEmpty()) {
             val newTab = BrowserTab(
                 id = UUID.randomUUID().toString(),
@@ -1064,8 +1025,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 url = fileUrl,
                 isPrivate = false,
                 tabGroupId = _activeGroupId.value,
-                environmentId = environmentManager.activeEnvironmentId.value,
-                lastAccessedAt = now
+                environmentId = environmentManager.activeEnvironmentId.value
             )
             _tabs.value = _tabs.value + newTab
             _currentTabId.value = newTab.id
@@ -1075,7 +1035,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             val currentId = _currentTabId.value
             _tabs.value = _tabs.value.map { tab ->
                 if (tab.id == currentId) {
-                    tab.copy(url = fileUrl, title = file.name, lastAccessedAt = now)
+                    tab.copy(url = fileUrl, title = file.name)
                 } else tab
             }
             _addressBarInput.value = fileUrl

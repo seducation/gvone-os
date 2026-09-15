@@ -79,33 +79,4 @@ class EnvironmentTabsUnitTest {
         assertEquals(1, filteredWorkGroups.size)
         assertEquals("Sprint", filteredWorkGroups.first().name)
     }
-
-    @Test
-    fun companionAndDuckDuckGo_tabsCanBePersistedAndIdentified() {
-        val companionTab = BrowserTab(
-            id = "tab_ai_companion",
-            title = "GVONE AI Companion",
-            url = com.example.data.model.COMPANION_APP_URL,
-            faviconUrl = "${com.example.data.model.COMPANION_APP_URL}/favicon.ico",
-            isPrivate = false,
-            tabGroupId = null,
-            environmentId = "personal"
-        )
-        val ddgTab = BrowserTab(
-            id = "tab_duckduckgo",
-            title = "DuckDuckGo — Privacy, Simplified.",
-            url = "https://duckduckgo.com",
-            faviconUrl = "https://duckduckgo.com/favicon.ico",
-            isPrivate = false,
-            tabGroupId = null,
-            environmentId = "personal"
-        )
-
-        val tabs = listOf(companionTab, ddgTab)
-        assertEquals(2, tabs.size)
-        assertTrue(tabs.any { it.url.contains("charassist") })
-        assertTrue(tabs.any { it.url.contains("duckduckgo.com") })
-        assertEquals("GVONE AI Companion", tabs.first().title)
-        assertEquals("DuckDuckGo — Privacy, Simplified.", tabs[1].title)
-    }
 }
