@@ -178,6 +178,9 @@ fun TerminalScreen(
     var showCnsDashboard by remember { mutableStateOf(false) }
     var showConversationHistorySheet by remember { mutableStateOf(false) }
 
+    val isChatMode by viewModel.isChatMode.collectAsState()
+    val isLogMode by viewModel.isLogMode.collectAsState()
+
     var terminalHeightFraction by remember(settings.terminalHeightFraction) {
         mutableFloatStateOf(settings.terminalHeightFraction)
     }
@@ -186,7 +189,7 @@ fun TerminalScreen(
     var sessions by remember {
         val initialLines = viewModel.terminalLines.value.ifEmpty {
             val isSuccess = viewModel.webAppBridge.connectionState.value == WebAppConnectionState.READY
-            createInitialBanner(viewModel.webAppBridge.connectionState.value.name, isSuccess)
+            createInitialBanner(viewModel.webAppBridge.connectionState.value.name, isSuccess, isLogMode = viewModel.isLogMode.value)
         }
         mutableStateOf(
             listOf(
@@ -222,10 +225,10 @@ fun TerminalScreen(
     var historyIndex by remember { mutableIntStateOf(-1) }
 
     // Terminal initial welcome banner if session is empty
-    LaunchedEffect(activeSessionId) {
+    LaunchedEffect(activeSessionId, isLogMode) {
         if (activeSession.lines.isEmpty()) {
             val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
-            val bannerLines = createInitialBanner(bridgeConnectionState.name, isSuccess)
+            val bannerLines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
             sessions = sessions.map {
                 if (it.id == activeSessionId) it.copy(lines = bannerLines) else it
             }
@@ -287,7 +290,12 @@ fun TerminalScreen(
     var collapsedCommandIds by remember { mutableStateOf(setOf<String>()) }
 
     fun commitLines(newLines: List<TerminalLine>) {
-        val updated = activeSession.lines + newLines
+        val linesToAdd = if (isLogMode) {
+            newLines
+        } else {
+            newLines.filterNot { viewModel.isVerboseLogLine(it) }
+        }
+        val updated = activeSession.lines + linesToAdd
         sessions = sessions.map {
             if (it.id == activeSessionId) it.copy(lines = updated) else it
         }
@@ -301,7 +309,13 @@ fun TerminalScreen(
     // Command execution handler delegating directly to centralized TerminalCommandExecutor
     fun executeCommand(rawInput: String) {
         val trimmed = rawInput.trim()
-        val promptPrefix = if (isAgenticMode) "gvone[agentic:${activePersona.badge.lowercase()}]:$currentCwd$ " else "gvone@browser:$currentCwd$ "
+        val promptPrefix = if (isAgenticMode) {
+            "gvone[agentic:${activePersona.badge.lowercase()}]:$currentCwd$ "
+        } else if (isChatMode) {
+            "gvone(chat)@browser:$currentCwd$ "
+        } else {
+            "gvone@browser:$currentCwd$ "
+        }
         if (trimmed.isEmpty()) {
             val emptyCommandLine = TerminalLine(
                 text = promptPrefix,
@@ -704,7 +718,7 @@ fun TerminalScreen(
                         val newSess = TerminalSession(
                             id = newId,
                             title = "Session ${sessions.size + 1}",
-                            lines = createInitialBanner(bridgeConnectionState.name, isSuccess)
+                            lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
                         )
                         sessions = sessions + newSess
                         activeSessionId = newId
@@ -759,6 +773,14 @@ fun TerminalScreen(
                     },
                     onCnsClick = {
                         showCnsDashboard = true
+                    },
+                    isChatMode = isChatMode,
+                    onToggleChat = {
+                        executeCommand("/chat")
+                    },
+                    isLogMode = isLogMode,
+                    onToggleLog = {
+                        executeCommand("/log")
                     }
                 )
 
@@ -777,13 +799,21 @@ fun TerminalScreen(
                 val treeTasks by conversationTreeManager.tasks.collectAsState()
                 val activeTaskIdTree by conversationTreeManager.activeTaskId.collectAsState()
 
+                val visibleLines = remember(activeSession.lines, isLogMode) {
+                    if (isLogMode) {
+                        activeSession.lines
+                    } else {
+                        activeSession.lines.filterNot { viewModel.isVerboseLogLine(it) }
+                    }
+                }
+
                 // Group terminal lines into blocks by user input command
-                val commandGroups = remember(activeSession.lines) {
+                val commandGroups = remember(visibleLines) {
                     val groups = mutableListOf<TerminalCommandBlock>()
                     var currentCmd: TerminalLine? = null
                     val currentActions = mutableListOf<TerminalLine>()
 
-                    for (line in activeSession.lines) {
+                    for (line in visibleLines) {
                         if (line.type == TerminalLineType.COMMAND) {
                             if (currentCmd != null || currentActions.isNotEmpty()) {
                                 groups.add(TerminalCommandBlock(currentCmd, currentActions.toList()))
@@ -1003,9 +1033,19 @@ fun TerminalScreen(
                                 withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
                                     append("$currentCwd$ ")
                                 }
+                            } else if (isChatMode) {
+                                withStyle(SpanStyle(color = Color(0xFF10B981), fontWeight = FontWeight.Bold)) {
+                                    append(if (isVoice) "gvone(chat:voice)@browser" else "gvone(chat)@browser")
+                                }
+                                withStyle(SpanStyle(color = TermTextSecondary)) {
+                                    append(":")
+                                }
+                                withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
+                                    append("$currentCwd$ ")
+                                }
                             } else {
                                 withStyle(SpanStyle(color = if (isVoice) TermPromptCyan else TermPromptGreen, fontWeight = FontWeight.Bold)) {
-                                    append(if (isVoice) "gvone(voice)@browser" else "gvone@browser")
+                                    append(if (isVoice) "gvone(cmd:voice)@browser" else "gvone@browser")
                                 }
                                 withStyle(SpanStyle(color = TermTextSecondary)) {
                                     append(":")
@@ -1030,7 +1070,13 @@ fun TerminalScreen(
                     ) {
                         if (inputText.text.isEmpty()) {
                             Text(
-                                text = if (isAgenticMode) "Type autonomous goal (Agent is ON)..." else "Type command or /help (Agent is OFF)...",
+                                text = if (isAgenticMode) {
+                                    "Type autonomous goal (Agent is ON)..."
+                                } else if (isChatMode) {
+                                    "Chat with AI chatbot or enter /help..."
+                                } else {
+                                    "Type command or /help (Chat is OFF)..."
+                                },
                                 color = Color(0xFF555D68),
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.5.sp
@@ -1954,7 +2000,7 @@ private fun TermuxAccessoryBar(
     }
 }
 
-private fun createInitialBanner(bridgeStatus: String = "IDLE", isBridgeSuccess: Boolean = false): List<TerminalLine> {
+private fun createInitialBanner(bridgeStatus: String = "IDLE", isBridgeSuccess: Boolean = false, isLogMode: Boolean = false): List<TerminalLine> {
     val lines = mutableListOf<TerminalLine>()
     lines.add(
         TerminalLine(
@@ -1974,12 +2020,14 @@ private fun createInitialBanner(bridgeStatus: String = "IDLE", isBridgeSuccess: 
             type = TerminalLineType.INFO
         )
     )
-    lines.add(
-        TerminalLine(
-            text = "Bridge Status: $bridgeStatus (" + (if (isBridgeSuccess) "SUCCESSFUL - Connected" else "NOT CONNECTED") + ")",
-            type = if (isBridgeSuccess) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+    if (isLogMode) {
+        lines.add(
+            TerminalLine(
+                text = "Bridge Status: $bridgeStatus (" + (if (isBridgeSuccess) "SUCCESSFUL - Connected" else "NOT CONNECTED") + ")",
+                type = if (isBridgeSuccess) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+            )
         )
-    )
+    }
     lines.add(
         TerminalLine(
             text = "── RECENT CONVERSATIONS (3-Level Expandable Stream Log) ──",

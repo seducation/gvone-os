@@ -92,6 +92,58 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _terminalLines = MutableStateFlow<List<TerminalLine>>(emptyList())
     val terminalLines: StateFlow<List<TerminalLine>> = _terminalLines.asStateFlow()
 
+    private val _isChatMode = MutableStateFlow(true)
+    val isChatMode: StateFlow<Boolean> = _isChatMode.asStateFlow()
+
+    private val _isLogMode = MutableStateFlow(false)
+    val isLogMode: StateFlow<Boolean> = _isLogMode.asStateFlow()
+
+    fun setChatMode(enabled: Boolean) {
+        _isChatMode.value = enabled
+        com.example.agent.runtime.RuntimeStateManager.global.toggleChat(enabled)
+    }
+
+    fun toggleChatMode(): Boolean {
+        val next = !_isChatMode.value
+        setChatMode(next)
+        return next
+    }
+
+    fun setLogMode(enabled: Boolean) {
+        val wasEnabled = _isLogMode.value
+        _isLogMode.value = enabled
+        com.example.agent.runtime.RuntimeStateManager.global.toggleLog(enabled)
+        if (enabled && !wasEnabled) {
+            val bridgeState = webAppBridge.connectionState.value
+            val isReady = bridgeState == com.example.data.sync.WebAppConnectionState.READY
+            val logLines = listOf(
+                TerminalLine(
+                    "[LOG] Verbose logging ENABLED. Showing bridge connection & agent steps.",
+                    TerminalLineType.INFO
+                ),
+                TerminalLine(
+                    "[BRIDGE] Status: ${bridgeState.name} (${if (isReady) "Connected" else "Not Connected"})",
+                    if (isReady) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+                )
+            )
+            appendTerminalLines(logLines)
+        }
+    }
+
+    fun toggleLogMode(): Boolean {
+        val next = !_isLogMode.value
+        setLogMode(next)
+        return next
+    }
+
+    fun isVerboseLogLine(line: TerminalLine): Boolean {
+        return line.type == TerminalLineType.AGENT_STEP ||
+               line.type == TerminalLineType.AGENT_THOUGHT ||
+               line.type == TerminalLineType.AGENT_TOOL ||
+               line.text.contains("[BRIDGE]", ignoreCase = true) ||
+               line.text.contains("Bridge Status:", ignoreCase = true)
+    }
+
     fun appendTerminalLine(text: String, type: TerminalLineType = TerminalLineType.OUTPUT) {
         appendTerminalLines(listOf(TerminalLine(text = text, type = type)))
     }
@@ -101,8 +153,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun appendTerminalLines(lines: List<TerminalLine>) {
+        val linesToStore = if (_isLogMode.value) {
+            lines
+        } else {
+            lines.filterNot { isVerboseLogLine(it) }
+        }
+        if (linesToStore.isEmpty()) return
+
         val current = _terminalLines.value.toMutableList()
-        current.addAll(lines)
+        current.addAll(linesToStore)
         while (current.size > 200) {
             current.removeAt(0)
         }
@@ -118,54 +177,58 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     // Bridge for Browser <-> GVONE Search/Chat Web App Communication
     val webAppBridge = GVONEWebAppBridge(
         onStateChanged = { state ->
-            val activeTab = currentTab.value
-            val currentUrl = activeTab?.url.orEmpty()
-            val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
-            when (state) {
-                WebAppConnectionState.READY -> {
-                    appendTerminalLine(
-                        "[BRIDGE] Connection SUCCESSFUL: Handshake verified with $host. Bidirectional InputRouter bridge ACTIVE.",
-                        TerminalLineType.SUCCESS
-                    )
+            if (_isLogMode.value) {
+                val activeTab = currentTab.value
+                val currentUrl = activeTab?.url.orEmpty()
+                val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
+                when (state) {
+                    WebAppConnectionState.READY -> {
+                        appendTerminalLine(
+                            "[BRIDGE] Connection SUCCESSFUL: Handshake verified with $host. Bidirectional InputRouter bridge ACTIVE.",
+                            TerminalLineType.SUCCESS
+                        )
+                    }
+                    WebAppConnectionState.CONNECTING -> {
+                        appendTerminalLine(
+                            "[BRIDGE] Initializing handshake with $host...",
+                            TerminalLineType.INFO
+                        )
+                    }
+                    WebAppConnectionState.PROCESSING -> {
+                        appendTerminalLine(
+                            "[BRIDGE] Web app is processing request...",
+                            TerminalLineType.INFO
+                        )
+                    }
+                    WebAppConnectionState.COMPLETED -> {
+                        appendTerminalLine(
+                            "[BRIDGE] Web app completed request processing.",
+                            TerminalLineType.SUCCESS
+                        )
+                    }
+                    WebAppConnectionState.UNAVAILABLE -> {
+                        appendTerminalLine(
+                            "[BRIDGE] Connection FAILED or UNAVAILABLE for $host.",
+                            TerminalLineType.ERROR
+                        )
+                    }
+                    WebAppConnectionState.IDLE -> {}
                 }
-                WebAppConnectionState.CONNECTING -> {
-                    appendTerminalLine(
-                        "[BRIDGE] Initializing handshake with $host...",
-                        TerminalLineType.INFO
-                    )
-                }
-                WebAppConnectionState.PROCESSING -> {
-                    appendTerminalLine(
-                        "[BRIDGE] Web app is processing request...",
-                        TerminalLineType.INFO
-                    )
-                }
-                WebAppConnectionState.COMPLETED -> {
-                    appendTerminalLine(
-                        "[BRIDGE] Web app completed request processing.",
-                        TerminalLineType.SUCCESS
-                    )
-                }
-                WebAppConnectionState.UNAVAILABLE -> {
-                    appendTerminalLine(
-                        "[BRIDGE] Connection FAILED or UNAVAILABLE for $host.",
-                        TerminalLineType.ERROR
-                    )
-                }
-                WebAppConnectionState.IDLE -> {}
             }
         },
         onInputDelivered = { text, success ->
-            if (success) {
-                appendTerminalLine(
-                    "[BRIDGE] Input delivered successfully to Web App: \"$text\"",
-                    TerminalLineType.SUCCESS
-                )
-            } else {
-                appendTerminalLine(
-                    "[BRIDGE] Delivery FAILED for: \"$text\" (Web App DOM element not found or not responsive)",
-                    TerminalLineType.ERROR
-                )
+            if (_isLogMode.value) {
+                if (success) {
+                    appendTerminalLine(
+                        "[BRIDGE] Input delivered successfully to Web App: \"$text\"",
+                        TerminalLineType.SUCCESS
+                    )
+                } else {
+                    appendTerminalLine(
+                        "[BRIDGE] Delivery FAILED for: \"$text\" (Web App DOM element not found or not responsive)",
+                        TerminalLineType.ERROR
+                    )
+                }
             }
         }
     )
@@ -641,7 +704,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         val savedTerminalLines = terminalRepository.getSavedSessionLines()
         if (savedTerminalLines.isNotEmpty()) {
-            _terminalLines.value = savedTerminalLines
+            _terminalLines.value = if (_isLogMode.value) savedTerminalLines else savedTerminalLines.filterNot { isVerboseLogLine(it) }
         } else {
             _terminalLines.value = listOf(
                 TerminalLine("GVONE COMMAND & BRIDGE ENGINE v2.4", TerminalLineType.SYSTEM),

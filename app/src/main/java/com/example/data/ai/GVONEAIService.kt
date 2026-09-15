@@ -209,6 +209,110 @@ class GVONEAIService(
         null
     }
 
+    private val conversationHistory = mutableListOf<Pair<String, String>>()
+
+    fun clearChatHistory() {
+        conversationHistory.clear()
+    }
+
+    suspend fun chatResponse(userMessage: String): String = withContext(Dispatchers.IO) {
+        val cleanMsg = userMessage.trim()
+        if (cleanMsg.isBlank()) return@withContext "Please type a message to chat."
+
+        val apiKey = getEffectiveApiKey()
+        if (isApiKeyConfigured()) {
+            val models = listOf(activeModel, "gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest").distinct()
+
+            // Build multi-turn contents array with recent history (last 10 turns)
+            val contentsArray = JSONArray()
+            val recentHistory = conversationHistory.takeLast(10)
+            for ((role, text) in recentHistory) {
+                contentsArray.put(JSONObject().apply {
+                    put("role", if (role == "user") "user" else "model")
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", text) })
+                    })
+                })
+            }
+            // Add current message
+            contentsArray.put(JSONObject().apply {
+                put("role", "user")
+                put("parts", JSONArray().apply {
+                    put(JSONObject().apply { put("text", cleanMsg) })
+                })
+            })
+
+            val jsonBody = JSONObject().apply {
+                put("contents", contentsArray)
+                put("systemInstruction", JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("text", "You are an intelligent, friendly, and helpful AI chatbot assistant in the GVONE browser terminal. Provide clear, direct, and conversational responses. You can answer questions, explain concepts, write code, tell stories, and chat naturally like a chatbot.")
+                        })
+                    })
+                })
+            }
+
+            for (model in models) {
+                try {
+                    val client = getHttpClient()
+                    val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+                    val request = Request.Builder()
+                        .url(url)
+                        .addHeader("x-goog-api-key", apiKey)
+                        .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                        .build()
+
+                    val response = client.newCall(request).execute()
+                    val responseBody = response.body?.string() ?: ""
+
+                    if (response.isSuccessful && responseBody.isNotEmpty()) {
+                        lastError = null
+                        activeModel = model
+                        val rootJson = JSONObject(responseBody)
+                        val candidates = rootJson.optJSONArray("candidates")
+                        val firstCandidate = candidates?.optJSONObject(0)
+                        val content = firstCandidate?.optJSONObject("content")
+                        val parts = content?.optJSONArray("parts")
+                        val text = parts?.optJSONObject(0)?.optString("text") ?: ""
+                        if (text.isNotBlank()) {
+                            val trimmedReply = text.trim()
+                            conversationHistory.add("user" to cleanMsg)
+                            conversationHistory.add("model" to trimmedReply)
+                            return@withContext trimmedReply
+                        }
+                    }
+                } catch (e: Exception) {
+                    lastError = "Network error: ${e.message}"
+                }
+            }
+        }
+
+        // Offline fallback conversational response
+        val fallbackReply = generateChatbotOfflineReply(cleanMsg)
+        conversationHistory.add("user" to cleanMsg)
+        conversationHistory.add("model" to fallbackReply)
+        fallbackReply
+    }
+
+    private fun generateChatbotOfflineReply(message: String): String {
+        val lower = message.lowercase()
+        return when {
+            lower.contains("hello") || lower.contains("hi") || lower.contains("hey") ->
+                "Hello! I'm your GVONE AI Chatbot assistant. How can I help you today?"
+            lower.contains("who are you") || lower.contains("what are you") ->
+                "I am the GVONE AI Chatbot assistant integrated into your browser terminal. I can answer questions, discuss ideas, and help with research and browsing tasks."
+            lower.contains("how are you") ->
+                "I'm doing great, thank you for asking! Ready to help you with whatever you're working on."
+            lower.contains("help") ->
+                "In Chat Mode, you can ask me anything conversationally! You can also toggle between Chat and Command modes, or type '/help' to inspect terminal commands."
+            lower.contains("thank") ->
+                "You're very welcome! Feel free to ask anything else anytime."
+            else ->
+                "Regarding \"$message\": I am processing your inquiry within the GVONE browser environment. For full cloud AI intelligence, configure your Gemini API key in Settings (or .env). You can also run commands or browse tabs anytime!"
+        }
+    }
+
     suspend fun searchAndSynthesize(query: String): GVONEAISearchResult = withContext(Dispatchers.IO) {
         val apiKey = getEffectiveApiKey()
 

@@ -385,10 +385,79 @@ class TerminalCommandExecutor(
                 return
             }
 
-            "/chat", "/text" -> {
-                RuntimeStateManager.global.resetToTextChat()
-                setAgenticMode(false)
-                outputLines.add(TerminalLine("[CHAT MODE] Restored to conversational text mode.", TerminalLineType.SUCCESS))
+            "/chat" -> {
+                when {
+                    queryArg.equals("on", ignoreCase = true) -> {
+                        viewModel.setChatMode(true)
+                        outputLines.add(TerminalLine("[CHAT MODE] Chatbot conversation ENABLED.", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("● You can now chat naturally like a chatbot. Type any message to converse.", TerminalLineType.INFO))
+                    }
+                    queryArg.equals("off", ignoreCase = true) -> {
+                        viewModel.setChatMode(false)
+                        outputLines.add(TerminalLine("[CHAT MODE] Chatbot conversation DISABLED.", TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("● Terminal command mode active. Commands require /help syntax.", TerminalLineType.INFO))
+                    }
+                    queryArg.isNotBlank() -> {
+                        viewModel.setChatMode(true)
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            val reply = viewModel.aiService.chatResponse(queryArg)
+                            viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+                        }
+                        return
+                    }
+                    else -> {
+                        val next = !viewModel.isChatMode.value
+                        viewModel.setChatMode(next)
+                        outputLines.add(
+                            TerminalLine(
+                                "[CHAT MODE] " + (if (next) "ENABLED. You can now chat normally like a chatbot." else "DISABLED. Standard command shell active."),
+                                if (next) TerminalLineType.SUCCESS else TerminalLineType.INFO
+                            )
+                        )
+                        if (next) {
+                            outputLines.add(TerminalLine("● Type any message or question to converse with the AI chatbot.", TerminalLineType.INFO))
+                        }
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/log", "/logs" -> {
+                when {
+                    queryArg.equals("on", ignoreCase = true) -> {
+                        viewModel.setLogMode(true)
+                        outputLines.add(TerminalLine("[LOG MODE] ENABLED. Bridge connection & agent step logs will be stored and displayed.", TerminalLineType.SUCCESS))
+                        val bridgeState = viewModel.webAppBridge.connectionState.value
+                        outputLines.add(TerminalLine("[BRIDGE] Connection Status: ${bridgeState.name}", TerminalLineType.INFO))
+                    }
+                    queryArg.equals("off", ignoreCase = true) -> {
+                        viewModel.setLogMode(false)
+                        outputLines.add(TerminalLine("[LOG MODE] DISABLED. Bridge connection & agent step logs hidden and not stored.", TerminalLineType.WARNING))
+                    }
+                    else -> {
+                        val next = !viewModel.isLogMode.value
+                        viewModel.setLogMode(next)
+                        outputLines.add(
+                            TerminalLine(
+                                "[LOG MODE] " + (if (next) "ENABLED. Verbose logs, bridge connection & agent steps are shown." else "DISABLED. Clean view active. Bridge connection & agent step logs hidden and not stored."),
+                                if (next) TerminalLineType.SUCCESS else TerminalLineType.INFO
+                            )
+                        )
+                        if (next) {
+                            val bridgeState = viewModel.webAppBridge.connectionState.value
+                            outputLines.add(TerminalLine("[BRIDGE] Connection Status: ${bridgeState.name}", TerminalLineType.INFO))
+                        }
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/text" -> {
+                RuntimeStateManager.global.setTextMode()
+                outputLines.add(TerminalLine("[TEXT MODE] Switched to keyboard text interaction.", TerminalLineType.SUCCESS))
                 commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                 return
             }
@@ -1516,7 +1585,17 @@ class TerminalCommandExecutor(
             return
         }
 
-        // Agentic mode is OFF: Strictly prevent triggering autonomous agent workflow!
+        // Chatbot Conversation Fallback: If Chat Mode is ON, normal chat like a chatbot!
+        if (viewModel.isChatMode.value && origin == CommandOrigin.TERMINAL) {
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+            scope.launch {
+                val reply = viewModel.aiService.chatResponse(trimmed)
+                viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+            }
+            return
+        }
+
+        // Agentic mode is OFF and Chat mode is OFF: Strictly prevent triggering autonomous agent workflow!
         if (origin == CommandOrigin.ADDRESS_BAR) {
             val searchUrl = "https://duckduckgo.com/?q=${URLEncoder.encode(trimmed, "UTF-8")}"
             viewModel.loadUrlInCurrentTab(searchUrl, keepTerminalOpen = true)
@@ -1525,7 +1604,7 @@ class TerminalCommandExecutor(
         } else {
             outputLines.add(
                 TerminalLine(
-                    "gvone: command not found: $trimmed. Type '/help' for manual, or '/agent on' to enable autonomous agent execution.",
+                    "gvone: command not found: $trimmed. Tap 'CHAT' chip or '/chat on' to chat, or '/help' for manual.",
                     TerminalLineType.ERROR
                 )
             )

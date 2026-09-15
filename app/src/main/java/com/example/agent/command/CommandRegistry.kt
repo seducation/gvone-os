@@ -352,6 +352,56 @@ class CommandRegistry(
                 }
             )
         )
+
+        // 13. /chat
+        register(
+            CommandDefinition(
+                command = "/chat",
+                description = "Toggle chatbot conversation mode: /chat on, /chat off, or enter /chat <message>",
+                aliases = listOf("chat", "/talk"),
+                handler = { inv ->
+                    val hasOn = inv.isPersistentOn
+                    val hasOff = inv.isPersistentOff
+                    val query = inv.queryArg.trim()
+                    if (hasOn) {
+                        runtimeState.toggleChat(true)
+                        CommandResult.success("[CHAT] Chatbot conversation mode ENABLED. You can now chat naturally like a chatbot.")
+                    } else if (hasOff) {
+                        runtimeState.toggleChat(false)
+                        CommandResult.info("[CHAT] Chatbot conversation mode DISABLED. Terminal command mode active.")
+                    } else if (query.isNotBlank()) {
+                        runtimeState.toggleChat(true)
+                        CommandResult.success("[CHAT] Message routed to chatbot.")
+                    } else {
+                        val next = runtimeState.toggleChat()
+                        CommandResult.success("[CHAT] Chatbot mode " + (if (next) "ENABLED. Type any message to converse." else "DISABLED. Standard command shell active."))
+                    }
+                }
+            )
+        )
+
+        // 14. /log
+        register(
+            CommandDefinition(
+                command = "/log",
+                description = "Toggle verbose logs (bridge connection and agent steps): /log on, /log off",
+                aliases = listOf("log", "/logs", "logs"),
+                handler = { inv ->
+                    val hasOn = inv.isPersistentOn
+                    val hasOff = inv.isPersistentOff
+                    if (hasOn) {
+                        runtimeState.toggleLog(true)
+                        CommandResult.success("[LOG] Verbose logs ENABLED. Bridge connection and agent step logs stored & displayed.")
+                    } else if (hasOff) {
+                        runtimeState.toggleLog(false)
+                        CommandResult.info("[LOG] Verbose logs DISABLED. Bridge connection and agent step logs hidden and not stored.")
+                    } else {
+                        val next = runtimeState.toggleLog()
+                        CommandResult.success("[LOG] Verbose logs " + (if (next) "ENABLED." else "DISABLED."))
+                    }
+                }
+            )
+        )
     }
 
     private suspend fun handleVoiceCommand(inv: CommandInvocation): CommandResult {

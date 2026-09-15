@@ -45,7 +45,9 @@ data class RuntimeMode(
     val priority: ModePriority = ModePriority.INTERACTION,
     val activeTaskId: String? = null,
     val isDebugEnabled: Boolean = false,
-    val isVoiceActive: Boolean = false
+    val isVoiceActive: Boolean = false,
+    val isChatActive: Boolean = true,
+    val isLogActive: Boolean = false
 ) {
     val isVoicePrimary: Boolean
         get() = interaction == InteractionType.VOICE && priority == ModePriority.INTERACTION
@@ -155,8 +157,29 @@ class RuntimeStateManager private constructor() {
             execution = ExecutionType.CHAT,
             priority = ModePriority.INTERACTION,
             activeTaskId = null,
-            isVoiceActive = false
+            isVoiceActive = false,
+            isChatActive = true
         )
+    }
+
+    /**
+     * Toggle or explicitly set Chatbot conversation mode ON/OFF.
+     */
+    fun toggleChat(enable: Boolean? = null): Boolean {
+        val next = enable ?: !_runtimeMode.value.isChatActive
+        _runtimeMode.value = _runtimeMode.value.copy(isChatActive = next)
+        logDebug("Chat mode set to: $next")
+        return next
+    }
+
+    /**
+     * Toggle or explicitly set Log verbosity mode ON/OFF.
+     */
+    fun toggleLog(enable: Boolean? = null): Boolean {
+        val next = enable ?: !_runtimeMode.value.isLogActive
+        _runtimeMode.value = _runtimeMode.value.copy(isLogActive = next)
+        logDebug("Log mode set to: $next")
+        return next
     }
 
     /**

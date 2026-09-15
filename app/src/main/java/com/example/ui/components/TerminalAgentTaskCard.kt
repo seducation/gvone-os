@@ -45,7 +45,11 @@ fun RuntimeStatusPillRow(
     bridgeConnectionState: WebAppConnectionState = WebAppConnectionState.IDLE,
     onBridgeClick: () -> Unit = {},
     onCnsClick: () -> Unit = {},
-    onToggleText: () -> Unit = {}
+    onToggleText: () -> Unit = {},
+    isChatMode: Boolean = true,
+    onToggleChat: () -> Unit = {},
+    isLogMode: Boolean = false,
+    onToggleLog: () -> Unit = {}
 ) {
     Surface(
         color = Color(0xFF0D1117),
@@ -85,6 +89,35 @@ fun RuntimeStatusPillRow(
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isAgenticMode) Color(0xFFE9D5FF) else Color(0xFF8B949E)
+                    )
+                }
+            }
+
+            // 1.5 Chat Mode Pill Toggle (Chatbot conversation)
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = if (isChatMode) Color(0xFF064E3B) else Color(0xFF161B22),
+                border = BorderStroke(1.dp, if (isChatMode) Color(0xFF10B981) else Color(0xFF30363D)),
+                modifier = Modifier
+                    .clickable { onToggleChat() }
+                    .testTag("terminal_header_chat_pill")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(if (isChatMode) Color(0xFF10B981) else Color(0xFF6B7280), CircleShape)
+                    )
+                    Text(
+                        text = if (isChatMode) "CHAT: ON" else "CHAT: OFF",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isChatMode) Color(0xFF6EE7B7) else Color(0xFF8B949E)
                     )
                 }
             }
@@ -151,7 +184,36 @@ fun RuntimeStatusPillRow(
                 }
             }
 
-            // 3. Sandbox Tab Cohort Pill
+            // 3.5 Log Mode Pill Toggle (Agent Steps & Bridge Traces)
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = if (isLogMode) Color(0xFF78350F).copy(alpha = 0.5f) else Color(0xFF161B22),
+                border = BorderStroke(1.dp, if (isLogMode) Color(0xFFF59E0B) else Color(0xFF30363D)),
+                modifier = Modifier
+                    .clickable { onToggleLog() }
+                    .testTag("terminal_header_log_pill")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(if (isLogMode) Color(0xFFF59E0B) else Color(0xFF6B7280), CircleShape)
+                    )
+                    Text(
+                        text = if (isLogMode) "LOG: ON" else "LOG: OFF",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isLogMode) Color(0xFFFDE68A) else Color(0xFF8B949E)
+                    )
+                }
+            }
+
+            // 3.8 Sandbox Tab Cohort Pill
             Surface(
                 shape = RoundedCornerShape(4.dp),
                 color = Color(0xFF064E3B),
@@ -175,58 +237,60 @@ fun RuntimeStatusPillRow(
                 }
             }
 
-            // 4. Bridge Connection Status Pill
-            val bridgeBg = when (bridgeConnectionState) {
-                WebAppConnectionState.READY -> Color(0xFF064E3B)
-                WebAppConnectionState.CONNECTING, WebAppConnectionState.PROCESSING -> Color(0xFF1E3A8A)
-                WebAppConnectionState.UNAVAILABLE -> Color(0xFF450A0A)
-                else -> Color(0xFF1F2937)
-            }
-            val bridgeBorder = when (bridgeConnectionState) {
-                WebAppConnectionState.READY -> Color(0xFF10B981)
-                WebAppConnectionState.CONNECTING, WebAppConnectionState.PROCESSING -> Color(0xFF3B82F6)
-                WebAppConnectionState.UNAVAILABLE -> Color(0xFFEF4444)
-                else -> Color(0xFF4B5563)
-            }
-            val bridgeText = when (bridgeConnectionState) {
-                WebAppConnectionState.READY -> "BRIDGE: OK"
-                WebAppConnectionState.CONNECTING -> "BRIDGE: ..."
-                WebAppConnectionState.PROCESSING -> "BRIDGE: BUSY"
-                WebAppConnectionState.UNAVAILABLE -> "BRIDGE: OFF"
-                else -> "BRIDGE: IDLE"
-            }
-            val bridgeTextColor = when (bridgeConnectionState) {
-                WebAppConnectionState.READY -> Color(0xFF6EE7B7)
-                WebAppConnectionState.CONNECTING, WebAppConnectionState.PROCESSING -> Color(0xFF93C5FD)
-                WebAppConnectionState.UNAVAILABLE -> Color(0xFFFCA5A5)
-                else -> Color(0xFFD1D5DB)
-            }
+            // 4. Bridge Connection Status Pill (Visible ONLY when LOG is ON)
+            if (isLogMode) {
+                val bridgeBg = when (bridgeConnectionState) {
+                    WebAppConnectionState.READY -> Color(0xFF064E3B)
+                    WebAppConnectionState.CONNECTING, WebAppConnectionState.PROCESSING -> Color(0xFF1E3A8A)
+                    WebAppConnectionState.UNAVAILABLE -> Color(0xFF450A0A)
+                    else -> Color(0xFF1F2937)
+                }
+                val bridgeBorder = when (bridgeConnectionState) {
+                    WebAppConnectionState.READY -> Color(0xFF10B981)
+                    WebAppConnectionState.CONNECTING, WebAppConnectionState.PROCESSING -> Color(0xFF3B82F6)
+                    WebAppConnectionState.UNAVAILABLE -> Color(0xFFEF4444)
+                    else -> Color(0xFF4B5563)
+                }
+                val bridgeText = when (bridgeConnectionState) {
+                    WebAppConnectionState.READY -> "BRIDGE: OK"
+                    WebAppConnectionState.CONNECTING -> "BRIDGE: ..."
+                    WebAppConnectionState.PROCESSING -> "BRIDGE: BUSY"
+                    WebAppConnectionState.UNAVAILABLE -> "BRIDGE: OFF"
+                    else -> "BRIDGE: IDLE"
+                }
+                val bridgeTextColor = when (bridgeConnectionState) {
+                    WebAppConnectionState.READY -> Color(0xFF6EE7B7)
+                    WebAppConnectionState.CONNECTING, WebAppConnectionState.PROCESSING -> Color(0xFF93C5FD)
+                    WebAppConnectionState.UNAVAILABLE -> Color(0xFFFCA5A5)
+                    else -> Color(0xFFD1D5DB)
+                }
 
-            Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = bridgeBg,
-                border = BorderStroke(1.dp, bridgeBorder),
-                modifier = Modifier
-                    .clickable { onBridgeClick() }
-                    .testTag("terminal_header_bridge_badge")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = bridgeBg,
+                    border = BorderStroke(1.dp, bridgeBorder),
+                    modifier = Modifier
+                        .clickable { onBridgeClick() }
+                        .testTag("terminal_header_bridge_badge")
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .background(bridgeBorder, CircleShape)
-                    )
-                    Text(
-                        text = bridgeText,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = bridgeTextColor
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(bridgeBorder, CircleShape)
+                        )
+                        Text(
+                            text = bridgeText,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = bridgeTextColor
+                        )
+                    }
                 }
             }
 
