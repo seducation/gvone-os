@@ -80,6 +80,20 @@ object CommandEngine {
             isBuiltIn = true
         ),
         CustomCommandEntity(
+            id = "cmd_companion",
+            command = "/companion",
+            name = "GVONE AI Companion",
+            description = "Auto-load GVONE 3D AI companion and chat workspace",
+            type = CommandType.URL,
+            template = "https://charassist-c4uzg7hb.manus.space",
+            aliasesRaw = "/ai,/charassist,/assistant",
+            category = CommandCategory.GVONE,
+            targetProvider = "GVONE Companion",
+            isEnabled = true,
+            isPinned = true,
+            isBuiltIn = true
+        ),
+        CustomCommandEntity(
             id = "cmd_ddg",
             command = "/ddg",
             name = "DuckDuckGo",

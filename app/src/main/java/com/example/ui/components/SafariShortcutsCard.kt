@@ -97,6 +97,12 @@ fun getDefaultExtraShortcuts(): List<MenuShortcut> = listOf(
         badgeBg = Brush.linearGradient(listOf(Color(0xFFFF0000), Color(0xFFCC0000)))
     ),
     MenuShortcut(
+        title = "AI Companion",
+        url = "https://charassist-c4uzg7hb.manus.space",
+        initialLetters = "AI",
+        badgeBg = Brush.linearGradient(listOf(Color(0xFF6366F1), Color(0xFFA855F7)))
+    ),
+    MenuShortcut(
         title = "DuckDuckGo",
         url = "https://duckduckgo.com",
         initialLetters = "DDG",

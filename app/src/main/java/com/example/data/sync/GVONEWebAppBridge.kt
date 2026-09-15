@@ -65,6 +65,9 @@ object PageContextDetector {
     private val TRUSTED_DOMAINS = setOf(
         "charassist-c4uzg7hb.manus.space",
         "rssgroupfeed-jaelvwfd.manus.space",
+        "ais-dev-gyx4iaojnzlpldtje22lx3-451916603918.asia-southeast1.run.app",
+        "ais-pre-gyx4iaojnzlpldtje22lx3-451916603918.asia-southeast1.run.app",
+        "run.app",
         "gvone.app",
         "gvone.io",
         "gvone.com",
@@ -74,7 +77,7 @@ object PageContextDetector {
     fun isTrustedGVONEOrigin(url: String?): Boolean {
         if (url.isNullOrBlank()) return false
         val trimmed = url.trim()
-        if (trimmed == "gvone://newtab" || trimmed.startsWith("gvone://")) return true
+        if (trimmed == "gvone://newtab" || trimmed.startsWith("gvone://") || trimmed.startsWith("gvone-file://")) return true
 
         return try {
             val uri = URI(trimmed)
@@ -86,6 +89,18 @@ object PageContextDetector {
             val lower = trimmed.lowercase(Locale.ROOT)
             TRUSTED_DOMAINS.any { lower.contains(it) }
         }
+    }
+
+    fun isCompanionOrigin(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val lower = url.trim().lowercase(Locale.ROOT)
+        return lower.contains("charassist") || lower.contains("companion") || lower.contains("ais-dev") || lower.contains("ais-pre")
+    }
+
+    fun isDuckDuckGoOrigin(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val lower = url.trim().lowercase(Locale.ROOT)
+        return lower.contains("duckduckgo.com")
     }
 
     fun isYouTubeOrigin(url: String?): Boolean {

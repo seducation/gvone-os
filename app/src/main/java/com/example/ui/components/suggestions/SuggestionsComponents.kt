@@ -611,6 +611,13 @@ object DefaultQuickPrompts {
             promptText = "Open multi-agent research workspace canvas",
             icon = Icons.Rounded.Science,
             category = "Research"
+        ),
+        QuickPrompt(
+            id = "pin_terminal",
+            title = "Pin Terminal",
+            promptText = "/pin",
+            icon = Icons.Rounded.PushPin,
+            category = "Terminal"
         )
     )
 }
@@ -625,6 +632,9 @@ object DefaultQuickPrompts {
 fun SuggestionChipsBar(
     prompts: List<QuickPrompt> = DefaultQuickPrompts.items,
     isSuggestivePopupOpen: Boolean = false,
+    showPinButton: Boolean = false,
+    isTerminalPinned: Boolean = false,
+    onTogglePinTerminal: () -> Unit = {},
     onToggleBulb: () -> Unit = {},
     onSelectPrompt: (String) -> Unit,
     onClose: () -> Unit = {},
@@ -666,6 +676,47 @@ fun SuggestionChipsBar(
                     tint = if (isSuggestivePopupOpen) Color(0xFFFBBF24) else Color(0xFFE2E8F0),
                     modifier = Modifier.size(18.dp)
                 )
+            }
+        }
+
+        // Dedicated Pin Button on top of address bar for fixing terminal in half screen
+        if (showPinButton) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Surface(
+                modifier = Modifier
+                    .height(34.dp)
+                    .shadow(elevation = 6.dp, shape = RoundedCornerShape(17.dp), spotColor = Color.Black.copy(alpha = 0.4f))
+                    .clip(RoundedCornerShape(17.dp))
+                    .clickable { onTogglePinTerminal() }
+                    .testTag("pin_half_screen_top_button")
+                    .testTag("pin_half_screen_button")
+                    .testTag("terminal_pin_half_screen_top_btn")
+                    .testTag("address_bar_pin_terminal_toggle"),
+                shape = RoundedCornerShape(17.dp),
+                color = if (isTerminalPinned) Color(0x3338BDF8) else Color(0xEB131A24),
+                border = BorderStroke(
+                    1.dp,
+                    if (isTerminalPinned) Color(0xFF38BDF8) else Color(0x33FFFFFF)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PushPin,
+                        contentDescription = if (isTerminalPinned) "Unfix from half screen" else "Fix in half of screen",
+                        tint = if (isTerminalPinned) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = if (isTerminalPinned) "Fixed 50%" else "Fix in half of screen",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isTerminalPinned) Color(0xFF38BDF8) else Color(0xFFE2E8F0)
+                    )
+                }
             }
         }
 

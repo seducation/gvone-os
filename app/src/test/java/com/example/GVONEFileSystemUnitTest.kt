@@ -33,9 +33,19 @@ class GVONEFileSystemUnitTest {
 
         assertTrue(folderNames.contains("Documents"))
         assertTrue(folderNames.contains("Projects"))
+        assertTrue(folderNames.contains("WebApps"))
         assertTrue(folderNames.contains("Images"))
         assertTrue(folderNames.contains("Downloads"))
         assertTrue(folderNames.contains("GVONE"))
+    }
+
+    @Test
+    fun testCompanionWebAppSeeded() = runBlocking {
+        val webAppItems = fileSystem.listFiles(StorageLocation.MY_FILES, "WebApps")
+        val companionFile = webAppItems.find { it.name == "companion.html" }
+        assertNotNull(companionFile)
+        val content = fileSystem.readFileContent("WebApps/companion.html")
+        assertTrue(content.contains("GVONE AI Companion"))
     }
 
     @Test

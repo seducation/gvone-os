@@ -6,6 +6,8 @@ import androidx.room.PrimaryKey
 const val START_PAGE_URL = "gvone://newtab"
 const val HOME_WEB_APP_URL = "https://rssgroupfeed-jaelvwfd.manus.space"
 const val ADDRESS_BAR_TARGET_URL = "https://charassist-c4uzg7hb.manus.space"
+const val COMPANION_APP_URL = "https://charassist-c4uzg7hb.manus.space"
+const val COMPANION_LOCAL_URL = "gvone-file://WebApps/companion.html"
 
 fun isInternalHomeUrl(url: String?): Boolean {
     if (url.isNullOrBlank()) return true
