@@ -432,7 +432,7 @@ object CommandEngine {
             description = "Manage, create, and customize browser commands",
             type = CommandType.BROWSER_ACTION,
             template = "commands",
-            aliasesRaw = "/cmd,/manager,/customcommands",
+            aliasesRaw = "/command,/cmd,/manager,/customcommands",
             category = CommandCategory.BROWSER,
             isEnabled = true,
             isPinned = true,

@@ -163,6 +163,12 @@ class TerminalCommandExecutor(
         val outputLines = mutableListOf<TerminalLine>()
         outputLines.add(cmdLine)
 
+        val selectedAttachments = viewModel.getSelectedAttachmentsForSending()
+        if (selectedAttachments.isNotEmpty()) {
+            val names = selectedAttachments.joinToString(", ") { "${it.name} (${it.type.name.lowercase()})" }
+            outputLines.add(TerminalLine("📎 [ATTACHMENTS FOR AI/AGENT] ${selectedAttachments.size} item(s) selected: $names", TerminalLineType.SUCCESS))
+        }
+
         // Parse token and argument
         val spaceIdx = trimmed.indexOf(' ')
         val token = if (spaceIdx != -1) trimmed.substring(0, spaceIdx).trim() else trimmed
@@ -401,7 +407,9 @@ class TerminalCommandExecutor(
                         viewModel.setChatMode(true)
                         commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                         scope.launch {
-                            val reply = viewModel.aiService.chatResponse(queryArg)
+                            val attachmentContext = viewModel.buildAttachmentPromptContext()
+                            val fullPrompt = if (attachmentContext.isNotBlank()) "$queryArg\n$attachmentContext" else queryArg
+                            val reply = viewModel.aiService.chatResponse(fullPrompt)
                             viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
                         }
                         return
@@ -680,11 +688,13 @@ class TerminalCommandExecutor(
                     }
                     else -> {
                         // Autonomous Agent Goal Execution
-                        runtimeState.activateAgentOnly(queryArg)
+                        val attachmentContext = viewModel.buildAttachmentPromptContext()
+                        val fullGoal = if (attachmentContext.isNotBlank()) "$queryArg\n$attachmentContext" else queryArg
+                        runtimeState.activateAgentOnly(fullGoal)
                         setAgenticMode(true)
                         commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                         scope.launch {
-                            agentEngine.runAgenticWorkflow(queryArg, shellEngine.currentDirectory) { line ->
+                            agentEngine.runAgenticWorkflow(fullGoal, shellEngine.currentDirectory) { line ->
                                 viewModel.appendTerminalLine(line)
                             }
                         }
@@ -1437,7 +1447,9 @@ class TerminalCommandExecutor(
                     commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                     scope.launch {
                         try {
-                            val response = viewModel.aiService.searchAndSynthesize(queryArg).aiAnswer
+                            val attachmentContext = viewModel.buildAttachmentPromptContext()
+                            val fullQuery = if (attachmentContext.isNotBlank()) "$queryArg\n$attachmentContext" else queryArg
+                            val response = viewModel.aiService.searchAndSynthesize(fullQuery).aiAnswer
                             viewModel.appendTerminalLine(
                                 TerminalLine(
                                     text = "\n=== GVONE AI SYNTHESIS ===\n$response\n==========================",
@@ -1680,7 +1692,9 @@ class TerminalCommandExecutor(
         if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.CHAT) {
             commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
             scope.launch {
-                val reply = viewModel.aiService.chatResponse(trimmed)
+                val attachmentContext = viewModel.buildAttachmentPromptContext()
+                val fullChat = if (attachmentContext.isNotBlank()) "$trimmed\n$attachmentContext" else trimmed
+                val reply = viewModel.aiService.chatResponse(fullChat)
                 viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
             }
             return
@@ -1703,7 +1717,9 @@ class TerminalCommandExecutor(
                 outputLines.add(TerminalLine("● [AUTO-CONNECT] Connected to AI Chatbot (Gemini API).", TerminalLineType.INFO))
                 commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                 scope.launch {
-                    val reply = viewModel.aiService.chatResponse(trimmed)
+                    val attachmentContext = viewModel.buildAttachmentPromptContext()
+                    val fullChat = if (attachmentContext.isNotBlank()) "$trimmed\n$attachmentContext" else trimmed
+                    val reply = viewModel.aiService.chatResponse(fullChat)
                     viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
                 }
                 return

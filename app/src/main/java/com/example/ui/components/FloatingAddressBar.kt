@@ -65,6 +65,7 @@ import com.example.data.model.*
 import com.example.data.sync.PageContextDetector
 import com.example.ui.components.suggestions.SuggestionsButton
 import com.example.ui.components.suggestions.SuggestionChipsBar
+import com.example.ui.components.suggestions.DefaultQuickPrompts
 import com.example.ui.theme.*
 
 /**
@@ -311,7 +312,7 @@ fun FloatingAddressBar(
             if (isBottom) {
                 // 1. Suggestive Commands UI (`/` trigger OR bulb icon on left of persistence chip):
                 // Card filtering as user types or showing commands list when bulb clicked
-                val isSuggestiveCommandsPopupOpen = isTerminalCommandsOpen && (isFocused || isSuggestionChipsOpen) && commandSuggestions.isNotEmpty()
+                val isSuggestiveCommandsPopupOpen = isTerminalCommandsOpen && (isFocused || isSuggestionChipsOpen) && (commandSuggestions.isNotEmpty() || inputText.startsWith("/"))
                 AnimatedVisibility(
                     visible = isSuggestiveCommandsPopupOpen,
                     enter = fadeIn() + slideInVertically { it / 2 },
@@ -335,6 +336,79 @@ fun FloatingAddressBar(
                             }
                         },
                         onOpenCommandManager = onOpenCommandManager,
+                        prompts = DefaultQuickPrompts.items,
+                        onSelectPrompt = { promptText ->
+                            inputText = promptText
+                            onAddressBarInputChange?.invoke(promptText)
+                            onNavigate(promptText)
+                            isFocused = false
+                            focusManager.clearFocus()
+                            onCloseTerminalCommands()
+                            onCloseCommandPalette()
+                        },
+                        isTerminalPinned = settings?.terminalPinnedToScreen == true,
+                        onTogglePinTerminal = {
+                            val currentPinned = settings?.terminalPinnedToScreen == true
+                            val updated = settings?.copy(
+                                terminalPinnedToScreen = !currentPinned,
+                                terminalHeightFraction = if (!currentPinned) 0.45f else 0.85f
+                            )
+                            if (updated != null) {
+                                onUpdateSettings?.invoke(updated)
+                            } else {
+                                onNavigate("/pin")
+                            }
+                        },
+                        onAttachPhotos = {
+                            onCloseTerminalCommands()
+                            onCloseCommandPalette()
+                            onOpenPhotos?.invoke()
+                        },
+                        onAttachCamera = {
+                            onCloseTerminalCommands()
+                            onCloseCommandPalette()
+                            onOpenCamera?.invoke()
+                        },
+                        onAttachFiles = {
+                            onCloseTerminalCommands()
+                            onCloseCommandPalette()
+                            onOpenFiles?.invoke()
+                        },
+                        onPinCurrentTab = {
+                            val url = currentTab?.url.orEmpty()
+                            if (url.isNotBlank()) {
+                                val updated = if (inputText.isBlank()) "Context: $url " else "$inputText [Page: $url] "
+                                inputText = updated
+                                onAddressBarInputChange?.invoke(updated)
+                            }
+                            onCloseTerminalCommands()
+                            onCloseCommandPalette()
+                        },
+                        currentTabUrl = currentTab?.url,
+                        onPinConnector = {
+                            onCloseTerminalCommands()
+                            onCloseCommandPalette()
+                            val currentUrl = currentTab?.url.orEmpty()
+                            val currentDomain = com.example.data.connector.WebsiteAccessConnectorService.extractDomain(currentUrl)
+                            onOpenConnector?.invoke(
+                                com.example.data.connector.WebsiteAccessContext(
+                                    currentTabId = currentTab?.id ?: "default",
+                                    currentUrl = currentUrl,
+                                    currentDomain = currentDomain,
+                                    currentEnvironmentId = currentEnvironmentId,
+                                    currentEnvironmentName = currentEnvironmentName
+                                )
+                            )
+                        },
+                        onPinResearchCanvas = {
+                            onCloseTerminalCommands()
+                            onCloseCommandPalette()
+                            onOpenResearchWorkspace?.invoke()
+                        },
+                        onDismiss = {
+                            onCloseTerminalCommands()
+                            onCloseCommandPalette()
+                        },
                         modifier = Modifier.padding(bottom = 10.dp)
                     )
                 }
@@ -974,8 +1048,9 @@ fun FloatingAddressBar(
             }
 
             // 2. Suggestive Commands UI (`/` trigger OR bulb icon on left of persistence chip): Top mode
+            val isTopSuggestiveCommandsPopupOpen = isTerminalCommandsOpen && (isFocused || isSuggestionChipsOpen) && (commandSuggestions.isNotEmpty() || inputText.startsWith("/"))
             AnimatedVisibility(
-                visible = isSuggestiveCommandsPopupOpen,
+                visible = isTopSuggestiveCommandsPopupOpen,
                 enter = fadeIn() + slideInVertically { -it / 2 },
                 exit = fadeOut() + slideOutVertically { -it / 2 }
             ) {
@@ -997,6 +1072,79 @@ fun FloatingAddressBar(
                         }
                     },
                     onOpenCommandManager = onOpenCommandManager,
+                    prompts = DefaultQuickPrompts.items,
+                    onSelectPrompt = { promptText ->
+                        inputText = promptText
+                        onAddressBarInputChange?.invoke(promptText)
+                        onNavigate(promptText)
+                        isFocused = false
+                        focusManager.clearFocus()
+                        onCloseTerminalCommands()
+                        onCloseCommandPalette()
+                    },
+                    isTerminalPinned = settings?.terminalPinnedToScreen == true,
+                    onTogglePinTerminal = {
+                        val currentPinned = settings?.terminalPinnedToScreen == true
+                        val updated = settings?.copy(
+                            terminalPinnedToScreen = !currentPinned,
+                            terminalHeightFraction = if (!currentPinned) 0.45f else 0.85f
+                        )
+                        if (updated != null) {
+                            onUpdateSettings?.invoke(updated)
+                        } else {
+                            onNavigate("/pin")
+                        }
+                    },
+                    onAttachPhotos = {
+                        onCloseTerminalCommands()
+                        onCloseCommandPalette()
+                        onOpenPhotos?.invoke()
+                    },
+                    onAttachCamera = {
+                        onCloseTerminalCommands()
+                        onCloseCommandPalette()
+                        onOpenCamera?.invoke()
+                    },
+                    onAttachFiles = {
+                        onCloseTerminalCommands()
+                        onCloseCommandPalette()
+                        onOpenFiles?.invoke()
+                    },
+                    onPinCurrentTab = {
+                        val url = currentTab?.url.orEmpty()
+                        if (url.isNotBlank()) {
+                            val updated = if (inputText.isBlank()) "Context: $url " else "$inputText [Page: $url] "
+                            inputText = updated
+                            onAddressBarInputChange?.invoke(updated)
+                        }
+                        onCloseTerminalCommands()
+                        onCloseCommandPalette()
+                    },
+                    currentTabUrl = currentTab?.url,
+                    onPinConnector = {
+                        onCloseTerminalCommands()
+                        onCloseCommandPalette()
+                        val currentUrl = currentTab?.url.orEmpty()
+                        val currentDomain = com.example.data.connector.WebsiteAccessConnectorService.extractDomain(currentUrl)
+                        onOpenConnector?.invoke(
+                            com.example.data.connector.WebsiteAccessContext(
+                                currentTabId = currentTab?.id ?: "default",
+                                currentUrl = currentUrl,
+                                currentDomain = currentDomain,
+                                currentEnvironmentId = currentEnvironmentId,
+                                currentEnvironmentName = currentEnvironmentName
+                            )
+                        )
+                    },
+                    onPinResearchCanvas = {
+                        onCloseTerminalCommands()
+                        onCloseCommandPalette()
+                        onOpenResearchWorkspace?.invoke()
+                    },
+                    onDismiss = {
+                        onCloseTerminalCommands()
+                        onCloseCommandPalette()
+                    },
                     modifier = Modifier.padding(top = 10.dp)
                 )
             }

@@ -3,8 +3,16 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewResponder
+import androidx.compose.foundation.relocation.bringIntoViewResponder
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -78,6 +86,7 @@ import com.example.data.files.GVONEFileSystem
 import com.example.data.model.*
 import com.example.data.sync.WebAppConnectionState
 import com.example.data.terminal.*
+import com.example.ui.components.terminal.*
 import com.example.data.tor.TorConnectionState
 import com.example.ui.viewmodel.ActiveSheet
 import com.example.ui.viewmodel.BrowserViewModel
@@ -101,6 +110,7 @@ private val TermTextError = Color(0xFFF85149)
 private val TermTextWarning = Color(0xFFD29922)
 private val TermTextInfo = Color(0xFF58A6FF)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TerminalScreen(
     viewModel: BrowserViewModel,
@@ -118,6 +128,17 @@ fun TerminalScreen(
     val coroutineScope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
+
+    @OptIn(ExperimentalFoundationApi::class)
+    val safeBringIntoViewResponder = remember {
+        object : BringIntoViewResponder {
+            override fun calculateRectForParent(localRect: Rect): Rect = localRect
+            override suspend fun bringChildIntoView(localRect: () -> Rect?) {
+                // Intercept bringChildIntoView requests to prevent crash when parent nodes are not placed yet
+            }
+        }
+    }
+
     val listState = rememberLazyListState()
 
     // Centralized command entities from ViewModel
@@ -225,6 +246,55 @@ fun TerminalScreen(
     }
     var historyIndex by remember { mutableIntStateOf(-1) }
 
+    // Terminal attachments state and file/photo launchers
+    val terminalAttachments by viewModel.terminalAttachments.collectAsStateWithLifecycle()
+    var showAttachmentPicker by remember { mutableStateOf(false) }
+    var showAttachmentPanel by remember { mutableStateOf(false) }
+    var showSnippetDialog by remember { mutableStateOf(false) }
+
+    fun addAttachmentFromUri(uri: Uri, isImage: Boolean) {
+        var displayName = if (isImage) "photo_${System.currentTimeMillis() % 10000}.jpg" else "file_${System.currentTimeMillis() % 10000}"
+        var size = 0L
+        val mimeType = context.contentResolver.getType(uri) ?: if (isImage) "image/jpeg" else "application/octet-stream"
+        try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (nameIndex != -1) cursor.getString(nameIndex)?.let { displayName = it }
+                    if (sizeIndex != -1) size = cursor.getLong(sizeIndex)
+                }
+            }
+        } catch (_: Exception) {}
+
+        viewModel.addTerminalAttachment(
+            TerminalAttachment(
+                name = displayName,
+                type = if (isImage) AttachmentType.PHOTO else AttachmentType.DOCUMENT,
+                uriString = uri.toString(),
+                mimeType = mimeType,
+                sizeBytes = size,
+                isSelectedForSending = true
+            )
+        )
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            addAttachmentFromUri(uri, isImage = true)
+        }
+    }
+
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        uris.forEach { uri ->
+            addAttachmentFromUri(uri, isImage = false)
+        }
+    }
+
     // Terminal initial welcome banner if session is empty
     LaunchedEffect(activeSessionId, isLogMode) {
         if (activeSession.lines.isEmpty()) {
@@ -244,12 +314,16 @@ fun TerminalScreen(
         }
     }
 
-    // Request keyboard focus immediately on launch only if actively opened as sheet
+    // Request keyboard focus on launch only if actively opened as sheet and animation completes
     LaunchedEffect(autoFocus) {
         if (autoFocus) {
-            delay(120)
-            focusRequester.requestFocus()
-            keyboardController?.show()
+            delay(350)
+            try {
+                focusRequester.requestFocus()
+                keyboardController?.show()
+            } catch (_: Throwable) {
+                // Ignore focus request timing race
+            }
         }
     }
 
@@ -336,6 +410,14 @@ fun TerminalScreen(
             commandHistory.add(trimmed)
         }
         historyIndex = -1
+
+        val selectedAttachments = viewModel.getSelectedAttachmentsForSending()
+        if (selectedAttachments.isNotEmpty()) {
+            val names = selectedAttachments.joinToString(", ") { "${it.name} (${it.type.name.lowercase()})" }
+            commitLines(listOf(
+                TerminalLine("📎 [Attachments Sent to AI/Agent (${selectedAttachments.size} items)]: $names", TerminalLineType.SUCCESS)
+            ))
+        }
 
         // Parse token and argument
         val spaceIdx = trimmed.indexOf(' ')
@@ -551,7 +633,7 @@ fun TerminalScreen(
                             },
                             onSelectPrompt = { promptText ->
                                 inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
-                                focusRequester.requestFocus()
+                                try { focusRequester.requestFocus() } catch (_: Throwable) {}
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -857,8 +939,10 @@ fun TerminalScreen(
                             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                             indication = null
                         ) {
-                            focusRequester.requestFocus()
-                            keyboardController?.show()
+                            try {
+                                focusRequester.requestFocus()
+                                keyboardController?.show()
+                            } catch (_: Throwable) {}
                         }
                 ) {
                     LazyColumn(
@@ -997,7 +1081,7 @@ fun TerminalScreen(
                                 .clickable {
                                     val trigger = cmd.command
                                     inputText = TextFieldValue("$trigger ", selection = androidx.compose.ui.text.TextRange(trigger.length + 1))
-                                    focusRequester.requestFocus()
+                                    try { focusRequester.requestFocus() } catch (_: Throwable) {}
                                 }
                                 .testTag("autocomplete_${cmd.command}")
                         ) {
@@ -1026,11 +1110,28 @@ fun TerminalScreen(
                 HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
             }
 
+            // 3.5 SELECTED ATTACHMENTS SUGGESTIONS CHIPS ROW (Photos & files for AI or Agent)
+            AnimatedVisibility(
+                visible = terminalAttachments.isNotEmpty(),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                TerminalAttachmentChipsRow(
+                    attachments = terminalAttachments,
+                    onToggleSelection = { viewModel.toggleTerminalAttachmentSelection(it) },
+                    onRemoveAttachment = { viewModel.removeTerminalAttachment(it) },
+                    onOpenPanel = { showAttachmentPanel = true },
+                    onAddMore = { showAttachmentPicker = true }
+                )
+            }
+
             // 4. ACTIVE COMMAND INPUT ROW (Prompt + Monospace Text Field + Cursor)
             Surface(
                 color = TermSurfaceColor,
                 border = androidx.compose.foundation.BorderStroke(1.dp, TermBorderColor),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .bringIntoViewResponder(safeBringIntoViewResponder)
             ) {
                 Row(
                     modifier = Modifier
@@ -1124,6 +1225,7 @@ fun TerminalScreen(
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .bringIntoViewResponder(safeBringIntoViewResponder)
                                 .focusRequester(focusRequester)
                                 .testTag("terminal_input_field")
                         )
@@ -1137,6 +1239,54 @@ fun TerminalScreen(
                                 fontSize = 13.5.sp,
                                 modifier = Modifier.alpha(cursorAlpha)
                             )
+                        }
+                    }
+
+                    // Attachment clip button with selected badge
+                    val selectedAttachmentCount = terminalAttachments.count { it.isSelectedForSending }
+                    Box(
+                        contentAlignment = Alignment.TopEnd,
+                        modifier = Modifier.padding(end = 6.dp)
+                    ) {
+                        IconButton(
+                            onClick = { showAttachmentPicker = true },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(
+                                    if (selectedAttachmentCount > 0) Color(0xFF1E293B) else Color(0xFF161B22),
+                                    RoundedCornerShape(6.dp)
+                                )
+                                .border(
+                                    1.dp,
+                                    if (selectedAttachmentCount > 0) TermPromptCyan else Color(0x33FFFFFF),
+                                    RoundedCornerShape(6.dp)
+                                )
+                                .testTag("terminal_attach_clip_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AttachFile,
+                                contentDescription = "Attach photos or files to prompt",
+                                tint = if (selectedAttachmentCount > 0) TermPromptCyan else TermTextSecondary,
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+
+                        if (selectedAttachmentCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = 3.dp, y = (-3).dp)
+                                    .size(15.dp)
+                                    .clip(CircleShape)
+                                    .background(TermPromptCyan),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (selectedAttachmentCount > 9) "9+" else "$selectedAttachmentCount",
+                                    color = Color.Black,
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
 
@@ -1161,10 +1311,13 @@ fun TerminalScreen(
                 }
             }
 
-            // 5. TERMUX-STYLE ACCESSORY TOOLBAR (Mobile Terminal Keys: agent, voice, text, groups, sandbox, ls, cd, cat, tabs, ESC, TAB, ↑, ↓, /, -, ~, |, CLEAR)
+            // 5. TERMUX-STYLE ACCESSORY TOOLBAR (Mobile Terminal Keys: attach, agent, voice, text, groups, sandbox, ls, cd, cat, tabs, ESC, TAB, ↑, ↓, /, -, ~, |, CLEAR)
             TermuxAccessoryBar(
                 onKey = { key ->
                     when (key) {
+                        "attach" -> {
+                            showAttachmentPicker = true
+                        }
                         "agent" -> {
                             val prompt = "/agent "
                             inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
@@ -1266,8 +1419,10 @@ fun TerminalScreen(
                             inputText = TextFieldValue(newText, selection = androidx.compose.ui.text.TextRange(sel + key.length))
                         }
                     }
-                    focusRequester.requestFocus()
-                }
+                    try { focusRequester.requestFocus() } catch (_: Throwable) {}
+                },
+                onAttachClick = { showAttachmentPicker = true },
+                attachmentCount = terminalAttachments.size
             )
 
             // 6. When in SWAPPED position: Suggestion Chips Bar is at the BOTTOM!
@@ -1289,7 +1444,7 @@ fun TerminalScreen(
                         },
                         onSelectPrompt = { promptText ->
                             inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
-                            focusRequester.requestFocus()
+                            try { focusRequester.requestFocus() } catch (_: Throwable) {}
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1396,6 +1551,153 @@ fun TerminalScreen(
         }
     }
 
+    // Terminal Attachment Picker Dialog / Menu
+    if (showAttachmentPicker) {
+        TerminalAttachmentPickerMenu(
+            hasExistingAttachments = terminalAttachments.isNotEmpty(),
+            onPickPhoto = {
+                try {
+                    photoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Cannot open photo picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onPickDocument = {
+                try {
+                    documentPickerLauncher.launch(
+                        arrayOf(
+                            "application/pdf",
+                            "text/plain",
+                            "text/markdown",
+                            "application/json",
+                            "application/javascript",
+                            "application/octet-stream",
+                            "*/*"
+                        )
+                    )
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onAttachWebPage = {
+                val currentTab = viewModel.tabs.value.firstOrNull { it.id == viewModel.currentTabId.value }
+                val url = currentTab?.url ?: "https://example.com"
+                val title = currentTab?.title?.takeIf { it.isNotBlank() } ?: "Web Page"
+                viewModel.addTerminalAttachment(
+                    TerminalAttachment(
+                        name = title,
+                        type = AttachmentType.WEB_PAGE,
+                        uriString = url,
+                        mimeType = "text/html",
+                        isSelectedForSending = true
+                    )
+                )
+                Toast.makeText(context, "Attached web page: $title", Toast.LENGTH_SHORT).show()
+            },
+            onAttachSnippet = {
+                showSnippetDialog = true
+            },
+            onAddSample = {
+                viewModel.loadSampleTerminalAttachments()
+                Toast.makeText(context, "Loaded demo photo & document attachments", Toast.LENGTH_SHORT).show()
+            },
+            onOpenPanel = {
+                showAttachmentPanel = true
+            },
+            onDismiss = {
+                showAttachmentPicker = false
+            }
+        )
+    }
+
+    // Full Terminal Attachment Selection/Deselection Panel Dialog
+    if (showAttachmentPanel) {
+        TerminalAttachmentPanelDialog(
+            attachments = terminalAttachments,
+            onToggleSelection = { viewModel.toggleTerminalAttachmentSelection(it) },
+            onSelectAll = { viewModel.selectAllTerminalAttachments() },
+            onDeselectAll = { viewModel.deselectAllTerminalAttachments() },
+            onRemoveAttachment = { viewModel.removeTerminalAttachment(it) },
+            onClearAll = { viewModel.clearAllTerminalAttachments() },
+            onAddPhoto = {
+                try {
+                    photoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Cannot open photo picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onAddDocument = {
+                try {
+                    documentPickerLauncher.launch(
+                        arrayOf(
+                            "application/pdf",
+                            "text/plain",
+                            "text/markdown",
+                            "application/json",
+                            "application/javascript",
+                            "application/octet-stream",
+                            "*/*"
+                        )
+                    )
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onAddWebTab = {
+                val currentTab = viewModel.tabs.value.firstOrNull { it.id == viewModel.currentTabId.value }
+                val url = currentTab?.url ?: "https://example.com"
+                val title = currentTab?.title?.takeIf { it.isNotBlank() } ?: "Web Page"
+                viewModel.addTerminalAttachment(
+                    TerminalAttachment(
+                        name = title,
+                        type = AttachmentType.WEB_PAGE,
+                        uriString = url,
+                        mimeType = "text/html",
+                        isSelectedForSending = true
+                    )
+                )
+                Toast.makeText(context, "Attached web page: $title", Toast.LENGTH_SHORT).show()
+            },
+            onAddSnippet = {
+                showSnippetDialog = true
+            },
+            onAddSample = {
+                viewModel.loadSampleTerminalAttachments()
+                Toast.makeText(context, "Loaded demo photo & document attachments", Toast.LENGTH_SHORT).show()
+            },
+            onClose = {
+                showAttachmentPanel = false
+            }
+        )
+    }
+
+    // Snippet Input Dialog
+    if (showSnippetDialog) {
+        SnippetInputDialog(
+            onConfirm = { snippetTitle, snippetContent ->
+                viewModel.addTerminalAttachment(
+                    TerminalAttachment(
+                        name = snippetTitle,
+                        type = AttachmentType.CODE_SNIPPET,
+                        contentSummary = snippetContent,
+                        mimeType = "text/plain",
+                        sizeBytes = snippetContent.toByteArray().size.toLong(),
+                        isSelectedForSending = true
+                    )
+                )
+                showSnippetDialog = false
+                Toast.makeText(context, "Attached snippet: $snippetTitle", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = {
+                showSnippetDialog = false
+            }
+        )
+    }
+
     // Sovereign CNS Dashboard Modal Sheet
     if (showCnsDashboard) {
         CnsDashboardSheet(
@@ -1412,8 +1714,10 @@ fun TerminalScreen(
             onDismiss = { showConversationHistorySheet = false },
             onSelectPrompt = { prompt ->
                 inputText = TextFieldValue(prompt, TextRange(prompt.length))
-                focusRequester.requestFocus()
-                keyboardController?.show()
+                try {
+                    focusRequester.requestFocus()
+                    keyboardController?.show()
+                } catch (_: Throwable) {}
             },
             commandHistory = commandHistory,
             treeManager = conversationTreeManager,
@@ -2018,10 +2322,12 @@ private fun UserInputCommandItem(
 
 @Composable
 private fun TermuxAccessoryBar(
-    onKey: (String) -> Unit
+    onKey: (String) -> Unit,
+    onAttachClick: (() -> Unit)? = null,
+    attachmentCount: Int = 0
 ) {
     val keys = listOf(
-        "agent", "/on", "/off", "voice", "text", "groups", "sandbox", "ls", "cd", "cat", "tabs", "ESC", "TAB", "↑", "↓", "/", "-", "~", "|", ":", "$", "clear"
+        "attach", "agent", "/on", "/off", "voice", "text", "groups", "sandbox", "ls", "cd", "cat", "tabs", "ESC", "TAB", "↑", "↓", "/", "-", "~", "|", ":", "$", "clear"
     )
 
     Row(
@@ -2037,22 +2343,56 @@ private fun TermuxAccessoryBar(
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         keys.forEach { key ->
-            Surface(
-                shape = RoundedCornerShape(5.dp),
-                color = Color(0xFF161B22),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D)),
-                modifier = Modifier
-                    .clickable { onKey(key) }
-                    .testTag("termux_key_$key")
-            ) {
-                Text(
-                    text = key,
-                    color = if (key in listOf("ESC", "TAB", "↑", "↓", "clear")) TermPromptCyan else TermTextPrimary,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
-                )
+            if (key == "attach") {
+                Surface(
+                    shape = RoundedCornerShape(5.dp),
+                    color = if (attachmentCount > 0) Color(0xFF1E293B) else Color(0xFF161B22),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (attachmentCount > 0) TermPromptCyan else Color(0xFF38BDF8).copy(alpha = 0.6f)
+                    ),
+                    modifier = Modifier
+                        .clickable { onAttachClick?.invoke() ?: onKey("attach") }
+                        .testTag("termux_key_attach")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AttachFile,
+                            contentDescription = "Attach",
+                            tint = if (attachmentCount > 0) TermPromptCyan else Color(0xFF38BDF8),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = if (attachmentCount > 0) "attach ($attachmentCount)" else "attach",
+                            color = if (attachmentCount > 0) TermPromptCyan else Color(0xFF38BDF8),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF161B22),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D)),
+                    modifier = Modifier
+                        .clickable { onKey(key) }
+                        .testTag("termux_key_$key")
+                ) {
+                    Text(
+                        text = key,
+                        color = if (key in listOf("ESC", "TAB", "↑", "↓", "clear")) TermPromptCyan else TermTextPrimary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
+                    )
+                }
             }
         }
     }

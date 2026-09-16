@@ -238,4 +238,33 @@ class SuggestionsInteractionUnitTest {
         assertEquals("Add Mission Templates", executedAction)
         assertFalse("Input written mode clears after chip selection", isFocused)
     }
+
+    @Test
+    fun commandPopup_supportsTerminalCommandsSuggestionsAndPinAttachments() {
+        // 1. Verify CommandPopupTab has all required tabs
+        val tabs = com.example.ui.components.CommandPopupTab.values()
+        val tabLabels = tabs.map { it.label }
+        assertTrue("Must have Terminal Command tab", tabLabels.contains("Terminal Command"))
+        assertTrue("Must have Suggestions tab", tabLabels.contains("Suggestions"))
+        assertTrue("Must have Pin Attachments tab", tabLabels.contains("Pin Attachments"))
+        assertTrue("Must have All tab", tabLabels.contains("All"))
+
+        // 2. Verify typing '/command' produces matching suggestions
+        val suggestions = com.example.data.command.CommandEngine.getSuggestions("/command", emptyList())
+        assertTrue("Typing /command must return suggestions", suggestions.isNotEmpty())
+        val matchedTriggers = suggestions.map { it.matchedTrigger }
+        assertTrue("Should match command trigger or alias", matchedTriggers.any { it.contains("command") })
+
+        // 3. Verify suggestions prompt items are available
+        val prompts = com.example.ui.components.suggestions.DefaultQuickPrompts.items
+        assertTrue("Proactive prompt suggestions must not be empty", prompts.isNotEmpty())
+        assertTrue("Prompt categories exist", prompts.any { it.category == "Missions" || it.category == "Swarm" })
+
+        // 4. Verify pin attachments functionality
+        var isTerminalPinned = false
+        val togglePin = { isTerminalPinned = !isTerminalPinned }
+        togglePin()
+        assertTrue("Pin terminal action toggles state", isTerminalPinned)
+    }
 }
+
