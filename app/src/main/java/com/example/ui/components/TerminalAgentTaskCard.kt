@@ -209,49 +209,13 @@ fun RuntimeStatusPillRow(
                 }
             }
 
-            // 4. One Chip Bridge (Toggleable Bridge to Website in Terminal)
-            val isBridgeConnected = isWebsiteBridgeActive && (bridgeConnectionState == WebAppConnectionState.READY || bridgeConnectionState == WebAppConnectionState.COMPLETED)
-            val isBridgeBusy = isWebsiteBridgeActive && (bridgeConnectionState == WebAppConnectionState.CONNECTING || bridgeConnectionState == WebAppConnectionState.PROCESSING)
-            val isBridgeIdle = isWebsiteBridgeActive && bridgeConnectionState == WebAppConnectionState.IDLE
-
-            val bridgeBg = when {
-                !isWebsiteBridgeActive -> Color(0xFF161B22)
-                isBridgeConnected -> Color(0xFF064E3B)
-                isBridgeBusy -> Color(0xFF0C4A6E)
-                isBridgeIdle -> Color(0xFF161B22)
-                else -> Color(0xFF161B22)
-            }
-            val bridgeBorder = when {
-                !isWebsiteBridgeActive -> Color(0xFF30363D)
-                isBridgeConnected -> Color(0xFF10B981)
-                isBridgeBusy -> Color(0xFF38BDF8)
-                isBridgeIdle -> Color(0xFF4B5563)
-                else -> Color(0xFF30363D)
-            }
-            val bridgeTextColor = when {
-                !isWebsiteBridgeActive -> Color(0xFF8B949E)
-                isBridgeConnected -> Color(0xFF6EE7B7)
-                isBridgeBusy -> Color(0xFF7DD3FC)
-                isBridgeIdle -> Color(0xFFD1D5DB)
-                else -> Color(0xFF8B949E)
-            }
-            val bridgeDotColor = when {
-                !isWebsiteBridgeActive -> Color(0xFF6B7280)
-                isBridgeConnected -> Color(0xFF10B981)
-                isBridgeBusy -> Color(0xFF38BDF8)
-                isBridgeIdle -> Color(0xFF9CA3AF)
-                else -> Color(0xFF6B7280)
-            }
-            val bridgeText = when {
-                !isWebsiteBridgeActive -> "BRIDGE: OFF"
-                bridgeConnectionState == WebAppConnectionState.READY -> "BRIDGE: ON"
-                bridgeConnectionState == WebAppConnectionState.COMPLETED -> "BRIDGE: ON"
-                bridgeConnectionState == WebAppConnectionState.CONNECTING -> "BRIDGE: ..."
-                bridgeConnectionState == WebAppConnectionState.PROCESSING -> "BRIDGE: BUSY"
-                bridgeConnectionState == WebAppConnectionState.UNAVAILABLE -> "BRIDGE: OFF"
-                bridgeConnectionState == WebAppConnectionState.IDLE -> "BRIDGE: IDLE"
-                else -> "BRIDGE: OFF"
-            }
+            // 4. One Chip Bridge: Terminal Bridge to AI Chat / API (completely independent of website bidirectional bridge)
+            val isBridgeActive = isChatMode
+            val bridgeBg = if (isBridgeActive) Color(0xFF064E3B) else Color(0xFF161B22)
+            val bridgeBorder = if (isBridgeActive) Color(0xFF10B981) else Color(0xFF30363D)
+            val bridgeTextColor = if (isBridgeActive) Color(0xFF6EE7B7) else Color(0xFF8B949E)
+            val bridgeDotColor = if (isBridgeActive) Color(0xFF10B981) else Color(0xFF6B7280)
+            val bridgeText = if (isBridgeActive) "BRIDGE: ON" else "BRIDGE: OFF"
 
             Surface(
                 shape = RoundedCornerShape(4.dp),

@@ -770,16 +770,17 @@ fun TerminalScreen(
                     bridgeConnectionState = bridgeConnectionState,
                     isWebsiteBridgeActive = settings.bidirectionalBridgeEnabled,
                     onBridgeClick = {
-                        val newApplied = !settings.bidirectionalBridgeEnabled
-                        viewModel.updateSettings(settings.copy(bidirectionalBridgeEnabled = newApplied))
-                        val currentUrl = currentTab?.url.orEmpty()
-                        val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
-                        val hostLabel = if (host.isNotBlank()) host else "active website"
-                        val toastMsg = if (newApplied) "Bridge applied to website: $hostLabel" else "Bridge to website disconnected"
+                        val next = !isChatMode
+                        viewModel.setChatMode(next)
+                        val toastMsg = if (next) "Terminal Bridge: ON (AI Chat / API)" else "Terminal Bridge: OFF (Command shell)"
                         Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                         val bridgeLine = TerminalLine(
-                            text = "● [BRIDGE TO WEBSITE] " + (if (newApplied) "APPLIED to $hostLabel (Interactive bidirectional stream enabled)" else "DISABLED for website"),
-                            type = if (newApplied) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+                            text = if (next) {
+                                "● [TERMINAL BRIDGE] CONNECTED to AI Chat / API. Type your message to chat directly."
+                            } else {
+                                "● [TERMINAL BRIDGE] DISCONNECTED. Standard command shell active."
+                            },
+                            type = if (next) TerminalLineType.SUCCESS else TerminalLineType.WARNING
                         )
                         sessions = sessions.map {
                             if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
@@ -1049,7 +1050,7 @@ fun TerminalScreen(
                                 }
                             } else if (isChatMode) {
                                 withStyle(SpanStyle(color = Color(0xFF10B981), fontWeight = FontWeight.Bold)) {
-                                    append(if (isVoice) "gvone(chat:voice)@browser" else "gvone(chat)@browser")
+                                    append(if (isVoice) "gvone(chat:voice)@browser" else "gvone(chat:api)@browser")
                                 }
                                 withStyle(SpanStyle(color = TermTextSecondary)) {
                                     append(":")
@@ -1087,9 +1088,9 @@ fun TerminalScreen(
                                 text = if (isAgenticMode) {
                                     "Type autonomous goal (Agent is ON)..."
                                 } else if (isChatMode) {
-                                    "Chat with AI chatbot or enter /help..."
+                                    "Chat with AI (Bridge to Chat/API is ON)..."
                                 } else {
-                                    "Type command or /help (Chat is OFF)..."
+                                    "Type command or /help (Bridge is OFF)..."
                                 },
                                 color = Color(0xFF555D68),
                                 fontFamily = FontFamily.Monospace,
