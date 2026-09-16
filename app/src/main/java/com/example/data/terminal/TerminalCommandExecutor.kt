@@ -1634,7 +1634,7 @@ class TerminalCommandExecutor(
         }
 
         // Chatbot Conversation Fallback: If Chat Mode is ON, normal chat like a chatbot!
-        if (viewModel.isChatMode.value && origin == CommandOrigin.TERMINAL) {
+        if (viewModel.isChatMode.value) {
             commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
             scope.launch {
                 val reply = viewModel.aiService.chatResponse(trimmed)

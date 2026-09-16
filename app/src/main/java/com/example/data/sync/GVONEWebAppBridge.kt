@@ -177,10 +177,16 @@ object InputRouter {
         currentTabUrl: String?,
         isWebAppReady: Boolean,
         inputRouterEnabled: Boolean = true,
-        bridgeApplyToAllWebsites: Boolean = true
+        bridgeApplyToAllWebsites: Boolean = true,
+        isChatMode: Boolean = false
     ): InputDestination {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return InputDestination.UNIVERSAL_SEARCH
+
+        // 0. If Chat Bridge / Chat Mode is active, conversational inputs take priority over website bridging
+        if (isChatMode) {
+            return InputDestination.AI_SEARCH
+        }
 
         // 1. If it's a valid URL or domain, always navigate Chromium directly
         if (isExplicitUrl(trimmed)) {

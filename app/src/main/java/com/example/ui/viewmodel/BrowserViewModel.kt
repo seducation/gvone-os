@@ -1484,6 +1484,18 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
+        // If Chat Bridge is ON, conversational inputs directly chat with the AI chatbot and show in Terminal
+        if (_isChatMode.value) {
+            terminalRepository.addCommandToHistory(trimmed)
+            appendTerminalLine("gvone(chat:api)@browser:~$ $trimmed", TerminalLineType.COMMAND)
+            openSheet(ActiveSheet.Terminal)
+            viewModelScope.launch {
+                val reply = aiService.chatResponse(trimmed)
+                appendTerminalLine(reply, TerminalLineType.AI_RESPONSE)
+            }
+            return
+        }
+
         // Always log input to persistent command history and Terminal session
         terminalRepository.addCommandToHistory(trimmed)
         appendTerminalLine("gvone@addressbar:~$ $trimmed", TerminalLineType.COMMAND)
@@ -1671,7 +1683,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             isWebAppReady = webAppBridge.connectionState.value == WebAppConnectionState.READY ||
                     webAppBridge.connectionState.value == WebAppConnectionState.PROCESSING,
             inputRouterEnabled = _settings.value.bidirectionalBridgeEnabled,
-            bridgeApplyToAllWebsites = _settings.value.bridgeApplyToAllWebsites
+            bridgeApplyToAllWebsites = _settings.value.bridgeApplyToAllWebsites,
+            isChatMode = _isChatMode.value
         )
 
         when (routing) {
