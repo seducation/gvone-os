@@ -19,8 +19,6 @@ import com.example.data.repository.BrowserRepository
 import com.example.data.sync.*
 import com.example.data.terminal.TerminalLine
 import com.example.data.terminal.TerminalLineType
-import com.example.data.terminal.TerminalAttachment
-import com.example.data.terminal.AttachmentType
 import com.example.data.tor.*
 import com.example.ui.contextmenu.LinkContextMenuData
 import com.example.ui.contextmenu.PagePreviewData
@@ -102,90 +100,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val _isLogMode = MutableStateFlow(false)
     val isLogMode: StateFlow<Boolean> = _isLogMode.asStateFlow()
-
-    private val _terminalAttachments = MutableStateFlow<List<TerminalAttachment>>(emptyList())
-    val terminalAttachments: StateFlow<List<TerminalAttachment>> = _terminalAttachments.asStateFlow()
-
-    fun addTerminalAttachment(attachment: TerminalAttachment) {
-        _terminalAttachments.value = _terminalAttachments.value + attachment
-    }
-
-    fun addTerminalAttachments(attachments: List<TerminalAttachment>) {
-        _terminalAttachments.value = _terminalAttachments.value + attachments
-    }
-
-    fun toggleTerminalAttachmentSelection(id: String) {
-        _terminalAttachments.value = _terminalAttachments.value.map {
-            if (it.id == id) it.copy(isSelectedForSending = !it.isSelectedForSending) else it
-        }
-    }
-
-    fun setTerminalAttachmentSelection(id: String, selected: Boolean) {
-        _terminalAttachments.value = _terminalAttachments.value.map {
-            if (it.id == id) it.copy(isSelectedForSending = selected) else it
-        }
-    }
-
-    fun selectAllTerminalAttachments() {
-        _terminalAttachments.value = _terminalAttachments.value.map { it.copy(isSelectedForSending = true) }
-    }
-
-    fun deselectAllTerminalAttachments() {
-        _terminalAttachments.value = _terminalAttachments.value.map { it.copy(isSelectedForSending = false) }
-    }
-
-    fun removeTerminalAttachment(id: String) {
-        _terminalAttachments.value = _terminalAttachments.value.filterNot { it.id == id }
-    }
-
-    fun clearTerminalAttachments() {
-        _terminalAttachments.value = emptyList()
-    }
-
-    fun clearAllTerminalAttachments() {
-        clearTerminalAttachments()
-    }
-
-    fun loadSampleTerminalAttachments() {
-        addTerminalAttachments(
-            listOf(
-                TerminalAttachment(
-                    name = "system_architecture_diagram.png",
-                    type = AttachmentType.PHOTO,
-                    mimeType = "image/png",
-                    sizeBytes = 245760L,
-                    contentSummary = "High-level architecture diagram showing Agent loop and Terminal router",
-                    isSelectedForSending = true
-                ),
-                TerminalAttachment(
-                    name = "agent_requirements.md",
-                    type = AttachmentType.DOCUMENT,
-                    mimeType = "text/markdown",
-                    sizeBytes = 18432L,
-                    contentSummary = "Project specifications and context injection guidelines",
-                    isSelectedForSending = true
-                )
-            )
-        )
-    }
-
-    fun getSelectedAttachmentsForSending(): List<TerminalAttachment> {
-        return _terminalAttachments.value.filter { it.isSelectedForSending }
-    }
-
-    fun buildAttachmentPromptContext(): String {
-        val selected = getSelectedAttachmentsForSending()
-        if (selected.isEmpty()) return ""
-        return buildString {
-            append("\n[Attached Context (${selected.size} items):\n")
-            selected.forEach { att ->
-                append(" - ")
-                append(att.toPromptContext())
-                append("\n")
-            }
-            append("]\n")
-        }
-    }
 
     fun setTerminalBridgeMode(mode: com.example.data.terminal.TerminalBridgeMode) {
         _terminalBridgeMode.value = mode
