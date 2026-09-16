@@ -208,14 +208,13 @@ fun SettingsScreen(
                 )
             }
 
-            // Universal bridge on all websites
+            // General apply bridge to all (Websites, APIs & Tasks) - completely independent
             item {
                 SettingsSwitchItem(
-                    icon = Icons.Rounded.Language,
-                    title = "Apply bridge to all websites",
-                    subtitle = "Enable bidirectional bridge & smart input routing across all websites",
+                    icon = Icons.Rounded.Hub,
+                    title = "General apply bridge to all",
+                    subtitle = "Apply bidirectional bridge universally across all targets: websites, APIs, agent tools, and background tasks",
                     checked = settings.bridgeApplyToAllWebsites,
-                    enabled = settings.bidirectionalBridgeEnabled,
                     onCheckedChange = { onSettingsChanged(settings.copy(bridgeApplyToAllWebsites = it)) }
                 )
             }

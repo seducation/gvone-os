@@ -83,6 +83,21 @@ fun GVONEWebView(
         webViewInstance?.goBack()
     }
 
+    // Re-inject or update bridge state dynamically when user toggles bridge from Terminal chip or Control Action sheet
+    LaunchedEffect(bridgeEnabled, bridgeApplyToAll, webViewInstance) {
+        webViewInstance?.let { wv ->
+            val url = lastLoadedUrl ?: tab.url
+            (wv as? GVONEActionWebView)?.isBridgeActive = bridgeApplyToAll || (bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(url))
+            webAppBridge?.injectBridgeRuntime(
+                wv,
+                url,
+                enabled = bridgeEnabled,
+                applyToAll = bridgeApplyToAll,
+                shortsAudioMode = shortsAudioMode
+            )
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         // When Tor is enabled and has connection failure, fail closed to prevent leaking cleartext traffic
         if (isTorActive && torConnectionState == TorConnectionState.ERROR) {
@@ -108,7 +123,7 @@ fun GVONEWebView(
                     GVONEActionWebView(context).apply {
                         isBackgroundPlayEnabled = backgroundPlayEnabled
                         onScrollChangeCallback = onPageScroll
-                        isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url)
+                        isBridgeActive = bridgeEnabled && (bridgeApplyToAll || com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url))
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
@@ -378,7 +393,7 @@ fun GVONEWebView(
                     webViewInstance = webView
                     if (webView is GVONEActionWebView) {
                         webView.isBackgroundPlayEnabled = backgroundPlayEnabled
-                        webView.isBridgeActive = bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url)
+                        webView.isBridgeActive = bridgeApplyToAll || (bridgeEnabled && com.example.data.sync.PageContextDetector.isTrustedGVONEOrigin(tab.url))
                         webView.onScrollChangeCallback = onPageScroll
                     }
                     onRegisterWebView?.invoke(tab.id, webView)

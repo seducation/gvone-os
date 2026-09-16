@@ -1125,14 +1125,52 @@ class TerminalCommandExecutor(
             }
 
             "/bridge" -> {
-                val state = viewModel.webAppBridge.connectionState.value
-                val isSuccess = state == WebAppConnectionState.READY
-                val bridgeEnabled = viewModel.settings.value.bidirectionalBridgeEnabled
-                val applyAll = viewModel.settings.value.bridgeApplyToAllWebsites
+                val currentSettings = viewModel.settings.value
                 val currentUrl = viewModel.currentTab.value?.url.orEmpty()
                 val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
+                val hostLabel = if (host.isNotBlank()) host else "active website"
+                val argLower = queryArg.trim().lowercase()
 
-                outputLines.add(TerminalLine("── GVONE WEB APP BRIDGE REPORT ──", TerminalLineType.SYSTEM))
+                if (argLower == "website" || argLower == "toggle" || argLower == "website toggle") {
+                    val newEnabled = !currentSettings.bidirectionalBridgeEnabled
+                    viewModel.updateSettings(currentSettings.copy(bidirectionalBridgeEnabled = newEnabled))
+                    outputLines.add(
+                        TerminalLine(
+                            "● [APPLY BRIDGE TO WEBSITE] " + (if (newEnabled) "APPLIED to $hostLabel (Interactive bidirectional stream enabled)" else "DISABLED for website"),
+                            if (newEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+                        )
+                    )
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                } else if (argLower == "website on" || argLower == "on") {
+                    viewModel.updateSettings(currentSettings.copy(bidirectionalBridgeEnabled = true))
+                    outputLines.add(TerminalLine("● [APPLY BRIDGE TO WEBSITE] APPLIED to $hostLabel", TerminalLineType.SUCCESS))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                } else if (argLower == "website off" || argLower == "off") {
+                    viewModel.updateSettings(currentSettings.copy(bidirectionalBridgeEnabled = false))
+                    outputLines.add(TerminalLine("● [APPLY BRIDGE TO WEBSITE] DISABLED for website", TerminalLineType.WARNING))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                } else if (argLower == "all" || argLower == "all toggle" || argLower == "general") {
+                    val newApplyAll = !currentSettings.bridgeApplyToAllWebsites
+                    viewModel.updateSettings(currentSettings.copy(bridgeApplyToAllWebsites = newApplyAll))
+                    outputLines.add(
+                        TerminalLine(
+                            "● [GENERAL APPLY BRIDGE TO ALL] " + (if (newApplyAll) "ENABLED (Universal across Websites, APIs & Tasks)" else "DISABLED (Targeted scope only)"),
+                            if (newApplyAll) TerminalLineType.SUCCESS else TerminalLineType.INFO
+                        )
+                    )
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                }
+
+                val state = viewModel.webAppBridge.connectionState.value
+                val isSuccess = state == WebAppConnectionState.READY
+                val bridgeEnabled = currentSettings.bidirectionalBridgeEnabled
+                val applyAll = currentSettings.bridgeApplyToAllWebsites
+
+                outputLines.add(TerminalLine("── GVONE BRIDGE & TARGET REPORT ──", TerminalLineType.SYSTEM))
                 outputLines.add(
                     TerminalLine(
                         "● Bridge Handshake: " + (if (isSuccess) "SUCCESSFUL (Connected & Ready)" else "NOT CONNECTED (State: ${state.name})"),
@@ -1140,8 +1178,18 @@ class TerminalCommandExecutor(
                     )
                 )
                 outputLines.add(TerminalLine("● Target Endpoint: $host", TerminalLineType.INFO))
-                outputLines.add(TerminalLine("● Bidirectional Channel: " + (if (bridgeEnabled) "ENABLED" else "DISABLED"), if (bridgeEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
-                outputLines.add(TerminalLine("● Scope: " + (if (applyAll) "Universal (All Websites)" else "GVONE Web Apps Only"), TerminalLineType.OUTPUT))
+                outputLines.add(
+                    TerminalLine(
+                        "● Apply Bridge to Website: " + (if (bridgeEnabled) "APPLIED (Active on $hostLabel)" else "DISABLED"),
+                        if (bridgeEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+                    )
+                )
+                outputLines.add(
+                    TerminalLine(
+                        "● General Apply Bridge to All: " + (if (applyAll) "ENABLED (Universal: Websites, APIs & Tasks)" else "RESTRICTED (Targeted / Specific app only)"),
+                        if (applyAll) TerminalLineType.SUCCESS else TerminalLineType.OUTPUT
+                    )
+                )
                 outputLines.add(
                     TerminalLine(
                         "● Address Bar Link: CONNECTED & SYNCHRONIZED",
@@ -1150,8 +1198,8 @@ class TerminalCommandExecutor(
                 )
                 outputLines.add(
                     TerminalLine(
-                        "● Verification: " + (if (isSuccess) "Success - bidirectional commands and address bar inputs are streaming." else "Inactive - verify target page supports GVONE bridge."),
-                        if (isSuccess) TerminalLineType.SUCCESS else TerminalLineType.INFO
+                        "● Usage: '/bridge website' to toggle website bridge | '/bridge all' to toggle general bridge",
+                        TerminalLineType.INFO
                     )
                 )
                 commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)

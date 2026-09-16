@@ -156,9 +156,10 @@ fun FloatingAddressBar(
         PageContextDetector.isYouTubeHomepage(currentTab?.url)
     }
 
-    // Direct Bridge / Type-to-write input mode is active on trusted GVONE origins or when "Apply Bridge to All Websites" is toggled ON
-    val isBridgeActiveForCurrentPage = remember(bridgeEnabled, bridgeApplyToAll, isGVONEActive) {
-        bridgeEnabled && (isGVONEActive || bridgeApplyToAll)
+    // Direct Bridge / Type-to-write input mode is active on trusted GVONE origins or when "Apply Bridge to All" is toggled ON.
+    // Appearing/hiding of the URL in the address bar is solely a feature of General Apply Bridge to All (independent of Bridge to Website).
+    val isGeneralBridgeActive = remember(bridgeApplyToAll, isGVONEActive) {
+        bridgeApplyToAll || isGVONEActive
     }
 
     var inputText by remember { mutableStateOf(addressBarInput) }
@@ -182,11 +183,12 @@ fun FloatingAddressBar(
         }
     }
 
-    // Synchronize non-focused address bar input with active tab URL without wiping active user typing
-    LaunchedEffect(currentTab?.url, isFocused, isBridgeActiveForCurrentPage) {
+    // Synchronize non-focused address bar input with active tab URL without wiping active user typing.
+    // Governed by General Apply Bridge to All (independent of Website Bridge).
+    LaunchedEffect(currentTab?.url, isFocused, isGeneralBridgeActive) {
         if (!isFocused && !isTerminalOpen && !addressBarInput.startsWith("/")) {
             val url = currentTab?.url.orEmpty()
-            inputText = if (isBridgeActiveForCurrentPage || isInternalHomeUrl(url)) "" else url
+            inputText = if (isGeneralBridgeActive || isInternalHomeUrl(url)) "" else url
         }
     }
 
@@ -201,10 +203,10 @@ fun FloatingAddressBar(
         }
     }
 
-    val displayHost = remember(currentTab?.url, isBridgeActiveForCurrentPage) {
+    val displayHost = remember(currentTab?.url, isGeneralBridgeActive) {
         val url = currentTab?.url ?: ""
-        if (isBridgeActiveForCurrentPage) {
-            "" // When bridge is active (including Apply to All), hide the website url to show type-to-write placeholder
+        if (isGeneralBridgeActive) {
+            "" // When General Apply Bridge to All is active, hide the website url to show type-to-write placeholder
         } else if (isInternalHomeUrl(url)) {
             if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name"
         } else {
@@ -553,7 +555,7 @@ fun FloatingAddressBar(
                                 }
                                 isFocused = true
                                 onWritingStateChanged?.invoke(true)
-                                if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
+                                if (isGeneralBridgeActive || isInternalHomeUrl(currentUrl)) {
                                     inputText = ""
                                 } else {
                                     inputText = currentUrl
@@ -632,8 +634,8 @@ fun FloatingAddressBar(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.Tune,
-                                        contentDescription = "Control & Target Website Settings",
-                                        tint = if (isBridgeActiveForCurrentPage) GVONEPrimary else if (autoLoadEnabled) GVONESecondary else Color(0xFF8E9BAE),
+                                        contentDescription = "Control Center (General Bridge to All, APIs & Tasks)",
+                                        tint = if (bridgeApplyToAll) GVONEPrimary else if (bridgeEnabled) Color(0xFF38BDF8) else if (autoLoadEnabled) GVONESecondary else Color(0xFF8E9BAE),
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
@@ -645,7 +647,7 @@ fun FloatingAddressBar(
                                     contentAlignment = Alignment.CenterStart
                                 ) {
                                     BasicTextField(
-                                        value = if (isFocused) inputText else (if (isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage) "" else displayHost),
+                                        value = if (isFocused) inputText else (if (isInternalHomeUrl(currentTab?.url) || isGeneralBridgeActive) "" else displayHost),
                                         onValueChange = { newText ->
                                             inputText = newText
                                             onAddressBarInputChange?.invoke(newText)
@@ -676,7 +678,7 @@ fun FloatingAddressBar(
                                                                 onNavigate(targetUrl)
                                                             }
                                                         }
-                                                        if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
+                                                        if (isGeneralBridgeActive || isInternalHomeUrl(currentUrl)) {
                                                             inputText = ""
                                                         } else {
                                                             inputText = currentUrl
@@ -686,15 +688,15 @@ fun FloatingAddressBar(
                                             }
                                             .testTag("address_bar_input"),
                                         textStyle = TextStyle(
-                                            color = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage)) Color(0xFF8E9BAE) else Color(0xFFE6EDF6),
+                                            color = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isGeneralBridgeActive)) Color(0xFF8E9BAE) else Color(0xFFE6EDF6),
                                             fontSize = 14.sp,
-                                            fontWeight = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isBridgeActiveForCurrentPage)) FontWeight.Normal else FontWeight.SemiBold
+                                            fontWeight = if (!isFocused && (currentTab?.url.isNullOrBlank() || isInternalHomeUrl(currentTab?.url) || isGeneralBridgeActive)) FontWeight.Normal else FontWeight.SemiBold
                                         ),
                                         singleLine = true,
                                         cursorBrush = SolidColor(if (isPrivate) GVONESecondary else GVONEPrimary),
                                         keyboardOptions = KeyboardOptions(
                                             imeAction = ImeAction.Search,
-                                            keyboardType = if (isBridgeActiveForCurrentPage || isYouTubeActive) KeyboardType.Text else KeyboardType.Uri
+                                            keyboardType = if (isGeneralBridgeActive || isYouTubeActive) KeyboardType.Text else KeyboardType.Uri
                                         ),
                                         keyboardActions = KeyboardActions(
                                             onSearch = {
@@ -736,10 +738,10 @@ fun FloatingAddressBar(
                                         ),
                                         decorationBox = { innerTextField ->
                                             if (!isFocused) {
-                                                if (isBridgeActiveForCurrentPage) {
+                                                if (isGeneralBridgeActive) {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Text(
-                                                            text = if (isPrivate) "Type to write (Private)..." else "Type to write / search...",
+                                                            text = if (isPrivate) "Type to write (Private)..." else if (bridgeApplyToAll) "Type to write / API / task / search..." else "Type to write / search...",
                                                             color = Color(0xFF94A3B8),
                                                             fontSize = 14.sp,
                                                             fontWeight = FontWeight.Normal,
@@ -759,7 +761,7 @@ fun FloatingAddressBar(
                                                 }
                                             } else if (isFocused && inputText.isEmpty()) {
                                                 Text(
-                                                    text = if (isYouTubeActive) "Search YouTube" else if (isBridgeActiveForCurrentPage) "Type to write, prompt, or enter URL..." else if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name",
+                                                    text = if (isYouTubeActive) "Search YouTube" else if (bridgeApplyToAll) "Type to write, prompt, API, task, or enter URL..." else if (isGeneralBridgeActive) "Type to write, prompt, or enter URL..." else if (isPrivate) "Search or enter website name (Private)" else "Search or enter website name",
                                                     color = Color(0xFF8E9BAE),
                                                     fontSize = 14.sp,
                                                     fontWeight = FontWeight.Normal,
@@ -791,7 +793,7 @@ fun FloatingAddressBar(
                                                                 onNavigate(targetUrl)
                                                             }
                                                         }
-                                                        if (isBridgeActiveForCurrentPage || isInternalHomeUrl(currentUrl)) {
+                                                        if (isGeneralBridgeActive || isInternalHomeUrl(currentUrl)) {
                                                             inputText = ""
                                                         } else {
                                                             inputText = currentUrl

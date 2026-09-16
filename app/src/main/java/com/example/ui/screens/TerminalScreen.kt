@@ -768,8 +768,22 @@ fun TerminalScreen(
                         executeCommand("/sandbox")
                     },
                     bridgeConnectionState = bridgeConnectionState,
+                    isWebsiteBridgeActive = settings.bidirectionalBridgeEnabled,
                     onBridgeClick = {
-                        executeCommand("/bridge")
+                        val newApplied = !settings.bidirectionalBridgeEnabled
+                        viewModel.updateSettings(settings.copy(bidirectionalBridgeEnabled = newApplied))
+                        val currentUrl = currentTab?.url.orEmpty()
+                        val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
+                        val hostLabel = if (host.isNotBlank()) host else "active website"
+                        val toastMsg = if (newApplied) "Bridge applied to website: $hostLabel" else "Bridge to website disconnected"
+                        Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
+                        val bridgeLine = TerminalLine(
+                            text = "● [BRIDGE TO WEBSITE] " + (if (newApplied) "APPLIED to $hostLabel (Interactive bidirectional stream enabled)" else "DISABLED for website"),
+                            type = if (newApplied) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+                        )
+                        sessions = sessions.map {
+                            if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
+                        }
                     },
                     onCnsClick = {
                         showCnsDashboard = true
@@ -2105,7 +2119,9 @@ private fun generateHelpOutput(commands: List<CustomCommandEntity>): List<Termin
     lines.add(TerminalLine("  help, ?              Display this manual", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  height [50-98|full]  Adjust or increase docked terminal height", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  clear, cls           Clear terminal screen", TerminalLineType.OUTPUT))
-    lines.add(TerminalLine("  bridge               Check Web App Bridge status (Success/Failed)", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  bridge               Check Web App Bridge status report", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  bridge website       Toggle 'Apply Bridge to Website'", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  bridge all           Toggle 'General Apply Bridge to All' (Web, APIs & Tasks)", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  addressbar           Check address bar stream link status", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  history              Show recently executed commands", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  tabs, lstabs         List all browser tabs with index and URLs", TerminalLineType.OUTPUT))

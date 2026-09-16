@@ -525,7 +525,7 @@ fun ControlActionSheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Bidirectional Bridge & Target Controls",
+                        text = "Bidirectional Bridge & General Controls",
                         color = Color(0xFFF8FAFC),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
@@ -533,7 +533,7 @@ fun ControlActionSheet(
                 }
 
                 Text(
-                    text = "Configure the bidirectional bridge architecture, input router, and address bar behaviors.",
+                    text = "Configure the bidirectional bridge architecture, general input router, and universal target behaviors across web, APIs, and tasks.",
                     color = Color(0xFF94A3B8),
                     fontSize = 12.sp,
                     lineHeight = 17.sp
@@ -588,13 +588,13 @@ fun ControlActionSheet(
                     }
                 }
 
-                // 2. Apply to All Websites (Universal Bridge) Toggle
+                // 2. General Apply Bridge to All (Websites, APIs & Tasks) Toggle (Independent of Website Bridge)
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0xFF1B2332),
                     border = BorderStroke(
                         1.dp,
-                        if (tempBridgeApplyToAll && tempBridgeEnabled) Color(0xFF38BDF8).copy(alpha = 0.5f) else Color(0x33FFFFFF)
+                        if (tempBridgeApplyToAll) Color(0xFF38BDF8).copy(alpha = 0.5f) else Color(0x33FFFFFF)
                     )
                 ) {
                     Row(
@@ -607,28 +607,27 @@ fun ControlActionSheet(
                         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Language,
+                                    imageVector = Icons.Rounded.Hub,
                                     contentDescription = null,
-                                    tint = if (tempBridgeApplyToAll && tempBridgeEnabled) Color(0xFF38BDF8) else Color(0xFF8E9BAE),
+                                    tint = if (tempBridgeApplyToAll) Color(0xFF38BDF8) else Color(0xFF8E9BAE),
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "Apply Bridge to All Websites",
-                                    color = if (tempBridgeEnabled) Color(0xFFF8FAFC) else Color(0xFF6B7A90),
+                                    text = "General Apply Bridge to All",
+                                    color = Color(0xFFF8FAFC),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                             }
                             Text(
-                                text = if (tempBridgeApplyToAll) "Active for all websites & AI web apps" else "Active only for trusted GVONE web apps",
+                                text = if (tempBridgeApplyToAll) "Active for all meanings & contexts: Websites, APIs & Background Agent Tasks" else "Active only for specific trusted GVONE web apps / targeted session",
                                 color = Color(0xFF94A3B8),
                                 fontSize = 11.sp
                             )
                         }
                         Switch(
                             checked = tempBridgeApplyToAll,
-                            enabled = tempBridgeEnabled,
                             onCheckedChange = { tempBridgeApplyToAll = it },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,

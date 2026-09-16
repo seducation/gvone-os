@@ -170,6 +170,7 @@ object InputRouter {
 
     /**
      * Routes the raw address bar input according to the active page context and user intent.
+     * General Apply Bridge to All and Website Bridge / InputRouter are completely independent.
      */
     fun resolveRouting(
         input: String,
@@ -186,19 +187,21 @@ object InputRouter {
             return InputDestination.NAVIGATE_URL
         }
 
-        // If InputRouter / Bidirectional Bridge is disabled, treat non-URL text as normal search
-        if (!inputRouterEnabled) {
-            return InputDestination.UNIVERSAL_SEARCH
-        }
-
-        // 2. Deliver directly to Web App if current active page is a trusted GVONE origin, YouTube, or if apply to all websites is enabled
-        val isGVONEActive = PageContextDetector.isTrustedGVONEOrigin(currentTabUrl)
-        val isYouTubeActive = PageContextDetector.isYouTubeOrigin(currentTabUrl)
-        if (isGVONEActive || isYouTubeActive || bridgeApplyToAllWebsites) {
+        // 2. If General Apply Bridge to All is enabled, always deliver directly (completely independent)
+        if (bridgeApplyToAllWebsites) {
             return InputDestination.DELIVER_TO_WEB_APP
         }
 
-        // 3. Otherwise treat as universal search
+        // 3. Deliver directly to Web App if website bridge / input router is enabled on trusted GVONE or YouTube origins
+        if (inputRouterEnabled) {
+            val isGVONEActive = PageContextDetector.isTrustedGVONEOrigin(currentTabUrl)
+            val isYouTubeActive = PageContextDetector.isYouTubeOrigin(currentTabUrl)
+            if (isGVONEActive || isYouTubeActive) {
+                return InputDestination.DELIVER_TO_WEB_APP
+            }
+        }
+
+        // 4. Otherwise treat as universal search
         return InputDestination.UNIVERSAL_SEARCH
     }
 
@@ -396,7 +399,7 @@ class GVONEWebAppBridge(
             injectYouTubeShortsAudioScript(webView, shortsAudioMode)
         }
 
-        if (!enabled) return
+        if (!enabled && !applyToAll) return
         val isTrustedOrigin = PageContextDetector.isTrustedGVONEOrigin(currentUrl)
         if (!applyToAll && !isTrustedOrigin && !isYouTubeOrigin) {
             return
@@ -909,8 +912,8 @@ class GVONEWebAppBridge(
                     }
                 }
 
-                // Notify native browser that page is ready
-                if (window.GVONEBrowserBridge && window.GVONEBrowserBridge.notifyReady) {
+                // Notify native browser that page is ready for trusted GVONE web app origins
+                if (isTrustedOrigin && window.GVONEBrowserBridge && window.GVONEBrowserBridge.notifyReady) {
                     window.GVONEBrowserBridge.notifyReady('gvone_web_app', '1.1');
                 }
             })();

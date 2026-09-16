@@ -106,7 +106,7 @@ object ControlActionRegistry {
                 id = ACTION_BRIDGE,
                 title = "Bridge",
                 icon = Icons.Outlined.Tune,
-                contentDescription = "Configure Bridge & Address Bar",
+                contentDescription = "General Bridge to All (Web, APIs, Tasks)",
                 onClick = onBridge
             )
         )
