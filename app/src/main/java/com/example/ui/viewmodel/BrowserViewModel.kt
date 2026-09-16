@@ -92,14 +92,38 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _terminalLines = MutableStateFlow<List<TerminalLine>>(emptyList())
     val terminalLines: StateFlow<List<TerminalLine>> = _terminalLines.asStateFlow()
 
+    private val _terminalBridgeMode = MutableStateFlow(com.example.data.terminal.TerminalBridgeMode.CHAT)
+    val terminalBridgeMode: StateFlow<com.example.data.terminal.TerminalBridgeMode> = _terminalBridgeMode.asStateFlow()
+
     private val _isChatMode = MutableStateFlow(true)
     val isChatMode: StateFlow<Boolean> = _isChatMode.asStateFlow()
 
     private val _isLogMode = MutableStateFlow(false)
     val isLogMode: StateFlow<Boolean> = _isLogMode.asStateFlow()
 
+    fun setTerminalBridgeMode(mode: com.example.data.terminal.TerminalBridgeMode) {
+        _terminalBridgeMode.value = mode
+        _isChatMode.value = (mode == com.example.data.terminal.TerminalBridgeMode.CHAT)
+        if (mode == com.example.data.terminal.TerminalBridgeMode.WEB) {
+            if (!_settings.value.bidirectionalBridgeEnabled) {
+                updateSettings(_settings.value.copy(bidirectionalBridgeEnabled = true))
+            }
+        }
+        com.example.agent.runtime.RuntimeStateManager.global.toggleChat(mode == com.example.data.terminal.TerminalBridgeMode.CHAT)
+    }
+
+    fun cycleTerminalBridgeMode(): com.example.data.terminal.TerminalBridgeMode {
+        val next = when (_terminalBridgeMode.value) {
+            com.example.data.terminal.TerminalBridgeMode.CHAT -> com.example.data.terminal.TerminalBridgeMode.WEB
+            com.example.data.terminal.TerminalBridgeMode.WEB -> com.example.data.terminal.TerminalBridgeMode.CHAT
+        }
+        setTerminalBridgeMode(next)
+        return next
+    }
+
     fun setChatMode(enabled: Boolean) {
         _isChatMode.value = enabled
+        _terminalBridgeMode.value = if (enabled) com.example.data.terminal.TerminalBridgeMode.CHAT else com.example.data.terminal.TerminalBridgeMode.WEB
         com.example.agent.runtime.RuntimeStateManager.global.toggleChat(enabled)
     }
 
@@ -107,6 +131,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val next = !_isChatMode.value
         setChatMode(next)
         return next
+    }
+
+    fun deliverToActiveWebPage(text: String, action: String = "submit"): Boolean {
+        val activeWebView = getActiveWebView()
+        return webAppBridge.deliverAddressBarInput(activeWebView, text, action)
     }
 
     fun setLogMode(enabled: Boolean) {
@@ -1484,18 +1513,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
-        // If Chat Bridge is ON, conversational inputs directly chat with the AI chatbot and show in Terminal
-        if (_isChatMode.value) {
-            terminalRepository.addCommandToHistory(trimmed)
-            appendTerminalLine("gvone(chat:api)@browser:~$ $trimmed", TerminalLineType.COMMAND)
-            openSheet(ActiveSheet.Terminal)
-            viewModelScope.launch {
-                val reply = aiService.chatResponse(trimmed)
-                appendTerminalLine(reply, TerminalLineType.AI_RESPONSE)
-            }
-            return
-        }
-
         // Always log input to persistent command history and Terminal session
         terminalRepository.addCommandToHistory(trimmed)
         appendTerminalLine("gvone@addressbar:~$ $trimmed", TerminalLineType.COMMAND)
@@ -1683,8 +1700,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             isWebAppReady = webAppBridge.connectionState.value == WebAppConnectionState.READY ||
                     webAppBridge.connectionState.value == WebAppConnectionState.PROCESSING,
             inputRouterEnabled = _settings.value.bidirectionalBridgeEnabled,
-            bridgeApplyToAllWebsites = _settings.value.bridgeApplyToAllWebsites,
-            isChatMode = _isChatMode.value
+            bridgeApplyToAllWebsites = _settings.value.bridgeApplyToAllWebsites
         )
 
         when (routing) {

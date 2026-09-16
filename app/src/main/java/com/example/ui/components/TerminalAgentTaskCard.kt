@@ -50,7 +50,8 @@ fun RuntimeStatusPillRow(
     onToggleChat: () -> Unit = {},
     isLogMode: Boolean = false,
     onToggleLog: () -> Unit = {},
-    isWebsiteBridgeActive: Boolean = true
+    isWebsiteBridgeActive: Boolean = true,
+    terminalBridgeMode: com.example.data.terminal.TerminalBridgeMode = com.example.data.terminal.TerminalBridgeMode.CHAT
 ) {
     Surface(
         color = Color(0xFF0D1117),
@@ -209,50 +210,13 @@ fun RuntimeStatusPillRow(
                 }
             }
 
-            // 4. Adaptive Bridge Pill:
-            // When Chat Bridge is ON -> Displays "CHAT BRIDGE: ON"
-            // When Chat Bridge is OFF -> Displays "WEB BRIDGE: ON" or "WEB BRIDGE: OFF"
-            val showChatBridge = isChatMode
-            val isWebBridgeOn = isWebsiteBridgeActive
-
-            val bridgeText = if (showChatBridge) {
-                "CHAT BRIDGE: ON"
-            } else {
-                if (isWebBridgeOn) {
-                    when (bridgeConnectionState) {
-                        WebAppConnectionState.PROCESSING -> "WEB BRIDGE: BUSY"
-                        WebAppConnectionState.CONNECTING -> "WEB BRIDGE: ..."
-                        WebAppConnectionState.UNAVAILABLE -> "WEB BRIDGE: OFF"
-                        else -> "WEB BRIDGE: ON"
-                    }
-                } else {
-                    "WEB BRIDGE: OFF"
-                }
-            }
-
-            val isGreen = showChatBridge || (isWebBridgeOn && bridgeConnectionState != WebAppConnectionState.UNAVAILABLE)
-            val isBusy = !showChatBridge && isWebBridgeOn && (bridgeConnectionState == WebAppConnectionState.PROCESSING || bridgeConnectionState == WebAppConnectionState.CONNECTING)
-
-            val bridgeBg = when {
-                isBusy -> Color(0xFF0C4A6E)
-                isGreen -> Color(0xFF064E3B)
-                else -> Color(0xFF161B22)
-            }
-            val bridgeBorder = when {
-                isBusy -> Color(0xFF38BDF8)
-                isGreen -> Color(0xFF10B981)
-                else -> Color(0xFF30363D)
-            }
-            val bridgeTextColor = when {
-                isBusy -> Color(0xFF7DD3FC)
-                isGreen -> Color(0xFF6EE7B7)
-                else -> Color(0xFF8B949E)
-            }
-            val bridgeDotColor = when {
-                isBusy -> Color(0xFF38BDF8)
-                isGreen -> Color(0xFF10B981)
-                else -> Color(0xFF6B7280)
-            }
+            // 4. Bridge Pill (strictly alternates between CHAT BRIDGE: ON and WEB BRIDGE: ON)
+            val isChat = terminalBridgeMode == com.example.data.terminal.TerminalBridgeMode.CHAT
+            val bridgeText = if (isChat) "CHAT BRIDGE: ON" else "WEB BRIDGE: ON"
+            val bridgeBg = if (isChat) Color(0xFF064E3B) else Color(0xFF0C4A6E)
+            val bridgeBorder = if (isChat) Color(0xFF10B981) else Color(0xFF38BDF8)
+            val bridgeTextColor = if (isChat) Color(0xFF6EE7B7) else Color(0xFF7DD3FC)
+            val bridgeDotColor = if (isChat) Color(0xFF10B981) else Color(0xFF38BDF8)
 
             Surface(
                 shape = RoundedCornerShape(4.dp),

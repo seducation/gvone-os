@@ -179,6 +179,7 @@ fun TerminalScreen(
     var showConversationHistorySheet by remember { mutableStateOf(false) }
 
     val isChatMode by viewModel.isChatMode.collectAsState()
+    val terminalBridgeMode by viewModel.terminalBridgeMode.collectAsStateWithLifecycle()
     val isLogMode by viewModel.isLogMode.collectAsState()
 
     var terminalHeightFraction by remember(settings.terminalHeightFraction) {
@@ -769,41 +770,24 @@ fun TerminalScreen(
                     },
                     bridgeConnectionState = bridgeConnectionState,
                     isWebsiteBridgeActive = settings.bidirectionalBridgeEnabled,
+                    terminalBridgeMode = terminalBridgeMode,
                     onBridgeClick = {
-                        if (isChatMode) {
-                            // Turn Chat Bridge OFF -> Reveals Web Bridge
-                            viewModel.setChatMode(false)
-                            val webOn = settings.bidirectionalBridgeEnabled
-                            Toast.makeText(context, "Chat Bridge: OFF | Web Bridge: ${if (webOn) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
-                            val bridgeLine = TerminalLine(
-                                text = "● [CHAT BRIDGE] OFF. Revealing Web Bridge: ${if (webOn) "ON (Active on website)" else "OFF (Command shell)"}",
-                                type = if (webOn) TerminalLineType.INFO else TerminalLineType.WARNING
-                            )
-                            sessions = sessions.map {
-                                if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
-                            }
-                        } else if (settings.bidirectionalBridgeEnabled) {
-                            // Web Bridge is currently ON -> Toggle it to OFF (Pure shell mode)
-                            viewModel.updateSettings(settings.copy(bidirectionalBridgeEnabled = false, bridgeApplyToAllWebsites = false))
-                            Toast.makeText(context, "Web Bridge: OFF (Command shell)", Toast.LENGTH_SHORT).show()
-                            val bridgeLine = TerminalLine(
-                                text = "● [WEB BRIDGE] DISABLED. Standard command shell active.",
-                                type = TerminalLineType.WARNING
-                            )
-                            sessions = sessions.map {
-                                if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
-                            }
-                        } else {
-                            // Both were OFF -> Turn Chat Bridge ON!
-                            viewModel.setChatMode(true)
-                            Toast.makeText(context, "Chat Bridge: ON (AI Chat / API)", Toast.LENGTH_SHORT).show()
-                            val bridgeLine = TerminalLine(
-                                text = "● [CHAT BRIDGE] CONNECTED to AI Chatbot (Gemini API). Type your message to chat directly.",
-                                type = TerminalLineType.SUCCESS
-                            )
-                            sessions = sessions.map {
-                                if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
-                            }
+                        val nextMode = viewModel.cycleTerminalBridgeMode()
+                        val label = when (nextMode) {
+                            TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON"
+                            TerminalBridgeMode.WEB -> "WEB BRIDGE: ON"
+                        }
+                        Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
+                        val bridgeLine = TerminalLine(
+                            text = if (nextMode == TerminalBridgeMode.CHAT) {
+                                "● [CHAT BRIDGE: ON] Connected to AI Chatbot (Gemini API). Conversational chat active."
+                            } else {
+                                "● [WEB BRIDGE: ON] Connected to active website. Direct input delivery active."
+                            },
+                            type = TerminalLineType.SUCCESS
+                        )
+                        sessions = sessions.map {
+                            if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
                         }
                     },
                     onCnsClick = {
@@ -1068,7 +1052,7 @@ fun TerminalScreen(
                                 withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
                                     append("$currentCwd$ ")
                                 }
-                            } else if (isChatMode) {
+                            } else if (terminalBridgeMode == TerminalBridgeMode.CHAT) {
                                 withStyle(SpanStyle(color = Color(0xFF10B981), fontWeight = FontWeight.Bold)) {
                                     append(if (isVoice) "gvone(chat:voice)@browser" else "gvone(chat:api)@browser")
                                 }
@@ -1078,19 +1062,9 @@ fun TerminalScreen(
                                 withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
                                     append("$currentCwd$ ")
                                 }
-                            } else if (settings.bidirectionalBridgeEnabled) {
+                            } else {
                                 withStyle(SpanStyle(color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)) {
                                     append(if (isVoice) "gvone(web:voice)@browser" else "gvone(web:bridge)@browser")
-                                }
-                                withStyle(SpanStyle(color = TermTextSecondary)) {
-                                    append(":")
-                                }
-                                withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
-                                    append("$currentCwd$ ")
-                                }
-                            } else {
-                                withStyle(SpanStyle(color = if (isVoice) TermPromptCyan else TermPromptGreen, fontWeight = FontWeight.Bold)) {
-                                    append(if (isVoice) "gvone(cmd:voice)@browser" else "gvone@browser")
                                 }
                                 withStyle(SpanStyle(color = TermTextSecondary)) {
                                     append(":")
@@ -1117,12 +1091,10 @@ fun TerminalScreen(
                             Text(
                                 text = if (isAgenticMode) {
                                     "Type autonomous goal (Agent is ON)..."
-                                } else if (isChatMode) {
+                                } else if (terminalBridgeMode == TerminalBridgeMode.CHAT) {
                                     "Chat with AI (Chat Bridge is ON)..."
-                                } else if (settings.bidirectionalBridgeEnabled) {
-                                    "Input bridged to website (Web Bridge is ON)..."
                                 } else {
-                                    "Type command or /help (Bridges are OFF)..."
+                                    "Input bridged to website (Web Bridge is ON)..."
                                 },
                                 color = Color(0xFF555D68),
                                 fontFamily = FontFamily.Monospace,

@@ -424,6 +424,37 @@ class TerminalCommandExecutor(
                 return
             }
 
+            "/bridge" -> {
+                when {
+                    queryArg.equals("chat", ignoreCase = true) || queryArg.equals("ai", ignoreCase = true) -> {
+                        viewModel.setTerminalBridgeMode(TerminalBridgeMode.CHAT)
+                        outputLines.add(TerminalLine("[BRIDGE] Switched to CHAT BRIDGE: ON (Connected to AI Chatbot / Gemini API).", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("web", ignoreCase = true) || queryArg.equals("website", ignoreCase = true) -> {
+                        viewModel.setTerminalBridgeMode(TerminalBridgeMode.WEB)
+                        outputLines.add(TerminalLine("[BRIDGE] Switched to WEB BRIDGE: ON (Connected to active website / Web App).", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("status", ignoreCase = true) -> {
+                        val current = viewModel.terminalBridgeMode.value
+                        val label = when (current) {
+                            TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON (AI Chatbot)"
+                            TerminalBridgeMode.WEB -> "WEB BRIDGE: ON (Active Website)"
+                        }
+                        outputLines.add(TerminalLine("[BRIDGE STATUS] Active: $label", TerminalLineType.INFO))
+                    }
+                    else -> {
+                        val newMode = viewModel.cycleTerminalBridgeMode()
+                        val label = when (newMode) {
+                            TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON (AI Chatbot)"
+                            TerminalBridgeMode.WEB -> "WEB BRIDGE: ON (Active Website)"
+                        }
+                        outputLines.add(TerminalLine("[BRIDGE] Toggled to: $label", TerminalLineType.SUCCESS))
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
             "/log", "/logs" -> {
                 when {
                     queryArg.equals("on", ignoreCase = true) -> {
@@ -1633,8 +1664,20 @@ class TerminalCommandExecutor(
             return
         }
 
+        // Web Bridge Fallback: If Web Bridge is ON, deliver terminal input directly to the active web page / Web App
+        if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.WEB) {
+            val delivered = viewModel.deliverToActiveWebPage(trimmed)
+            if (delivered) {
+                outputLines.add(TerminalLine("● [WEB BRIDGE] Input delivered to website: $trimmed", TerminalLineType.SUCCESS))
+            } else {
+                outputLines.add(TerminalLine("● [WEB BRIDGE] Input routed to active tab: $trimmed", TerminalLineType.INFO))
+            }
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+            return
+        }
+
         // Chatbot Conversation Fallback: If Chat Mode is ON, normal chat like a chatbot!
-        if (viewModel.isChatMode.value) {
+        if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.CHAT) {
             commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
             scope.launch {
                 val reply = viewModel.aiService.chatResponse(trimmed)
@@ -1643,7 +1686,7 @@ class TerminalCommandExecutor(
             return
         }
 
-        // Agentic mode is OFF and Chat mode is OFF: Strictly prevent triggering autonomous agent workflow!
+        // Agentic mode is OFF and Bridge is OFF: Strictly prevent triggering autonomous agent workflow!
         if (origin == CommandOrigin.ADDRESS_BAR) {
             val searchUrl = "https://duckduckgo.com/?q=${URLEncoder.encode(trimmed, "UTF-8")}"
             viewModel.loadUrlInCurrentTab(searchUrl, keepTerminalOpen = true)
@@ -1656,7 +1699,7 @@ class TerminalCommandExecutor(
                     trimmed.matches(Regex("(?i)^(hi|hello|hey|how|what|why|who|where|when|can|could|please|tell|explain|help|thank|thanks).*"))
 
             if (isConversational) {
-                viewModel.setChatMode(true)
+                viewModel.setTerminalBridgeMode(TerminalBridgeMode.CHAT)
                 outputLines.add(TerminalLine("● [AUTO-CONNECT] Connected to AI Chatbot (Gemini API).", TerminalLineType.INFO))
                 commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                 scope.launch {
@@ -1668,7 +1711,7 @@ class TerminalCommandExecutor(
 
             outputLines.add(
                 TerminalLine(
-                    "gvone: command not found: $trimmed. Tap 'CHAT BRIDGE' or '/chat on' to chat, or '/help' for manual.",
+                    "gvone: command not found: $trimmed. Tap bridge chip to enable CHAT BRIDGE or WEB BRIDGE, or '/help' for manual.",
                     TerminalLineType.ERROR
                 )
             )
