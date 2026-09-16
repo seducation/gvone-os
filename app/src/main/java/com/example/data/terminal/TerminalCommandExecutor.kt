@@ -1650,9 +1650,25 @@ class TerminalCommandExecutor(
             outputLines.add(TerminalLine("[SEARCH] Web query: $trimmed", TerminalLineType.SUCCESS))
             commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
         } else {
+            // Conversational fallback: Check if input looks like natural language / question so user is never stuck without a chat response!
+            val isConversational = trimmed.contains(" ") ||
+                    trimmed.endsWith("?") ||
+                    trimmed.matches(Regex("(?i)^(hi|hello|hey|how|what|why|who|where|when|can|could|please|tell|explain|help|thank|thanks).*"))
+
+            if (isConversational) {
+                viewModel.setChatMode(true)
+                outputLines.add(TerminalLine("● [AUTO-CONNECT] Connected to AI Chatbot (Gemini API).", TerminalLineType.INFO))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                scope.launch {
+                    val reply = viewModel.aiService.chatResponse(trimmed)
+                    viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+                }
+                return
+            }
+
             outputLines.add(
                 TerminalLine(
-                    "gvone: command not found: $trimmed. Tap 'CHAT' chip or '/chat on' to chat, or '/help' for manual.",
+                    "gvone: command not found: $trimmed. Tap 'CHAT BRIDGE' or '/chat on' to chat, or '/help' for manual.",
                     TerminalLineType.ERROR
                 )
             )

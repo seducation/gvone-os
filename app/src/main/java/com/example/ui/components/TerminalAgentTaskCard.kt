@@ -215,7 +215,7 @@ fun RuntimeStatusPillRow(
             val bridgeBorder = if (isBridgeActive) Color(0xFF10B981) else Color(0xFF30363D)
             val bridgeTextColor = if (isBridgeActive) Color(0xFF6EE7B7) else Color(0xFF8B949E)
             val bridgeDotColor = if (isBridgeActive) Color(0xFF10B981) else Color(0xFF6B7280)
-            val bridgeText = if (isBridgeActive) "BRIDGE: ON" else "BRIDGE: OFF"
+            val bridgeText = if (isBridgeActive) "CHAT BRIDGE: ON" else "CHAT BRIDGE: OFF"
 
             Surface(
                 shape = RoundedCornerShape(4.dp),
