@@ -166,10 +166,13 @@ fun BrowserApp(
 
     var showAvatarDialog by remember { mutableStateOf(false) }
 
+    var selectedPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
+            selectedPhotoUri = uri
             Toast.makeText(context, "Selected photo: ${uri.lastPathSegment}", Toast.LENGTH_SHORT).show()
         }
     }
@@ -406,6 +409,8 @@ fun BrowserApp(
                 onOpenFiles = {
                     viewModel.openSheet(ActiveSheet.Files)
                 },
+                selectedPhotoUri = selectedPhotoUri,
+                onClearSelectedPhotoUri = { selectedPhotoUri = null },
                 onClose = {
                     isAddressBarWriting = false
                     if (settings.terminalPinnedToScreen) {

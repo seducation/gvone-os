@@ -69,6 +69,7 @@ fun CommandAutocompletePopup(
     onAttachFiles: (() -> Unit)? = null,
     onPinCurrentTab: (() -> Unit)? = null,
     currentTabUrl: String? = null,
+    onWebsiteClick: (() -> Unit)? = null,
     onPinConnector: (() -> Unit)? = null,
     onPinResearchCanvas: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null
@@ -345,11 +346,12 @@ fun CommandAutocompletePopup(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Horizontal scrollable dark gray squircle cards: Photos, Camera, Files, and partially visible item
+            // Horizontal scrollable dark gray squircle cards: Photos, Camera, Files, Website, and partially visible item
             HorizontalActionCardsRow(
                 onPhotosClick = { onAttachPhotos?.invoke() },
                 onCameraClick = { onAttachCamera?.invoke() },
                 onFilesClick = { onAttachFiles?.invoke() },
+                onWebsiteClick = { onWebsiteClick?.invoke() ?: onPinCurrentTab?.invoke() },
                 onConnectorsClick = onPinConnector,
                 onResearchClick = onPinResearchCanvas,
                 onPinTerminalClick = onTogglePinTerminal,

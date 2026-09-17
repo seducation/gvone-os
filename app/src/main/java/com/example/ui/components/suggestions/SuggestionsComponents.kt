@@ -537,14 +537,35 @@ fun SuggestionChip(
 }
 
 /**
+ * Types of items that can be selected in the terminal chips bar.
+ * Supports Photos, Files, Websites, as well as Prompts and Commands.
+ */
+enum class SelectedItemType {
+    PHOTO,
+    FILE,
+    WEBSITE,
+    PROMPT,
+    COMMAND
+}
+
+/**
  * QuickPrompt data model for horizontal suggestion chips above the address bar.
+ * Also represents selected items (Photos, Files, Websites, Prompts, Commands).
  */
 data class QuickPrompt(
     val id: String,
     val title: String,
     val promptText: String,
     val icon: ImageVector = Icons.Rounded.AutoAwesome,
-    val category: String = "Prompt"
+    val category: String = "Prompt",
+    val type: SelectedItemType = when (category.lowercase()) {
+        "photo", "photos", "image", "gallery" -> SelectedItemType.PHOTO
+        "file", "files", "document" -> SelectedItemType.FILE
+        "website", "web", "webpage", "url", "tab" -> SelectedItemType.WEBSITE
+        "command", "terminal" -> SelectedItemType.COMMAND
+        else -> SelectedItemType.PROMPT
+    },
+    val uriOrUrl: String? = null
 )
 
 object DefaultQuickPrompts {
@@ -778,53 +799,81 @@ fun SelectedItemChip(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Style attributes based on item.type
+    val (borderColors, bgColors, iconVector, iconTint, titleColor, closeBg, closeTint) = when (item.type) {
+        SelectedItemType.PHOTO -> Tuple7(
+            listOf(Color(0xFF10B981), Color(0xFF34D399), Color(0xFF059669)),
+            listOf(Color(0xEE0D2419), Color(0xF0081810)),
+            Icons.Rounded.AddPhotoAlternate,
+            Color(0xFF34D399),
+            Color(0xFFD1FAE5),
+            Color(0x3310B981),
+            Color(0xFF6EE7B7)
+        )
+        SelectedItemType.FILE -> Tuple7(
+            listOf(Color(0xFF818CF8), Color(0xFFA78BFA), Color(0xFF6366F1)),
+            listOf(Color(0xEE1A1B35), Color(0xF0111224)),
+            Icons.Rounded.Folder,
+            Color(0xFFA78BFA),
+            Color(0xFFEDE9FE),
+            Color(0x33818CF8),
+            Color(0xFFC4B5FD)
+        )
+        SelectedItemType.WEBSITE -> Tuple7(
+            listOf(Color(0xFF0EA5E9), Color(0xFF38BDF8), Color(0xFF0284C7)),
+            listOf(Color(0xEE0B1E2D), Color(0xF007141E)),
+            Icons.Rounded.Language,
+            Color(0xFF38BDF8),
+            Color(0xFFE0F2FE),
+            Color(0x330EA5E9),
+            Color(0xFF7DD3FC)
+        )
+        else -> Tuple7(
+            listOf(Color(0xFFF59E0B), Color(0xFFFBBF24), Color(0xFF38BDF8)),
+            listOf(Color(0xEE2A1E0D), Color(0xF01C170E)),
+            if (item.type == SelectedItemType.COMMAND) Icons.Rounded.Terminal else Icons.Rounded.CheckCircle,
+            Color(0xFFFBBF24),
+            Color(0xFFFEF3C7),
+            Color(0x33F59E0B),
+            Color(0xFFFDE68A)
+        )
+    }
+
     Surface(
         modifier = modifier
             .height(34.dp)
-            .shadow(elevation = 10.dp, shape = RoundedCornerShape(17.dp), spotColor = Color(0x66F59E0B))
+            .shadow(elevation = 10.dp, shape = RoundedCornerShape(17.dp), spotColor = borderColors.first().copy(alpha = 0.4f))
             .clip(RoundedCornerShape(17.dp))
             .testTag("selected_item_chip")
             .testTag("selected_item_chip_${item.id}")
-            .testTag("selected_chip_${item.id}"),
+            .testTag("selected_chip_${item.id}")
+            .testTag("selected_item_${item.type.name.lowercase()}"),
         shape = RoundedCornerShape(17.dp),
-        color = Color(0xFF241B0E),
+        color = bgColors.first(),
         border = BorderStroke(
             1.2.dp,
-            Brush.horizontalGradient(
-                listOf(
-                    Color(0xFFF59E0B),
-                    Color(0xFFFBBF24),
-                    Color(0xFF38BDF8)
-                )
-            )
+            Brush.horizontalGradient(borderColors)
         )
     ) {
         Row(
             modifier = Modifier
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            Color(0xEE2A1E0D),
-                            Color(0xF01C170E)
-                        )
-                    )
-                )
+                .background(Brush.horizontalGradient(bgColors))
                 .padding(start = 10.dp, end = 5.dp, top = 2.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Indicator icon
+            // Type-specific indicator icon
             Icon(
-                imageVector = Icons.Rounded.CheckCircle,
-                contentDescription = "Selected",
-                tint = Color(0xFFFBBF24),
-                modifier = Modifier.size(14.dp)
+                imageVector = iconVector,
+                contentDescription = "Selected ${item.type.name}",
+                tint = iconTint,
+                modifier = Modifier.size(15.dp)
             )
 
             // Selected item title
             Text(
                 text = item.title,
-                color = Color(0xFFFEF3C7),
+                color = titleColor,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -837,7 +886,7 @@ fun SelectedItemChip(
                 modifier = Modifier
                     .size(24.dp)
                     .clip(CircleShape)
-                    .background(Color(0x33F59E0B))
+                    .background(closeBg)
                     .clickable { onClose() }
                     .testTag("remove_selected_item")
                     .testTag("close_selected_item")
@@ -848,13 +897,23 @@ fun SelectedItemChip(
                 Icon(
                     imageVector = Icons.Rounded.Close,
                     contentDescription = "Remove ${item.title}",
-                    tint = Color(0xFFFDE68A),
+                    tint = closeTint,
                     modifier = Modifier.size(13.dp)
                 )
             }
         }
     }
 }
+
+private data class Tuple7<A, B, C, D, E, F, G>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D,
+    val fifth: E,
+    val sixth: F,
+    val seventh: G
+)
 
 /**
  * QuickPromptChip:

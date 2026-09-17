@@ -52,12 +52,13 @@ fun HorizontalActionCardsRow(
     onPhotosClick: () -> Unit,
     onCameraClick: () -> Unit,
     onFilesClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onWebsiteClick: (() -> Unit)? = null,
     onConnectorsClick: (() -> Unit)? = null,
     onResearchClick: (() -> Unit)? = null,
-    onPinTerminalClick: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    onPinTerminalClick: (() -> Unit)? = null
 ) {
-    val items = remember(onPhotosClick, onCameraClick, onFilesClick, onConnectorsClick, onResearchClick, onPinTerminalClick) {
+    val items = remember(onPhotosClick, onCameraClick, onFilesClick, onWebsiteClick, onConnectorsClick, onResearchClick, onPinTerminalClick) {
         listOfNotNull(
             ActionMenuItem(
                 id = "photos",
@@ -80,6 +81,15 @@ fun HorizontalActionCardsRow(
                 testTag = "action_card_files",
                 onClick = onFilesClick
             ),
+            if (onWebsiteClick != null) {
+                ActionMenuItem(
+                    id = "website",
+                    label = "Website",
+                    icon = Icons.Rounded.Language,
+                    testTag = "action_card_website",
+                    onClick = onWebsiteClick
+                )
+            } else null,
             // Partially visible item on the right (and additional items upon horizontal scroll)
             ActionMenuItem(
                 id = "connectors",
@@ -207,6 +217,7 @@ fun ActionMenuBottomSheet(
     onFilesClick: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    onWebsiteClick: (() -> Unit)? = null,
     onConnectorsClick: (() -> Unit)? = null,
     onResearchClick: (() -> Unit)? = null,
     onPinTerminalClick: (() -> Unit)? = null,
@@ -296,6 +307,12 @@ fun ActionMenuBottomSheet(
                 onFilesClick = {
                     onFilesClick()
                     onDismiss()
+                },
+                onWebsiteClick = onWebsiteClick?.let { action ->
+                    {
+                        action()
+                        onDismiss()
+                    }
                 },
                 onConnectorsClick = onConnectorsClick?.let { action ->
                     {

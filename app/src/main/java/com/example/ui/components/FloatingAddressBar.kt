@@ -66,7 +66,6 @@ import com.example.data.sync.PageContextDetector
 import com.example.ui.components.suggestions.SuggestionsButton
 import com.example.ui.components.suggestions.SuggestionChipsBar
 import com.example.ui.components.suggestions.DefaultQuickPrompts
-import com.example.ui.components.suggestions.QuickPrompt
 import com.example.ui.theme.*
 
 /**
@@ -165,7 +164,6 @@ fun FloatingAddressBar(
     }
 
     var inputText by remember { mutableStateOf(addressBarInput) }
-    var selectedQuickPrompts by remember { mutableStateOf<List<QuickPrompt>>(emptyList()) }
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
@@ -431,13 +429,6 @@ fun FloatingAddressBar(
                     exit = fadeOut() + slideOutVertically { it / 2 }
                 ) {
                     SuggestionChipsBar(
-                        selectedItems = selectedQuickPrompts,
-                        onRemoveSelectedItem = { removed ->
-                            selectedQuickPrompts = selectedQuickPrompts.filterNot { it.id == removed.id }
-                            if (inputText.trim() == removed.promptText.trim()) {
-                                inputText = ""
-                            }
-                        },
                         isSuggestivePopupOpen = isSuggestiveCommandsPopupOpen,
                         onToggleBulb = {
                             if (isTerminalCommandsOpen) {
@@ -449,11 +440,6 @@ fun FloatingAddressBar(
                             }
                         },
                         onSelectPrompt = { promptText ->
-                            val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
-                                ?: QuickPrompt(id = "prompt_${promptText.hashCode()}", title = promptText, promptText = promptText)
-                            if (selectedQuickPrompts.none { it.id == matchingPrompt.id }) {
-                                selectedQuickPrompts = selectedQuickPrompts + matchingPrompt
-                            }
                             inputText = promptText
                             onAddressBarInputChange?.invoke(promptText)
                             onNavigate(promptText)
@@ -1030,13 +1016,6 @@ fun FloatingAddressBar(
                 exit = fadeOut() + slideOutVertically { -it / 2 }
             ) {
                 SuggestionChipsBar(
-                    selectedItems = selectedQuickPrompts,
-                    onRemoveSelectedItem = { removed ->
-                        selectedQuickPrompts = selectedQuickPrompts.filterNot { it.id == removed.id }
-                        if (inputText.trim() == removed.promptText.trim()) {
-                            inputText = ""
-                        }
-                    },
                     isSuggestivePopupOpen = isSuggestiveCommandsPopupOpen,
                     onToggleBulb = {
                         if (isTerminalCommandsOpen) {
@@ -1048,11 +1027,6 @@ fun FloatingAddressBar(
                         }
                     },
                     onSelectPrompt = { promptText ->
-                        val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
-                            ?: QuickPrompt(id = "prompt_${promptText.hashCode()}", title = promptText, promptText = promptText)
-                        if (selectedQuickPrompts.none { it.id == matchingPrompt.id }) {
-                            selectedQuickPrompts = selectedQuickPrompts + matchingPrompt
-                        }
                         inputText = promptText
                         onAddressBarInputChange?.invoke(promptText)
                         onNavigate(promptText)

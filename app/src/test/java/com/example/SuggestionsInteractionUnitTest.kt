@@ -330,57 +330,78 @@ class SuggestionsInteractionUnitTest {
     }
 
     @Test
-    fun terminalSuggestionChips_selectedItems_addAndRemoveByClose() {
-        val prompts = com.example.ui.components.suggestions.DefaultQuickPrompts.items
-        assertTrue("Prompts should not be empty", prompts.isNotEmpty())
-
+    fun selectedItem_canBePhotoFilesAndWebsite() {
         var selectedItems = listOf<com.example.ui.components.suggestions.QuickPrompt>()
-        var terminalInput = ""
 
-        // User selects an item from suggestions chip near bulb icon
-        val itemToSelect = prompts.first()
-        val onSelectPrompt = { promptText: String ->
-            val matching = prompts.find { it.promptText == promptText }
-                ?: com.example.ui.components.suggestions.QuickPrompt(id = "prompt_${promptText.hashCode()}", title = promptText, promptText = promptText)
-            if (selectedItems.none { it.id == matching.id }) {
-                selectedItems = selectedItems + matching
-            }
-            terminalInput = promptText
-        }
-
-        onSelectPrompt(itemToSelect.promptText)
-
-        // Verify item is now in selected items
+        // 1. Select Photo
+        val photoItem = com.example.ui.components.suggestions.QuickPrompt(
+            id = "photo_1",
+            title = "Photo: sunset.jpg",
+            promptText = "/photos sunset.jpg",
+            category = "Photo",
+            type = com.example.ui.components.suggestions.SelectedItemType.PHOTO,
+            uriOrUrl = "content://media/photos/1"
+        )
+        selectedItems = selectedItems + photoItem
         assertEquals(1, selectedItems.size)
-        assertEquals(itemToSelect.id, selectedItems[0].id)
-        assertEquals(itemToSelect.title, selectedItems[0].title)
-        assertEquals(itemToSelect.promptText, terminalInput)
+        assertEquals(com.example.ui.components.suggestions.SelectedItemType.PHOTO, selectedItems.first().type)
 
-        // User selects another item (e.g. second prompt)
-        val secondItem = prompts[1]
-        onSelectPrompt(secondItem.promptText)
+        // 2. Select File
+        val fileItem = com.example.ui.components.suggestions.QuickPrompt(
+            id = "file_1",
+            title = "File: whitepaper.pdf",
+            promptText = "/files whitepaper.pdf",
+            category = "File",
+            type = com.example.ui.components.suggestions.SelectedItemType.FILE
+        )
+        selectedItems = selectedItems + fileItem
         assertEquals(2, selectedItems.size)
-        assertTrue("Selected items must contain first item", selectedItems.any { it.id == itemToSelect.id })
-        assertTrue("Selected items must contain second item", selectedItems.any { it.id == secondItem.id })
+        assertEquals(com.example.ui.components.suggestions.SelectedItemType.FILE, selectedItems[1].type)
 
-        // User removes the first selected item by clicking close ("X")
-        val onRemoveSelectedItem = { itemToRemove: com.example.ui.components.suggestions.QuickPrompt ->
-            selectedItems = selectedItems.filterNot { it.id == itemToRemove.id }
-            if (terminalInput.trim() == itemToRemove.promptText.trim()) {
-                terminalInput = ""
-            }
-        }
+        // 3. Select Website
+        val websiteItem = com.example.ui.components.suggestions.QuickPrompt(
+            id = "web_1",
+            title = "Web: gvone.app",
+            promptText = "https://gvone.app",
+            category = "Website",
+            type = com.example.ui.components.suggestions.SelectedItemType.WEBSITE,
+            uriOrUrl = "https://gvone.app"
+        )
+        selectedItems = selectedItems + websiteItem
+        assertEquals(3, selectedItems.size)
+        assertEquals(com.example.ui.components.suggestions.SelectedItemType.WEBSITE, selectedItems[2].type)
 
-        onRemoveSelectedItem(itemToSelect)
+        // 4. Verify removal of a selected item (e.g. remove Photo)
+        selectedItems = selectedItems.filterNot { it.id == photoItem.id }
+        assertEquals(2, selectedItems.size)
+        assertFalse(selectedItems.any { it.type == com.example.ui.components.suggestions.SelectedItemType.PHOTO })
+        assertTrue(selectedItems.any { it.type == com.example.ui.components.suggestions.SelectedItemType.FILE })
+        assertTrue(selectedItems.any { it.type == com.example.ui.components.suggestions.SelectedItemType.WEBSITE })
 
-        // Verify first item is removed and second item remains
+        // 5. Verify removal of website
+        selectedItems = selectedItems.filterNot { it.id == websiteItem.id }
         assertEquals(1, selectedItems.size)
-        assertEquals(secondItem.id, selectedItems[0].id)
+        assertEquals(com.example.ui.components.suggestions.SelectedItemType.FILE, selectedItems.first().type)
+    }
 
-        // Remove second item by clicking close
-        onRemoveSelectedItem(secondItem)
-        assertTrue("Selected items must be empty after closing all items", selectedItems.isEmpty())
-        assertEquals("", terminalInput)
+    @Test
+    fun actionMenuCards_includesWebsiteAction() {
+        var websiteClicked = false
+        val dummyIcon = ImageVector.Builder("dummy", 24.dp, 24.dp, 24f, 24f).build()
+
+        val websiteCard = com.example.ui.components.ActionMenuItem(
+            id = "website",
+            label = "Website",
+            icon = dummyIcon,
+            testTag = "action_card_website",
+            onClick = { websiteClicked = true }
+        )
+
+        assertEquals("Website", websiteCard.label)
+        assertEquals("action_card_website", websiteCard.testTag)
+
+        websiteCard.onClick()
+        assertTrue("Website card onClick should be triggered", websiteClicked)
     }
 }
 

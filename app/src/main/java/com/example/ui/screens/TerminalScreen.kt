@@ -36,6 +36,7 @@ import com.example.ui.components.CommandAutocompletePopup
 import com.example.ui.components.suggestions.SuggestionChipsBar
 import com.example.ui.components.suggestions.DefaultQuickPrompts
 import com.example.ui.components.suggestions.QuickPrompt
+import com.example.ui.components.suggestions.SelectedItemType
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -117,6 +118,8 @@ fun TerminalScreen(
     onOpenPhotos: (() -> Unit)? = null,
     onOpenCamera: (() -> Unit)? = null,
     onOpenFiles: (() -> Unit)? = null,
+    selectedPhotoUri: android.net.Uri? = null,
+    onClearSelectedPhotoUri: (() -> Unit)? = null,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -226,8 +229,72 @@ fun TerminalScreen(
     // Active input state
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
 
-    // Selected suggestion items displayed near the bulb icon with remove/close button
-    var selectedQuickPrompts by remember { mutableStateOf<List<QuickPrompt>>(emptyList()) }
+    // Selected items (Photos, Files, Websites, Prompts) displayed near the bulb icon
+    var selectedItems by remember { mutableStateOf<List<QuickPrompt>>(emptyList()) }
+
+    // Helper functions for selecting photo, file, and website items
+    val selectPhotoItem: (String?, String?) -> Unit = { name, uriString ->
+        val photoName = name ?: "photo_${selectedItems.count { it.type == SelectedItemType.PHOTO } + 1}.jpg"
+        val item = QuickPrompt(
+            id = "photo_${System.currentTimeMillis()}_${photoName.hashCode()}",
+            title = "Photo: $photoName",
+            promptText = "/photos ${uriString ?: photoName}",
+            icon = Icons.Rounded.AddPhotoAlternate,
+            category = "Photo",
+            type = SelectedItemType.PHOTO,
+            uriOrUrl = uriString
+        )
+        if (selectedItems.none { it.title == item.title }) {
+            selectedItems = selectedItems + item
+        }
+    }
+
+    val selectFileItem: (String?) -> Unit = { filename ->
+        val fname = filename ?: "file_${selectedItems.count { it.type == SelectedItemType.FILE } + 1}.pdf"
+        val item = QuickPrompt(
+            id = "file_${System.currentTimeMillis()}_${fname.hashCode()}",
+            title = "File: $fname",
+            promptText = "/files $fname",
+            icon = Icons.Rounded.Folder,
+            category = "File",
+            type = SelectedItemType.FILE
+        )
+        if (selectedItems.none { it.title == item.title }) {
+            selectedItems = selectedItems + item
+        }
+    }
+
+    val selectWebsiteItem: () -> Unit = {
+        val tab = currentTab
+        val webUrl = tab?.url?.ifBlank { "https://gvone.app" } ?: "https://gvone.app"
+        val domain = try {
+            java.net.URI(webUrl).host?.removePrefix("www.")?.ifBlank { null }
+        } catch (_: Exception) {
+            null
+        } ?: tab?.title?.take(25) ?: "gvone.app"
+        val webTitle = tab?.title?.takeIf { it.isNotBlank() && !it.startsWith("http") }?.take(25) ?: domain
+        val item = QuickPrompt(
+            id = "web_${tab?.id ?: webUrl.hashCode()}",
+            title = "Web: $webTitle",
+            promptText = webUrl,
+            icon = Icons.Rounded.Language,
+            category = "Website",
+            type = SelectedItemType.WEBSITE,
+            uriOrUrl = webUrl
+        )
+        if (selectedItems.none { it.type == SelectedItemType.WEBSITE && it.uriOrUrl == webUrl }) {
+            selectedItems = selectedItems + item
+        }
+    }
+
+    // Reactively receive selected photo from system photo picker
+    LaunchedEffect(selectedPhotoUri) {
+        if (selectedPhotoUri != null) {
+            val segment = selectedPhotoUri.lastPathSegment ?: "photo.jpg"
+            selectPhotoItem(segment, selectedPhotoUri.toString())
+            onClearSelectedPhotoUri?.invoke()
+        }
+    }
 
     // Persistent command history
     val commandHistory = remember {
@@ -557,12 +624,9 @@ fun TerminalScreen(
                     ) {
                         SuggestionChipsBar(
                             prompts = DefaultQuickPrompts.items,
-                            selectedItems = selectedQuickPrompts,
-                            onRemoveSelectedItem = { removedItem ->
-                                selectedQuickPrompts = selectedQuickPrompts.filterNot { it.id == removedItem.id }
-                                if (inputText.text.trim() == removedItem.promptText.trim()) {
-                                    inputText = TextFieldValue("")
-                                }
+                            selectedItems = selectedItems,
+                            onRemoveSelectedItem = { item ->
+                                selectedItems = selectedItems.filterNot { it.id == item.id }
                             },
                             isSuggestivePopupOpen = showActionAndCommandPopup || viewModel.showTerminalCommands.value,
                             onToggleBulb = {
@@ -572,9 +636,15 @@ fun TerminalScreen(
                             },
                             onSelectPrompt = { promptText ->
                                 val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
-                                    ?: QuickPrompt(id = "prompt_${promptText.hashCode()}", title = promptText, promptText = promptText)
-                                if (selectedQuickPrompts.none { it.id == matchingPrompt.id }) {
-                                    selectedQuickPrompts = selectedQuickPrompts + matchingPrompt
+                                    ?: QuickPrompt(
+                                        id = "prompt_${promptText.hashCode()}",
+                                        title = promptText,
+                                        promptText = promptText,
+                                        category = "Prompt",
+                                        type = SelectedItemType.PROMPT
+                                    )
+                                if (selectedItems.none { it.id == matchingPrompt.id }) {
+                                    selectedItems = selectedItems + matchingPrompt
                                 }
                                 inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
                                 focusRequester.requestFocus()
@@ -1023,16 +1093,6 @@ fun TerminalScreen(
                                 .clickable {
                                     val trigger = cmd.command
                                     inputText = TextFieldValue("$trigger ", selection = androidx.compose.ui.text.TextRange(trigger.length + 1))
-                                    val cmdPrompt = QuickPrompt(
-                                        id = "cmd_${cmd.command}",
-                                        title = cmd.command,
-                                        promptText = "$trigger ",
-                                        icon = Icons.Rounded.Terminal,
-                                        category = "Command"
-                                    )
-                                    if (selectedQuickPrompts.none { it.id == cmdPrompt.id }) {
-                                        selectedQuickPrompts = selectedQuickPrompts + cmdPrompt
-                                    }
                                     focusRequester.requestFocus()
                                 }
                                 .testTag("autocomplete_${cmd.command}")
@@ -1073,19 +1133,9 @@ fun TerminalScreen(
                     onSelectSuggestion = { suggestion, executeNow ->
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
-                        val arg = suggestion.queryArgument
-                        val runStr = if (arg.isNotEmpty()) "${suggestion.matchedTrigger} $arg" else suggestion.matchedTrigger
-                        val cmdItem = QuickPrompt(
-                            id = "cmd_${suggestion.command.id}",
-                            title = suggestion.command.name.ifBlank { suggestion.matchedTrigger },
-                            promptText = runStr,
-                            icon = Icons.Rounded.Terminal,
-                            category = suggestion.command.category.displayName
-                        )
-                        if (selectedQuickPrompts.none { it.id == cmdItem.id }) {
-                            selectedQuickPrompts = selectedQuickPrompts + cmdItem
-                        }
                         if (executeNow) {
+                            val arg = suggestion.queryArgument
+                            val runStr = if (arg.isNotEmpty()) "${suggestion.matchedTrigger} $arg" else suggestion.matchedTrigger
                             executeCommand(runStr)
                         } else {
                             val filled = "${suggestion.matchedTrigger} "
@@ -1100,10 +1150,16 @@ fun TerminalScreen(
                     onSelectPrompt = { promptText ->
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
-                        val matching = DefaultQuickPrompts.items.find { it.promptText == promptText }
-                            ?: QuickPrompt(id = "prompt_${promptText.hashCode()}", title = promptText, promptText = promptText)
-                        if (selectedQuickPrompts.none { it.id == matching.id }) {
-                            selectedQuickPrompts = selectedQuickPrompts + matching
+                        val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
+                            ?: QuickPrompt(
+                                id = "prompt_${promptText.hashCode()}",
+                                title = promptText,
+                                promptText = promptText,
+                                category = "Prompt",
+                                type = SelectedItemType.PROMPT
+                            )
+                        if (selectedItems.none { it.id == matchingPrompt.id }) {
+                            selectedItems = selectedItems + matchingPrompt
                         }
                         inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
                         executeCommand(promptText)
@@ -1121,6 +1177,7 @@ fun TerminalScreen(
                     onAttachPhotos = {
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
+                        selectPhotoItem(null, null)
                         onOpenPhotos?.invoke() ?: run {
                             executeCommand("/photos")
                         }
@@ -1128,6 +1185,7 @@ fun TerminalScreen(
                     onAttachCamera = {
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
+                        selectPhotoItem("camera_snap.jpg", null)
                         onOpenCamera?.invoke() ?: run {
                             executeCommand("/camera")
                         }
@@ -1135,11 +1193,18 @@ fun TerminalScreen(
                     onAttachFiles = {
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
+                        selectFileItem(null)
                         onOpenFiles?.invoke() ?: run {
                             executeCommand("/files")
                         }
                     },
+                    onWebsiteClick = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        selectWebsiteItem()
+                    },
                     onPinCurrentTab = {
+                        selectWebsiteItem()
                         currentTab?.let { tab ->
                             val url = tab.url
                             executeCommand("/pin $url")
@@ -1440,12 +1505,9 @@ fun TerminalScreen(
                 ) {
                     SuggestionChipsBar(
                         prompts = DefaultQuickPrompts.items,
-                        selectedItems = selectedQuickPrompts,
-                        onRemoveSelectedItem = { removedItem ->
-                            selectedQuickPrompts = selectedQuickPrompts.filterNot { it.id == removedItem.id }
-                            if (inputText.text.trim() == removedItem.promptText.trim()) {
-                                inputText = TextFieldValue("")
-                            }
+                        selectedItems = selectedItems,
+                        onRemoveSelectedItem = { item ->
+                            selectedItems = selectedItems.filterNot { it.id == item.id }
                         },
                         isSuggestivePopupOpen = showActionAndCommandPopup || viewModel.showTerminalCommands.value,
                         onToggleBulb = {
@@ -1455,9 +1517,15 @@ fun TerminalScreen(
                         },
                         onSelectPrompt = { promptText ->
                             val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
-                                ?: QuickPrompt(id = "prompt_${promptText.hashCode()}", title = promptText, promptText = promptText)
-                            if (selectedQuickPrompts.none { it.id == matchingPrompt.id }) {
-                                selectedQuickPrompts = selectedQuickPrompts + matchingPrompt
+                                ?: QuickPrompt(
+                                    id = "prompt_${promptText.hashCode()}",
+                                    title = promptText,
+                                    promptText = promptText,
+                                    category = "Prompt",
+                                    type = SelectedItemType.PROMPT
+                                )
+                            if (selectedItems.none { it.id == matchingPrompt.id }) {
+                                selectedItems = selectedItems + matchingPrompt
                             }
                             inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
                             focusRequester.requestFocus()
@@ -1580,21 +1648,28 @@ fun TerminalScreen(
             ActionMenuBottomSheet(
                 onPhotosClick = {
                     showActionBottomSheet = false
+                    selectPhotoItem(null, null)
                     onOpenPhotos?.invoke() ?: run {
                         executeCommand("/photos")
                     }
                 },
                 onCameraClick = {
                     showActionBottomSheet = false
+                    selectPhotoItem("camera_snap.jpg", null)
                     onOpenCamera?.invoke() ?: run {
                         executeCommand("/camera")
                     }
                 },
                 onFilesClick = {
                     showActionBottomSheet = false
+                    selectFileItem(null)
                     onOpenFiles?.invoke() ?: run {
                         executeCommand("/files")
                     }
+                },
+                onWebsiteClick = {
+                    showActionBottomSheet = false
+                    selectWebsiteItem()
                 },
                 onConnectorsClick = {
                     showActionBottomSheet = false
