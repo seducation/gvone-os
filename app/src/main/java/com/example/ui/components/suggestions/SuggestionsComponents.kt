@@ -626,21 +626,32 @@ object DefaultQuickPrompts {
  * SuggestionChipsBar:
  * Floating row of quick-prompt chips matching the address bar theme,
  * with the bulb icon placed on the left of the persistent chips.
- * No header word, no swipe arrow, and no cross button.
+ * When items are selected by the user, they appear prominently near the bulb icon
+ * with a close button ('X') so the user can easily remove them.
  */
 @Composable
 fun SuggestionChipsBar(
     prompts: List<QuickPrompt> = DefaultQuickPrompts.items,
+    selectedItems: List<QuickPrompt> = emptyList(),
+    onRemoveSelectedItem: (QuickPrompt) -> Unit = {},
     isSuggestivePopupOpen: Boolean = false,
     showPinButton: Boolean = false,
     isTerminalPinned: Boolean = false,
     onTogglePinTerminal: () -> Unit = {},
     onToggleBulb: () -> Unit = {},
     onSelectPrompt: (String) -> Unit,
+    onSelectQuickPrompt: ((QuickPrompt) -> Unit)? = null,
     onClose: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
+
+    // Automatically scroll to front when a new selected item is added
+    LaunchedEffect(selectedItems.size) {
+        if (selectedItems.isNotEmpty()) {
+            scrollState.animateScrollTo(0)
+        }
+    }
 
     Row(
         modifier = modifier
@@ -722,7 +733,9 @@ fun SuggestionChipsBar(
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // Horizontal scrollable floating chips
+        // Horizontal scrollable floating chips containing:
+        // 1. Selected items (right near the bulb icon, with close button)
+        // 2. Regular suggestion chips
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -730,12 +743,113 @@ fun SuggestionChipsBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Selected item(s) chosen by user - shown right near the bulb icon
+            selectedItems.forEach { item ->
+                SelectedItemChip(
+                    item = item,
+                    onClose = { onRemoveSelectedItem(item) }
+                )
+            }
+
+            // Available suggestion chips
             prompts.forEach { prompt ->
+                val isSelected = selectedItems.any { it.id == prompt.id }
                 QuickPromptChip(
                     prompt = prompt,
+                    isSelected = isSelected,
                     onClick = {
                         onSelectPrompt(prompt.promptText)
+                        onSelectQuickPrompt?.invoke(prompt)
                     }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * SelectedItemChip:
+ * Highlighted chip representing an item selected by the user, displayed right near the bulb icon.
+ * Includes a close ("X") button to remove the selection.
+ */
+@Composable
+fun SelectedItemChip(
+    item: QuickPrompt,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .height(34.dp)
+            .shadow(elevation = 10.dp, shape = RoundedCornerShape(17.dp), spotColor = Color(0x66F59E0B))
+            .clip(RoundedCornerShape(17.dp))
+            .testTag("selected_item_chip")
+            .testTag("selected_item_chip_${item.id}")
+            .testTag("selected_chip_${item.id}"),
+        shape = RoundedCornerShape(17.dp),
+        color = Color(0xFF241B0E),
+        border = BorderStroke(
+            1.2.dp,
+            Brush.horizontalGradient(
+                listOf(
+                    Color(0xFFF59E0B),
+                    Color(0xFFFBBF24),
+                    Color(0xFF38BDF8)
+                )
+            )
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color(0xEE2A1E0D),
+                            Color(0xF01C170E)
+                        )
+                    )
+                )
+                .padding(start = 10.dp, end = 5.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            // Indicator icon
+            Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = "Selected",
+                tint = Color(0xFFFBBF24),
+                modifier = Modifier.size(14.dp)
+            )
+
+            // Selected item title
+            Text(
+                text = item.title,
+                color = Color(0xFFFEF3C7),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag("selected_item_title_${item.id}")
+            )
+
+            // Remove/Close button
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x33F59E0B))
+                    .clickable { onClose() }
+                    .testTag("remove_selected_item")
+                    .testTag("close_selected_item")
+                    .testTag("close_selected_item_${item.id}")
+                    .testTag("remove_selected_item_${item.id}"),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Remove ${item.title}",
+                    tint = Color(0xFFFDE68A),
+                    modifier = Modifier.size(13.dp)
                 )
             }
         }
@@ -750,7 +864,8 @@ fun SuggestionChipsBar(
 fun QuickPromptChip(
     prompt: QuickPrompt,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSelected: Boolean = false
 ) {
     Surface(
         modifier = modifier
@@ -761,42 +876,60 @@ fun QuickPromptChip(
             .testTag("quick_prompt_chip_${prompt.id}")
             .testTag("suggestion_chip_${prompt.id}"),
         shape = RoundedCornerShape(17.dp),
-        color = Color(0xEB131A24),
+        color = if (isSelected) Color(0xFF241B0E) else Color(0xEB131A24),
         border = BorderStroke(
             1.dp,
-            Brush.linearGradient(
-                listOf(
-                    Color(0x33FFFFFF),
-                    Color(0x1838BDF8)
+            if (isSelected) {
+                Brush.linearGradient(
+                    listOf(
+                        Color(0xFFF59E0B),
+                        Color(0x88F59E0B)
+                    )
                 )
-            )
+            } else {
+                Brush.linearGradient(
+                    listOf(
+                        Color(0x33FFFFFF),
+                        Color(0x1838BDF8)
+                    )
+                )
+            }
         )
     ) {
         Row(
             modifier = Modifier
                 .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            Color(0xEB131A24),
-                            Color(0xF00D131C)
+                    if (isSelected) {
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color(0xEE2A1E0D),
+                                Color(0xF01C170E)
+                            )
                         )
-                    )
+                    } else {
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color(0xEB131A24),
+                                Color(0xF00D131C)
+                            )
+                        )
+                    }
                 )
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Icon(
-                imageVector = prompt.icon,
+                imageVector = if (isSelected) Icons.Rounded.Check else prompt.icon,
                 contentDescription = null,
                 tint = Color(0xFFFBBF24),
                 modifier = Modifier.size(13.dp)
             )
             Text(
                 text = prompt.title,
-                color = Color(0xFFF1F5F9),
+                color = if (isSelected) Color(0xFFFEF3C7) else Color(0xFFF1F5F9),
                 fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                 maxLines = 1
             )
         }

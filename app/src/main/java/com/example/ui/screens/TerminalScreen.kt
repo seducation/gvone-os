@@ -35,6 +35,7 @@ import com.example.ui.components.ActionMenuBottomSheet
 import com.example.ui.components.CommandAutocompletePopup
 import com.example.ui.components.suggestions.SuggestionChipsBar
 import com.example.ui.components.suggestions.DefaultQuickPrompts
+import com.example.ui.components.suggestions.QuickPrompt
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -224,6 +225,9 @@ fun TerminalScreen(
 
     // Active input state
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
+
+    // Selected suggestion items displayed near the bulb icon with remove/close button
+    var selectedQuickPrompts by remember { mutableStateOf<List<QuickPrompt>>(emptyList()) }
 
     // Persistent command history
     val commandHistory = remember {
@@ -553,6 +557,13 @@ fun TerminalScreen(
                     ) {
                         SuggestionChipsBar(
                             prompts = DefaultQuickPrompts.items,
+                            selectedItems = selectedQuickPrompts,
+                            onRemoveSelectedItem = { removedItem ->
+                                selectedQuickPrompts = selectedQuickPrompts.filterNot { it.id == removedItem.id }
+                                if (inputText.text.trim() == removedItem.promptText.trim()) {
+                                    inputText = TextFieldValue("")
+                                }
+                            },
                             isSuggestivePopupOpen = showActionAndCommandPopup || viewModel.showTerminalCommands.value,
                             onToggleBulb = {
                                 val next = !(showActionAndCommandPopup || viewModel.showTerminalCommands.value)
@@ -560,6 +571,11 @@ fun TerminalScreen(
                                 viewModel.setShowTerminalCommands(next)
                             },
                             onSelectPrompt = { promptText ->
+                                val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
+                                    ?: QuickPrompt(id = "prompt_${promptText.hashCode()}", title = promptText, promptText = promptText)
+                                if (selectedQuickPrompts.none { it.id == matchingPrompt.id }) {
+                                    selectedQuickPrompts = selectedQuickPrompts + matchingPrompt
+                                }
                                 inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
                                 focusRequester.requestFocus()
                             },
@@ -1007,6 +1023,16 @@ fun TerminalScreen(
                                 .clickable {
                                     val trigger = cmd.command
                                     inputText = TextFieldValue("$trigger ", selection = androidx.compose.ui.text.TextRange(trigger.length + 1))
+                                    val cmdPrompt = QuickPrompt(
+                                        id = "cmd_${cmd.command}",
+                                        title = cmd.command,
+                                        promptText = "$trigger ",
+                                        icon = Icons.Rounded.Terminal,
+                                        category = "Command"
+                                    )
+                                    if (selectedQuickPrompts.none { it.id == cmdPrompt.id }) {
+                                        selectedQuickPrompts = selectedQuickPrompts + cmdPrompt
+                                    }
                                     focusRequester.requestFocus()
                                 }
                                 .testTag("autocomplete_${cmd.command}")
@@ -1047,9 +1073,19 @@ fun TerminalScreen(
                     onSelectSuggestion = { suggestion, executeNow ->
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
+                        val arg = suggestion.queryArgument
+                        val runStr = if (arg.isNotEmpty()) "${suggestion.matchedTrigger} $arg" else suggestion.matchedTrigger
+                        val cmdItem = QuickPrompt(
+                            id = "cmd_${suggestion.command.id}",
+                            title = suggestion.command.name.ifBlank { suggestion.matchedTrigger },
+                            promptText = runStr,
+                            icon = Icons.Rounded.Terminal,
+                            category = suggestion.command.category.displayName
+                        )
+                        if (selectedQuickPrompts.none { it.id == cmdItem.id }) {
+                            selectedQuickPrompts = selectedQuickPrompts + cmdItem
+                        }
                         if (executeNow) {
-                            val arg = suggestion.queryArgument
-                            val runStr = if (arg.isNotEmpty()) "${suggestion.matchedTrigger} $arg" else suggestion.matchedTrigger
                             executeCommand(runStr)
                         } else {
                             val filled = "${suggestion.matchedTrigger} "
@@ -1064,6 +1100,11 @@ fun TerminalScreen(
                     onSelectPrompt = { promptText ->
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
+                        val matching = DefaultQuickPrompts.items.find { it.promptText == promptText }
+                            ?: QuickPrompt(id = "prompt_${promptText.hashCode()}", title = promptText, promptText = promptText)
+                        if (selectedQuickPrompts.none { it.id == matching.id }) {
+                            selectedQuickPrompts = selectedQuickPrompts + matching
+                        }
                         inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
                         executeCommand(promptText)
                     },
@@ -1399,6 +1440,13 @@ fun TerminalScreen(
                 ) {
                     SuggestionChipsBar(
                         prompts = DefaultQuickPrompts.items,
+                        selectedItems = selectedQuickPrompts,
+                        onRemoveSelectedItem = { removedItem ->
+                            selectedQuickPrompts = selectedQuickPrompts.filterNot { it.id == removedItem.id }
+                            if (inputText.text.trim() == removedItem.promptText.trim()) {
+                                inputText = TextFieldValue("")
+                            }
+                        },
                         isSuggestivePopupOpen = showActionAndCommandPopup || viewModel.showTerminalCommands.value,
                         onToggleBulb = {
                             val next = !(showActionAndCommandPopup || viewModel.showTerminalCommands.value)
@@ -1406,6 +1454,11 @@ fun TerminalScreen(
                             viewModel.setShowTerminalCommands(next)
                         },
                         onSelectPrompt = { promptText ->
+                            val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
+                                ?: QuickPrompt(id = "prompt_${promptText.hashCode()}", title = promptText, promptText = promptText)
+                            if (selectedQuickPrompts.none { it.id == matchingPrompt.id }) {
+                                selectedQuickPrompts = selectedQuickPrompts + matchingPrompt
+                            }
                             inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
                             focusRequester.requestFocus()
                         },

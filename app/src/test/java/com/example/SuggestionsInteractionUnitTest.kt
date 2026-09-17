@@ -328,5 +328,59 @@ class SuggestionsInteractionUnitTest {
         testItems[3].onClick()
         assertTrue("Connectors click handler executed", connectorsClicked)
     }
+
+    @Test
+    fun terminalSuggestionChips_selectedItems_addAndRemoveByClose() {
+        val prompts = com.example.ui.components.suggestions.DefaultQuickPrompts.items
+        assertTrue("Prompts should not be empty", prompts.isNotEmpty())
+
+        var selectedItems = listOf<com.example.ui.components.suggestions.QuickPrompt>()
+        var terminalInput = ""
+
+        // User selects an item from suggestions chip near bulb icon
+        val itemToSelect = prompts.first()
+        val onSelectPrompt = { promptText: String ->
+            val matching = prompts.find { it.promptText == promptText }
+                ?: com.example.ui.components.suggestions.QuickPrompt(id = "prompt_${promptText.hashCode()}", title = promptText, promptText = promptText)
+            if (selectedItems.none { it.id == matching.id }) {
+                selectedItems = selectedItems + matching
+            }
+            terminalInput = promptText
+        }
+
+        onSelectPrompt(itemToSelect.promptText)
+
+        // Verify item is now in selected items
+        assertEquals(1, selectedItems.size)
+        assertEquals(itemToSelect.id, selectedItems[0].id)
+        assertEquals(itemToSelect.title, selectedItems[0].title)
+        assertEquals(itemToSelect.promptText, terminalInput)
+
+        // User selects another item (e.g. second prompt)
+        val secondItem = prompts[1]
+        onSelectPrompt(secondItem.promptText)
+        assertEquals(2, selectedItems.size)
+        assertTrue("Selected items must contain first item", selectedItems.any { it.id == itemToSelect.id })
+        assertTrue("Selected items must contain second item", selectedItems.any { it.id == secondItem.id })
+
+        // User removes the first selected item by clicking close ("X")
+        val onRemoveSelectedItem = { itemToRemove: com.example.ui.components.suggestions.QuickPrompt ->
+            selectedItems = selectedItems.filterNot { it.id == itemToRemove.id }
+            if (terminalInput.trim() == itemToRemove.promptText.trim()) {
+                terminalInput = ""
+            }
+        }
+
+        onRemoveSelectedItem(itemToSelect)
+
+        // Verify first item is removed and second item remains
+        assertEquals(1, selectedItems.size)
+        assertEquals(secondItem.id, selectedItems[0].id)
+
+        // Remove second item by clicking close
+        onRemoveSelectedItem(secondItem)
+        assertTrue("Selected items must be empty after closing all items", selectedItems.isEmpty())
+        assertEquals("", terminalInput)
+    }
 }
 
