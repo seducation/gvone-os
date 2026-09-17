@@ -98,9 +98,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _isChatMode = MutableStateFlow(true)
     val isChatMode: StateFlow<Boolean> = _isChatMode.asStateFlow()
 
-    val isBridgeMode: StateFlow<Boolean> = _terminalBridgeMode.map { it == com.example.data.terminal.TerminalBridgeMode.WEB }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
     private val _isLogMode = MutableStateFlow(false)
     val isLogMode: StateFlow<Boolean> = _isLogMode.asStateFlow()
 

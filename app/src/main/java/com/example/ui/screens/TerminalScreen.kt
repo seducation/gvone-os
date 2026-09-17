@@ -31,6 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import com.example.ui.components.ActionMenuBottomSheet
+import com.example.ui.components.CommandAutocompletePopup
 import com.example.ui.components.suggestions.SuggestionChipsBar
 import com.example.ui.components.suggestions.DefaultQuickPrompts
 import androidx.compose.ui.focus.FocusRequester
@@ -111,6 +113,9 @@ fun TerminalScreen(
     isAddressBarWriting: Boolean = false,
     onToggleFullScreen: (Boolean) -> Unit = {},
     onOpenAgentDashboard: () -> Unit = {},
+    onOpenPhotos: (() -> Unit)? = null,
+    onOpenCamera: (() -> Unit)? = null,
+    onOpenFiles: (() -> Unit)? = null,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -177,10 +182,12 @@ fun TerminalScreen(
     val conversationTreeManager = remember { ConversationTreeManager.global }
     var showCnsDashboard by remember { mutableStateOf(false) }
     var showConversationHistorySheet by remember { mutableStateOf(false) }
+    var showActionAndCommandPopup by remember { mutableStateOf(false) }
+    var showActionBottomSheet by remember { mutableStateOf(false) }
 
-    val isBridgeMode by viewModel.isBridgeMode.collectAsState()
-    val isChatMode by viewModel.isChatMode.collectAsState()
     val terminalBridgeMode by viewModel.terminalBridgeMode.collectAsStateWithLifecycle()
+    val isBridgeMode = terminalBridgeMode == TerminalBridgeMode.WEB
+    val isChatMode by viewModel.isChatMode.collectAsState()
     val isLogMode by viewModel.isLogMode.collectAsState()
 
     var terminalHeightFraction by remember(settings.terminalHeightFraction) {
@@ -546,9 +553,11 @@ fun TerminalScreen(
                     ) {
                         SuggestionChipsBar(
                             prompts = DefaultQuickPrompts.items,
-                            isSuggestivePopupOpen = false,
+                            isSuggestivePopupOpen = showActionAndCommandPopup || viewModel.showTerminalCommands.value,
                             onToggleBulb = {
-                                viewModel.setShowTerminalCommands(!viewModel.showTerminalCommands.value)
+                                val next = !(showActionAndCommandPopup || viewModel.showTerminalCommands.value)
+                                showActionAndCommandPopup = next
+                                viewModel.setShowTerminalCommands(next)
                             },
                             onSelectPrompt = { promptText ->
                                 inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
@@ -1027,6 +1036,91 @@ fun TerminalScreen(
                 HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
             }
 
+            // 3.5 ACTION & COMMAND PANEL (Integrated above the command)
+            AnimatedVisibility(
+                visible = showActionAndCommandPopup || viewModel.showTerminalCommands.value,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                CommandAutocompletePopup(
+                    suggestions = CommandEngine.getSuggestions(inputText.text, allCommands),
+                    onSelectSuggestion = { suggestion, executeNow ->
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        if (executeNow) {
+                            val arg = suggestion.queryArgument
+                            val runStr = if (arg.isNotEmpty()) "${suggestion.matchedTrigger} $arg" else suggestion.matchedTrigger
+                            executeCommand(runStr)
+                        } else {
+                            val filled = "${suggestion.matchedTrigger} "
+                            inputText = TextFieldValue(filled, selection = androidx.compose.ui.text.TextRange(filled.length))
+                            focusRequester.requestFocus()
+                        }
+                    },
+                    onOpenCommandManager = {
+                        viewModel.openSheet(ActiveSheet.CustomCommands)
+                    },
+                    prompts = DefaultQuickPrompts.items,
+                    onSelectPrompt = { promptText ->
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
+                        executeCommand(promptText)
+                    },
+                    isTerminalPinned = settings.terminalPinnedToScreen,
+                    onTogglePinTerminal = {
+                        val currentPinned = settings.terminalPinnedToScreen
+                        viewModel.updateSettings(
+                            settings.copy(
+                                terminalPinnedToScreen = !currentPinned,
+                                terminalHeightFraction = if (!currentPinned) 0.50f else 0.85f
+                            )
+                        )
+                    },
+                    onAttachPhotos = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        onOpenPhotos?.invoke() ?: run {
+                            executeCommand("/photos")
+                        }
+                    },
+                    onAttachCamera = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        onOpenCamera?.invoke() ?: run {
+                            executeCommand("/camera")
+                        }
+                    },
+                    onAttachFiles = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        onOpenFiles?.invoke() ?: run {
+                            executeCommand("/files")
+                        }
+                    },
+                    onPinCurrentTab = {
+                        currentTab?.let { tab ->
+                            val url = tab.url
+                            executeCommand("/pin $url")
+                        }
+                    },
+                    currentTabUrl = currentTab?.url,
+                    onPinConnector = {
+                        executeCommand("/connector")
+                    },
+                    onPinResearchCanvas = {
+                        executeCommand("/canvas")
+                    },
+                    onDismiss = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                )
+            }
+
             // 4. ACTIVE COMMAND INPUT ROW (Prompt + Monospace Text Field + Cursor)
             Surface(
                 color = TermSurfaceColor,
@@ -1140,6 +1234,27 @@ fun TerminalScreen(
                             )
                         }
                     }
+
+                    // Action Menu bottom sheet trigger
+                    IconButton(
+                        onClick = {
+                            showActionBottomSheet = !showActionBottomSheet
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(if (showActionBottomSheet) Color(0xFF1E293B) else Color(0xFF161B22), RoundedCornerShape(6.dp))
+                            .border(BorderStroke(1.dp, if (showActionBottomSheet) Color(0xFF38BDF8) else Color(0x33FFFFFF)), RoundedCornerShape(6.dp))
+                            .testTag("terminal_action_menu_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.GridView,
+                            contentDescription = "Actions",
+                            tint = if (showActionBottomSheet) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     // Send / Execute button
                     IconButton(
@@ -1284,9 +1399,11 @@ fun TerminalScreen(
                 ) {
                     SuggestionChipsBar(
                         prompts = DefaultQuickPrompts.items,
-                        isSuggestivePopupOpen = false,
+                        isSuggestivePopupOpen = showActionAndCommandPopup || viewModel.showTerminalCommands.value,
                         onToggleBulb = {
-                            viewModel.setShowTerminalCommands(!viewModel.showTerminalCommands.value)
+                            val next = !(showActionAndCommandPopup || viewModel.showTerminalCommands.value)
+                            showActionAndCommandPopup = next
+                            viewModel.setShowTerminalCommands(next)
                         },
                         onSelectPrompt = { promptText ->
                             inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
@@ -1394,6 +1511,61 @@ fun TerminalScreen(
                     }
                 }
             }
+        }
+    }
+
+    // Horizontal scrollable bottom sheet action menu in dark mode
+    if (showActionBottomSheet) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.6f))
+                .clickable { showActionBottomSheet = false }
+                .testTag("action_sheet_scrim"),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            ActionMenuBottomSheet(
+                onPhotosClick = {
+                    showActionBottomSheet = false
+                    onOpenPhotos?.invoke() ?: run {
+                        executeCommand("/photos")
+                    }
+                },
+                onCameraClick = {
+                    showActionBottomSheet = false
+                    onOpenCamera?.invoke() ?: run {
+                        executeCommand("/camera")
+                    }
+                },
+                onFilesClick = {
+                    showActionBottomSheet = false
+                    onOpenFiles?.invoke() ?: run {
+                        executeCommand("/files")
+                    }
+                },
+                onConnectorsClick = {
+                    showActionBottomSheet = false
+                    executeCommand("/connector")
+                },
+                onResearchClick = {
+                    showActionBottomSheet = false
+                    executeCommand("/canvas")
+                },
+                onPinTerminalClick = {
+                    showActionBottomSheet = false
+                    val currentPinned = settings.terminalPinnedToScreen
+                    viewModel.updateSettings(
+                        settings.copy(
+                            terminalPinnedToScreen = !currentPinned,
+                            terminalHeightFraction = if (!currentPinned) 0.50f else 0.85f
+                        )
+                    )
+                },
+                onDismiss = { showActionBottomSheet = false },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) {}
+            )
         }
     }
 

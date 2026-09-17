@@ -39,9 +39,9 @@ import com.example.ui.theme.*
 
 enum class CommandPopupTab(val label: String, val testTag: String) {
     ALL("All", "tab_all"),
-    TERMINAL("Terminal Command", "tab_terminal_commands"),
+    TERMINAL("Action & Command", "tab_terminal_commands"),
     SUGGESTIONS("Suggestions", "tab_suggestions"),
-    PIN_ATTACHMENTS("Pin Attachments", "tab_pin_attachments")
+    PIN_ATTACHMENTS("Pin Tabs", "tab_pin_attachments")
 }
 
 data class PinAttachmentOption(
@@ -229,7 +229,19 @@ fun CommandAutocompletePopup(
                 .fillMaxWidth()
                 .padding(vertical = 10.dp)
         ) {
-            // Header: Terminal Command & Suggestions & Pin Attachments + Manage button
+            // Top drag-handle pill indicator
+            Box(
+                modifier = Modifier
+                    .padding(top = 2.dp, bottom = 8.dp)
+                    .width(38.dp)
+                    .height(4.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF64748B))
+                    .align(Alignment.CenterHorizontally)
+                    .testTag("popup_drag_handle")
+            )
+
+            // Header: Action & Command + Manage button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -274,16 +286,16 @@ fun CommandAutocompletePopup(
 
                     Column {
                         Text(
-                            text = "TERMINAL COMMAND & SUGGESTIONS & PIN ATTACHMENTS",
+                            text = "ACTION & COMMAND",
                             color = Color(0xFFF1F5F9),
-                            fontSize = 11.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.4.sp,
+                            letterSpacing = 0.5.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Commands • Neural Suggestions • Attachments",
+                            text = "Actions • Suggestions • Pin Tabs",
                             color = Color(0xFF94A3B8),
                             fontSize = 9.5.sp
                         )
@@ -333,7 +345,20 @@ fun CommandAutocompletePopup(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Segmented Tabs: [ All ] [ Terminal Command ] [ Suggestions ] [ Pin Attachments ]
+            // Horizontal scrollable dark gray squircle cards: Photos, Camera, Files, and partially visible item
+            HorizontalActionCardsRow(
+                onPhotosClick = { onAttachPhotos?.invoke() },
+                onCameraClick = { onAttachCamera?.invoke() },
+                onFilesClick = { onAttachFiles?.invoke() },
+                onConnectorsClick = onPinConnector,
+                onResearchClick = onPinResearchCanvas,
+                onPinTerminalClick = onTogglePinTerminal,
+                modifier = Modifier.padding(vertical = 2.dp)
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Segmented Tabs: [ All ] [ Action & Command ] [ Suggestions ] [ Pin Tabs ]
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -403,7 +428,7 @@ fun CommandAutocompletePopup(
                     if (selectedTab == CommandPopupTab.ALL) {
                         SectionHeader(
                             icon = Icons.Rounded.Terminal,
-                            title = "TERMINAL COMMANDS",
+                            title = "ACTION & COMMAND",
                             accentColor = GVONEPrimary,
                             count = suggestions.size
                         )
@@ -634,7 +659,7 @@ fun CommandAutocompletePopup(
                         HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
                         SectionHeader(
                             icon = Icons.Rounded.PushPin,
-                            title = "PIN ATTACHMENTS",
+                            title = "PIN TABS",
                             accentColor = Color(0xFF38BDF8),
                             count = pinAttachmentOptions.size
                         )

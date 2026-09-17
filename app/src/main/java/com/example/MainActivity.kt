@@ -391,6 +391,21 @@ fun BrowserApp(
                 isAddressBarWriting = isAddressBarWriting,
                 onToggleFullScreen = { isTerminalFullScreen = it },
                 onOpenAgentDashboard = { viewModel.openAgentDashboard() },
+                onOpenPhotos = {
+                    try {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    } catch (_: Exception) {}
+                },
+                onOpenCamera = {
+                    try {
+                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                    } catch (_: Exception) {}
+                },
+                onOpenFiles = {
+                    viewModel.openSheet(ActiveSheet.Files)
+                },
                 onClose = {
                     isAddressBarWriting = false
                     if (settings.terminalPinnedToScreen) {

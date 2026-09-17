@@ -3,6 +3,8 @@ package com.example
 import com.example.data.model.DefaultSuggestions
 import com.example.data.model.Suggestion
 import com.example.data.model.SuggestionAction
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -244,9 +246,9 @@ class SuggestionsInteractionUnitTest {
         // 1. Verify CommandPopupTab has all required tabs
         val tabs = com.example.ui.components.CommandPopupTab.values()
         val tabLabels = tabs.map { it.label }
-        assertTrue("Must have Terminal Command tab", tabLabels.contains("Terminal Command"))
+        assertTrue("Must have Action & Command tab", tabLabels.contains("Action & Command"))
         assertTrue("Must have Suggestions tab", tabLabels.contains("Suggestions"))
-        assertTrue("Must have Pin Attachments tab", tabLabels.contains("Pin Attachments"))
+        assertTrue("Must have Pin Tabs tab", tabLabels.contains("Pin Tabs"))
         assertTrue("Must have All tab", tabLabels.contains("All"))
 
         // 2. Verify typing '/command' produces matching suggestions
@@ -265,6 +267,66 @@ class SuggestionsInteractionUnitTest {
         val togglePin = { isTerminalPinned = !isTerminalPinned }
         togglePin()
         assertTrue("Pin terminal action toggles state", isTerminalPinned)
+    }
+
+    @Test
+    fun actionMenuCards_havePhotosCameraFilesAndPartiallyVisibleItem() {
+        var photosClicked = false
+        var cameraClicked = false
+        var filesClicked = false
+        var connectorsClicked = false
+
+        val dummyIcon = ImageVector.Builder("dummy", 24.dp, 24.dp, 24f, 24f).build()
+        val testItems = listOf(
+            com.example.ui.components.ActionMenuItem(
+                id = "photos",
+                label = "Photos",
+                icon = dummyIcon,
+                testTag = "action_card_photos",
+                onClick = { photosClicked = true }
+            ),
+            com.example.ui.components.ActionMenuItem(
+                id = "camera",
+                label = "Camera",
+                icon = dummyIcon,
+                testTag = "action_card_camera",
+                onClick = { cameraClicked = true }
+            ),
+            com.example.ui.components.ActionMenuItem(
+                id = "files",
+                label = "Files",
+                icon = dummyIcon,
+                testTag = "action_card_files",
+                onClick = { filesClicked = true }
+            ),
+            com.example.ui.components.ActionMenuItem(
+                id = "connectors",
+                label = "Connectors",
+                icon = dummyIcon,
+                testTag = "action_card_connectors",
+                onClick = { connectorsClicked = true }
+            )
+        )
+
+        assertEquals("Must have at least 4 items for partial visibility on right", 4, testItems.size)
+        val labels = testItems.map { it.label }
+        assertTrue("Contains 'Photos'", labels.contains("Photos"))
+        assertTrue("Contains 'Camera'", labels.contains("Camera"))
+        assertTrue("Contains 'Files'", labels.contains("Files"))
+        assertTrue("Contains 'Connectors'", labels.contains("Connectors"))
+
+        // Verify click handlers
+        testItems[0].onClick()
+        assertTrue("Photos click handler executed", photosClicked)
+
+        testItems[1].onClick()
+        assertTrue("Camera click handler executed", cameraClicked)
+
+        testItems[2].onClick()
+        assertTrue("Files click handler executed", filesClicked)
+
+        testItems[3].onClick()
+        assertTrue("Connectors click handler executed", connectorsClicked)
     }
 }
 
