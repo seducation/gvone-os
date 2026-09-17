@@ -21,13 +21,13 @@ class GVONEAIService(
     private val context: Context? = null
 ) {
     private val defaultClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
     var runtimeApiKey: String? = null
-    var activeModel: String = "gemini-2.5-flash"
+    var activeModel: String = "gemini-2.0-flash"
     var lastError: String? = null
         private set
 
@@ -77,7 +77,10 @@ class GVONEAIService(
     }
 
     private fun getHttpClient(): OkHttpClient {
-        return torManager?.getOkHttpClient(timeoutSeconds = 30) ?: defaultClient
+        if (torManager?.torStatus?.value?.onionRoutingActive == true) {
+            return torManager.getOkHttpClient(timeoutSeconds = 15)
+        }
+        return defaultClient
     }
 
     fun getEffectiveApiKey(): String {
@@ -221,7 +224,9 @@ class GVONEAIService(
 
         val apiKey = getEffectiveApiKey()
         if (isApiKeyConfigured()) {
-            val models = listOf(activeModel, "gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest").distinct()
+            val models = listOf(activeModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-pro")
+                .filter { it.isNotBlank() }
+                .distinct()
 
             // Build multi-turn contents array with recent history (last 10 turns)
             val contentsArray = JSONArray()
@@ -281,35 +286,63 @@ class GVONEAIService(
                             conversationHistory.add("model" to trimmedReply)
                             return@withContext trimmedReply
                         }
+                    } else if (responseBody.isNotEmpty()) {
+                        try {
+                            val rootJson = JSONObject(responseBody)
+                            val errObj = rootJson.optJSONObject("error")
+                            val errMsg = errObj?.optString("message") ?: "HTTP ${response.code}"
+                            if (response.code == 429 || errMsg.contains("quota", ignoreCase = true) || errMsg.contains("exhausted", ignoreCase = true)) {
+                                lastError = "Gemini API Quota Exceeded on free tier ($model): $errMsg"
+                            } else {
+                                lastError = "Gemini API error ($model / ${response.code}): $errMsg"
+                            }
+                        } catch (_: Exception) {
+                            lastError = "Gemini API HTTP ${response.code}"
+                        }
                     }
                 } catch (e: Exception) {
-                    lastError = "Network error: ${e.message}"
+                    lastError = "Network error ($model): ${e.message}"
                 }
             }
         }
 
-        // Offline fallback conversational response
+        // Offline conversational response if API key wasn't provided or quota exhausted
         val fallbackReply = generateChatbotOfflineReply(cleanMsg)
+        val finalResponse = if (lastError != null) {
+            "[$lastError]\n\n$fallbackReply"
+        } else {
+            fallbackReply
+        }
         conversationHistory.add("user" to cleanMsg)
-        conversationHistory.add("model" to fallbackReply)
-        fallbackReply
+        conversationHistory.add("model" to finalResponse)
+        finalResponse
     }
 
     private fun generateChatbotOfflineReply(message: String): String {
         val lower = message.lowercase()
         return when {
             lower.contains("hello") || lower.contains("hi") || lower.contains("hey") ->
-                "Hello! I'm your GVONE AI Chatbot assistant. How can I help you today?"
+                "Hello! I'm your GVONE Gemini AI Chatbot assistant. How can I help you today?"
             lower.contains("who are you") || lower.contains("what are you") ->
-                "I am the GVONE AI Chatbot assistant integrated into your browser terminal. I can answer questions, discuss ideas, and help with research and browsing tasks."
+                "I am the Gemini AI conversational assistant integrated into the GVONE browser terminal. When Bridge is OFF, I chat with you directly. When Voice is ON, you can speak with me live!"
             lower.contains("how are you") ->
-                "I'm doing great, thank you for asking! Ready to help you with whatever you're working on."
+                "I'm running great and ready to help! What would you like to explore or discuss?"
+            lower.contains("bridge") ->
+                "When Bridge is ON, your terminal and address bar connect directly to the active web app. When Bridge is OFF, you chat normally with me (Gemini)! You can toggle Bridge using the BRIDGE chip or '/bridge on|off'."
+            lower.contains("voice") ->
+                "You can talk with me live by toggling the VOICE chip or running '/voice on'. Your spoken words appear in the terminal, and I read my responses aloud to you!"
             lower.contains("help") ->
-                "In Chat Mode, you can ask me anything conversationally! You can also toggle between Chat and Command modes, or type '/help' to inspect terminal commands."
+                "Here are some things you can do:\n• Chat directly with Gemini when Bridge is OFF\n• Tap the VOICE chip to speak and listen live with transcript in terminal\n• Tap BRIDGE: OFF to toggle Web Bridge ON/OFF\n• Type '/help' to inspect all terminal and system commands"
             lower.contains("thank") ->
                 "You're very welcome! Feel free to ask anything else anytime."
+            lower.contains("time") ->
+                "The current local system time is ${java.text.SimpleDateFormat("HH:mm:ss z", java.util.Locale.getDefault()).format(java.util.Date())}."
+            lower.contains("date") ->
+                "Today is ${java.text.SimpleDateFormat("EEEE, MMMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date())}."
+            lower.contains("weather") ->
+                "To check live weather forecast, type '/weather <city>' or ask me for a city report!"
             else ->
-                "Regarding \"$message\": I am processing your inquiry within the GVONE browser environment. For full cloud AI intelligence, configure your Gemini API key in Settings (or .env). You can also run commands or browse tabs anytime!"
+                "I received your inquiry: \"$message\". I am actively listening in GVONE Gemini Chat. Configure your custom Gemini API key anytime with '/apikey <your_key>' or in Settings to connect to Google's cloud models!"
         }
     }
 
@@ -320,7 +353,9 @@ class GVONEAIService(
             return@withContext generateLocalSmartResult(query)
         }
 
-        val models = listOf(activeModel, "gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest").distinct()
+        val models = listOf(activeModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-pro")
+            .filter { it.isNotBlank() }
+            .distinct()
 
         val prompt = """
             You are GVONE AI Search Engine. Provide a direct, factual, structured, and insightful synthesis for the following query:

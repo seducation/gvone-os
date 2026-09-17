@@ -178,6 +178,7 @@ fun TerminalScreen(
     var showCnsDashboard by remember { mutableStateOf(false) }
     var showConversationHistorySheet by remember { mutableStateOf(false) }
 
+    val isBridgeMode by viewModel.isBridgeMode.collectAsState()
     val isChatMode by viewModel.isChatMode.collectAsState()
     val terminalBridgeMode by viewModel.terminalBridgeMode.collectAsStateWithLifecycle()
     val isLogMode by viewModel.isLogMode.collectAsState()
@@ -312,10 +313,10 @@ fun TerminalScreen(
         val trimmed = rawInput.trim()
         val promptPrefix = if (isAgenticMode) {
             "gvone[agentic:${activePersona.badge.lowercase()}]:$currentCwd$ "
-        } else if (isChatMode) {
-            "gvone(chat)@browser:$currentCwd$ "
+        } else if (!isBridgeMode) {
+            "gemini@browser:$currentCwd$ "
         } else {
-            "gvone@browser:$currentCwd$ "
+            "bridge@browser:$currentCwd$ "
         }
         if (trimmed.isEmpty()) {
             val emptyCommandLine = TerminalLine(
@@ -792,6 +793,10 @@ fun TerminalScreen(
                     },
                     onCnsClick = {
                         showCnsDashboard = true
+                    },
+                    isBridgeMode = isBridgeMode,
+                    onToggleBridge = {
+                        executeCommand("/bridge")
                     },
                     isChatMode = isChatMode,
                     onToggleChat = {
