@@ -794,10 +794,6 @@ fun TerminalScreen(
                     onCnsClick = {
                         showCnsDashboard = true
                     },
-                    isBridgeMode = isBridgeMode,
-                    onToggleBridge = {
-                        executeCommand("/bridge")
-                    },
                     isChatMode = isChatMode,
                     onToggleChat = {
                         executeCommand("/chat")
