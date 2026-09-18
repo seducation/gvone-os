@@ -565,7 +565,9 @@ data class QuickPrompt(
         "command", "terminal" -> SelectedItemType.COMMAND
         else -> SelectedItemType.PROMPT
     },
-    val uriOrUrl: String? = null
+    val uriOrUrl: String? = null,
+    val fileSize: Long? = null,
+    val mimeType: String? = null
 )
 
 object DefaultQuickPrompts {

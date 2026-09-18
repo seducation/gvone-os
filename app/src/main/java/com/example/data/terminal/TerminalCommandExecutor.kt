@@ -130,7 +130,11 @@ class TerminalCommandExecutor(
         origin: CommandOrigin = CommandOrigin.TERMINAL,
         onOpenAgentDashboard: (() -> Unit)? = null,
         attachedPhotoUri: String? = null,
-        attachedPhotoName: String? = null
+        attachedPhotoName: String? = null,
+        attachedFileUri: String? = null,
+        attachedFileName: String? = null,
+        attachedFileSize: Long? = null,
+        attachedFileMimeType: String? = null
     ) {
         val trimmed = rawInput.trim()
         val currentCwd = shellEngine.promptPath
@@ -146,7 +150,7 @@ class TerminalCommandExecutor(
         // Always synchronize the address bar with the command being executed
         viewModel.setAddressBarInput(trimmed)
 
-        if (trimmed.isEmpty() && attachedPhotoUri == null) {
+        if (trimmed.isEmpty() && attachedPhotoUri == null && attachedFileUri == null) {
             val emptyCommandLine = TerminalLine(
                 text = promptPrefix,
                 type = TerminalLineType.COMMAND
@@ -160,20 +164,46 @@ class TerminalCommandExecutor(
             viewModel.terminalRepository.addCommandToHistory(trimmed)
         }
 
+        fun formatFileSize(bytes: Long): String {
+            if (bytes <= 0) return "0 B"
+            val kb = bytes / 1024.0
+            val mb = kb / 1024.0
+            return when {
+                mb >= 1.0 -> String.format(Locale.US, "%.1f MB", mb)
+                kb >= 1.0 -> String.format(Locale.US, "%.1f KB", kb)
+                else -> "$bytes B"
+            }
+        }
+
         val photoLabel = attachedPhotoName ?: if (attachedPhotoUri != null) {
             try { android.net.Uri.parse(attachedPhotoUri).lastPathSegment ?: "photo.jpg" } catch (_: Exception) { "photo.jpg" }
         } else null
 
-        val displayText = if (photoLabel != null) {
-            if (trimmed.isNotEmpty()) "$promptPrefix[Photo: $photoLabel] $trimmed" else "$promptPrefix[Photo: $photoLabel]"
-        } else {
-            "$promptPrefix$trimmed"
+        val fileLabel = attachedFileName ?: if (attachedFileUri != null) {
+            try { android.net.Uri.parse(attachedFileUri).lastPathSegment ?: "file" } catch (_: Exception) { "file" }
+        } else null
+
+        val displayText = when {
+            photoLabel != null -> {
+                if (trimmed.isNotEmpty()) "$promptPrefix[Photo: $photoLabel] $trimmed" else "$promptPrefix[Photo: $photoLabel]"
+            }
+            fileLabel != null -> {
+                val sizeTag = if (attachedFileSize != null && attachedFileSize > 0) " (${formatFileSize(attachedFileSize)})" else ""
+                if (trimmed.isNotEmpty()) "$promptPrefix[File: $fileLabel$sizeTag] $trimmed" else "$promptPrefix[File: $fileLabel$sizeTag]"
+            }
+            else -> {
+                "$promptPrefix$trimmed"
+            }
         }
 
         val cmdLine = TerminalLine(
             text = displayText,
             type = TerminalLineType.COMMAND,
-            imageUri = attachedPhotoUri
+            imageUri = attachedPhotoUri,
+            fileUri = attachedFileUri,
+            fileName = fileLabel,
+            fileMimeType = attachedFileMimeType,
+            fileSize = attachedFileSize
         )
         val outputLines = mutableListOf<TerminalLine>()
         outputLines.add(cmdLine)
@@ -224,6 +254,69 @@ class TerminalCommandExecutor(
                     viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
                 } catch (e: Exception) {
                     viewModel.appendTerminalLine(TerminalLine("AI Photo Error: ${e.message}", TerminalLineType.ERROR))
+                }
+            }
+            return
+        }
+
+        // Handle direct selected / received file execution if attachedFileUri is present
+        if (attachedFileUri != null) {
+            val sizeDisplay = if (attachedFileSize != null && attachedFileSize > 0) " (${formatFileSize(attachedFileSize)})" else ""
+            outputLines.add(TerminalLine("📁 File received in terminal: $fileLabel$sizeDisplay", TerminalLineType.SUCCESS))
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+
+            // Stage / import into sandbox file system if possible
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val uri = android.net.Uri.parse(attachedFileUri)
+                    viewModel.fileSystem.importFromUri(uri, shellEngine.currentDirectory)
+                } catch (_: Exception) {}
+            }
+
+            // Web Bridge Mode
+            if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.WEB) {
+                viewModel.deliverToActiveWebPage("FILE:$attachedFileUri:${trimmed.ifBlank { fileLabel ?: "file" }}:${attachedFileMimeType ?: "application/octet-stream"}")
+                viewModel.appendTerminalLine(TerminalLine("● [WEB BRIDGE] File '$fileLabel' delivered to web application.", TerminalLineType.SUCCESS))
+                return
+            }
+
+            // Agentic Mode
+            if (_isAgenticMode.value) {
+                val goal = trimmed.ifBlank { "Inspect, analyze, and process received file: $fileLabel" }
+                viewModel.appendTerminalLine(TerminalLine("● [AGENT WORKFLOW] Processing received file with persona ${agentEngine.activePersona.name}...", TerminalLineType.AGENT_STEP))
+                scope.launch {
+                    agentEngine.runAgenticWorkflow("$goal (Attached file: $fileLabel, uri: $attachedFileUri, size: $sizeDisplay)", shellEngine.currentDirectory) { line ->
+                        viewModel.appendTerminalLine(line)
+                    }
+                }
+                return
+            }
+
+            // Chat / Conversational AI Mode
+            outputLines.clear()
+            viewModel.appendTerminalLine(TerminalLine("● [AI ANALYZER] Inspecting file $fileLabel with ${viewModel.aiService.activeModel}...", TerminalLineType.INFO))
+            scope.launch {
+                try {
+                    val promptText = trimmed.ifBlank { "Analyze this received file, explain its content, structure, and key insights." }
+                    var textContent: String? = null
+                    try {
+                        val uri = android.net.Uri.parse(attachedFileUri)
+                        textContent = withContext(Dispatchers.IO) {
+                            viewModel.context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        }
+                    } catch (_: Exception) {}
+
+                    val fullPrompt = if (textContent != null && textContent.isNotBlank()) {
+                        val preview = if (textContent.length > 5000) textContent.take(5000) + "\n...[truncated]" else textContent
+                        "$promptText\n\n[Received File: $fileLabel$sizeDisplay]:\n```\n$preview\n```"
+                    } else {
+                        "$promptText\n\n[Received File: $fileLabel, size: $sizeDisplay, MIME: ${attachedFileMimeType ?: "unknown"}]"
+                    }
+
+                    val reply = viewModel.aiService.chatResponse(fullPrompt)
+                    viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+                } catch (e: Exception) {
+                    viewModel.appendTerminalLine(TerminalLine("AI File Error: ${e.message}", TerminalLineType.ERROR))
                 }
             }
             return

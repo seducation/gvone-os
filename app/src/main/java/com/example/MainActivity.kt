@@ -2,6 +2,7 @@ package com.example
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.widget.Toast
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleIncomingIntent(intent)
         setContent {
             GVONEBrowserTheme {
                 BrowserApp(
@@ -78,6 +80,59 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        try {
+            when (intent.action) {
+                Intent.ACTION_SEND -> {
+                    val streamUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+                    }
+                    if (streamUri != null) {
+                        browserViewModel.receiveFileDirectlyInTerminal(streamUri)
+                    } else {
+                        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                        if (!text.isNullOrBlank()) {
+                            browserViewModel.navigateTo(text)
+                        }
+                    }
+                }
+                Intent.ACTION_SEND_MULTIPLE -> {
+                    val streamUris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                    }
+                    if (!streamUris.isNullOrEmpty()) {
+                        val fileTriples = streamUris.filterNotNull().map { uri ->
+                            Triple(uri, null, null)
+                        }
+                        browserViewModel.receiveFilesDirectlyInTerminal(fileTriples)
+                    }
+                }
+                Intent.ACTION_VIEW -> {
+                    intent.data?.let { uri ->
+                        if (uri.scheme == "http" || uri.scheme == "https") {
+                            browserViewModel.loadUrlInCurrentTab(uri.toString())
+                        } else if (uri.scheme == "file" || uri.scheme == "content") {
+                            browserViewModel.receiveFileDirectlyInTerminal(uri)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -167,6 +222,16 @@ fun BrowserApp(
     var showAvatarDialog by remember { mutableStateOf(false) }
 
     var selectedPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedFileName by remember { mutableStateOf<String?>(null) }
+
+    val pendingTerminalFile by viewModel.pendingTerminalFile.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingTerminalFile) {
+        pendingTerminalFile?.let { (uri, name, _) ->
+            selectedFileUri = uri
+            selectedFileName = name
+        }
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -411,6 +476,13 @@ fun BrowserApp(
                 },
                 selectedPhotoUri = selectedPhotoUri,
                 onClearSelectedPhotoUri = { selectedPhotoUri = null },
+                selectedFileUri = selectedFileUri,
+                selectedFileName = selectedFileName,
+                onClearSelectedFileUri = {
+                    selectedFileUri = null
+                    selectedFileName = null
+                    viewModel.clearPendingTerminalFile()
+                },
                 onClose = {
                     isAddressBarWriting = false
                     if (settings.terminalPinnedToScreen) {

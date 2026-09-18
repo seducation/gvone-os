@@ -127,6 +127,9 @@ fun TerminalScreen(
     onOpenFiles: (() -> Unit)? = null,
     selectedPhotoUri: android.net.Uri? = null,
     onClearSelectedPhotoUri: (() -> Unit)? = null,
+    selectedFileUri: android.net.Uri? = null,
+    selectedFileName: String? = null,
+    onClearSelectedFileUri: (() -> Unit)? = null,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -288,18 +291,79 @@ fun TerminalScreen(
         }
     }
 
-    val selectFileItem: (String?) -> Unit = { filename ->
-        val fname = filename ?: "file_${selectedItems.count { it.type == SelectedItemType.FILE } + 1}.pdf"
+    fun queryFileInfo(uri: android.net.Uri): Triple<String, Long?, String?> {
+        var name: String? = null
+        var size: Long? = null
+        val mime = try { context.contentResolver.getType(uri) } catch (_: Exception) { null }
+        if (uri.scheme == "content") {
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1) name = cursor.getString(nameIndex)
+                        val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (sizeIndex != -1) size = cursor.getLong(sizeIndex)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        if (name == null) {
+            name = uri.lastPathSegment ?: "received_file"
+        }
+        return Triple(name!!, size, mime)
+    }
+
+    fun selectFileItem(
+        filename: String? = null,
+        uriString: String? = null,
+        size: Long? = null,
+        mimeType: String? = null
+    ) {
+        val fname = filename ?: if (uriString != null) {
+            try { android.net.Uri.parse(uriString).lastPathSegment ?: "file" } catch (_: Exception) { "file" }
+        } else "file_${selectedItems.count { it.type == SelectedItemType.FILE } + 1}.dat"
+        val ext = fname.substringAfterLast('.', "").lowercase()
+        val fileIcon = when (ext) {
+            "pdf" -> Icons.Rounded.PictureAsPdf
+            "kt", "java", "py", "js", "ts", "html", "css", "c", "cpp", "go", "rs", "sh" -> Icons.Rounded.Code
+            "json", "xml", "yaml", "yml" -> Icons.Rounded.Settings
+            "zip", "rar", "tar", "gz", "7z" -> Icons.Rounded.FolderZip
+            "csv", "xlsx", "xls" -> Icons.Rounded.TableChart
+            "mp3", "wav", "m4a", "ogg" -> Icons.Rounded.AudioFile
+            "mp4", "mkv", "webm" -> Icons.Rounded.VideoFile
+            "jpg", "jpeg", "png", "webp", "svg", "gif" -> Icons.Rounded.Image
+            else -> Icons.Rounded.InsertDriveFile
+        }
         val item = QuickPrompt(
             id = "file_${System.currentTimeMillis()}_${fname.hashCode()}",
             title = "File: $fname",
             promptText = "/files $fname",
-            icon = Icons.Rounded.Folder,
+            icon = fileIcon,
             category = "File",
-            type = SelectedItemType.FILE
+            type = SelectedItemType.FILE,
+            uriOrUrl = uriString,
+            fileSize = size,
+            mimeType = mimeType
         )
-        if (selectedItems.none { it.title == item.title }) {
-            selectedItems = selectedItems + item
+        if (uriString != null) {
+            if (selectedItems.none { it.uriOrUrl == uriString && it.type == SelectedItemType.FILE }) {
+                selectedItems = selectedItems + item
+            }
+        } else {
+            if (selectedItems.none { it.title == item.title }) {
+                selectedItems = selectedItems + item
+            }
+        }
+    }
+
+    // Direct system document / file picker within Terminal to receive files
+    val internalTerminalFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val (name, size, mime) = queryFileInfo(uri)
+            selectFileItem(name, uri.toString(), size, mime)
+            Toast.makeText(context, "Received file in terminal: $name", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -332,6 +396,16 @@ fun TerminalScreen(
             val segment = selectedPhotoUri.lastPathSegment ?: "photo.jpg"
             selectPhotoItem(segment, selectedPhotoUri.toString())
             onClearSelectedPhotoUri?.invoke()
+        }
+    }
+
+    // Reactively receive selected file from system file picker or incoming intent
+    LaunchedEffect(selectedFileUri) {
+        if (selectedFileUri != null) {
+            val (name, size, mime) = queryFileInfo(selectedFileUri)
+            val finalName = selectedFileName ?: name
+            selectFileItem(finalName, selectedFileUri.toString(), size, mime)
+            onClearSelectedFileUri?.invoke()
         }
     }
 
@@ -426,9 +500,14 @@ fun TerminalScreen(
     }
 
     // Command execution handler delegating directly to centralized TerminalCommandExecutor
-    fun executeCommand(rawInput: String, attachedPhoto: QuickPrompt? = null) {
+    fun executeCommand(
+        rawInput: String,
+        attachedPhoto: QuickPrompt? = null,
+        attachedFile: QuickPrompt? = null
+    ) {
         val trimmed = rawInput.trim()
         val photoToSend = attachedPhoto ?: selectedItems.firstOrNull { it.type == SelectedItemType.PHOTO }
+        val fileToSend = attachedFile ?: selectedItems.firstOrNull { it.type == SelectedItemType.FILE }
 
         val promptPrefix = if (isAgenticMode) {
             "gvone[agentic:${activePersona.badge.lowercase()}]:$currentCwd$ "
@@ -438,7 +517,7 @@ fun TerminalScreen(
             "bridge@browser:$currentCwd$ "
         }
 
-        if (trimmed.isEmpty() && photoToSend == null) {
+        if (trimmed.isEmpty() && photoToSend == null && fileToSend == null) {
             val emptyCommandLine = TerminalLine(
                 text = promptPrefix,
                 type = TerminalLineType.COMMAND
@@ -470,6 +549,22 @@ fun TerminalScreen(
                 attachedPhotoName = photoToSend.title.removePrefix("Photo: ")
             )
             selectedItems = selectedItems.filterNot { it.id == photoToSend.id }
+            inputText = TextFieldValue("")
+            return
+        }
+
+        // If a file is attached, dispatch directly to terminal command executor with file payload
+        if (fileToSend != null) {
+            viewModel.terminalCommandExecutor.executeCommand(
+                rawInput = trimmed,
+                origin = CommandOrigin.TERMINAL,
+                onOpenAgentDashboard = onOpenAgentDashboard,
+                attachedFileUri = fileToSend.uriOrUrl,
+                attachedFileName = fileToSend.title.removePrefix("File: "),
+                attachedFileSize = fileToSend.fileSize,
+                attachedFileMimeType = fileToSend.mimeType
+            )
+            selectedItems = selectedItems.filterNot { it.id == fileToSend.id }
             inputText = TextFieldValue("")
             return
         }
@@ -1251,9 +1346,13 @@ fun TerminalScreen(
                     onAttachFiles = {
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
-                        selectFileItem(null)
-                        onOpenFiles?.invoke() ?: run {
-                            executeCommand("/files")
+                        try {
+                            internalTerminalFilePicker.launch(arrayOf("*/*"))
+                        } catch (_: Exception) {
+                            selectFileItem()
+                            onOpenFiles?.invoke() ?: run {
+                                executeCommand("/files")
+                            }
                         }
                     },
                     onWebsiteClick = {
@@ -1466,6 +1565,181 @@ fun TerminalScreen(
                 }
             }
 
+            // 3.9 ATTACHED FILE & DOCUMENT PANEL (Receive / Send files directly in terminal)
+            val attachedFiles = selectedItems.filter { it.type == SelectedItemType.FILE }
+
+            if (attachedFiles.isNotEmpty()) {
+                Surface(
+                    color = Color(0xFF0F172A),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                        .testTag("terminal_attached_files_container")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.AttachFile,
+                                    contentDescription = null,
+                                    tint = Color(0xFF34D399),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "ATTACHED FILE (${attachedFiles.size})",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF34D399)
+                                )
+                            }
+                            Text(
+                                text = "Dismiss",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8),
+                                modifier = Modifier
+                                    .clickable {
+                                        selectedItems = selectedItems.filterNot { it.type == SelectedItemType.FILE }
+                                    }
+                                    .padding(horizontal = 4.dp)
+                            )
+                        }
+
+                        attachedFiles.forEach { fileItem ->
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF1E293B),
+                                border = BorderStroke(1.dp, Color(0xFF334155)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // File Icon Container
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .background(Color(0xFF0F172A), RoundedCornerShape(4.dp))
+                                            .border(1.dp, Color(0xFF34D399).copy(alpha = 0.5f), RoundedCornerShape(4.dp)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = fileItem.icon,
+                                            contentDescription = null,
+                                            tint = Color(0xFF34D399),
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // File Info
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = fileItem.title.removePrefix("File: "),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFF1F5F9),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        val sizeFormatted = fileItem.fileSize?.let { bytes ->
+                                            when {
+                                                bytes < 1024 -> "$bytes B"
+                                                bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+                                                else -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
+                                            }
+                                        } ?: fileItem.mimeType ?: "Ready in terminal"
+                                        Text(
+                                            text = sizeFormatted,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF38BDF8),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    // Direct Send File Button
+                                    Button(
+                                        onClick = {
+                                            executeCommand(
+                                                rawInput = inputText.text,
+                                                attachedFile = fileItem
+                                            )
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF238636),
+                                            contentColor = Color.White
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier
+                                            .height(32.dp)
+                                            .testTag("terminal_send_file_direct_btn")
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Rounded.Send,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Text(
+                                                text = "Send",
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(4.dp))
+
+                                    // Remove button
+                                    IconButton(
+                                        onClick = {
+                                            selectedItems = selectedItems.filterNot { it.id == fileItem.id }
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = "Remove file",
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // 4. ACTIVE COMMAND INPUT ROW (Prompt + Monospace Text Field + Cursor)
             Surface(
                 color = TermSurfaceColor,
@@ -1601,6 +1875,33 @@ fun TerminalScreen(
                             imageVector = Icons.Rounded.AddPhotoAlternate,
                             contentDescription = "Attach Photo Directly",
                             tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Direct File Picker button in terminal (to receive files)
+                    IconButton(
+                        onClick = {
+                            try {
+                                internalTerminalFilePicker.launch(arrayOf("*/*"))
+                            } catch (_: Exception) {
+                                onOpenFiles?.invoke() ?: run {
+                                    executeCommand("/files")
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color(0xFF161B22), RoundedCornerShape(6.dp))
+                            .border(BorderStroke(1.dp, Color(0x33FFFFFF)), RoundedCornerShape(6.dp))
+                            .testTag("terminal_attach_file_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AttachFile,
+                            contentDescription = "Receive / Attach File",
+                            tint = Color(0xFF34D399),
                             modifier = Modifier.size(17.dp)
                         )
                     }
@@ -1931,9 +2232,12 @@ fun TerminalScreen(
                 },
                 onFilesClick = {
                     showActionBottomSheet = false
-                    selectFileItem(null)
-                    onOpenFiles?.invoke() ?: run {
-                        executeCommand("/files")
+                    try {
+                        internalTerminalFilePicker.launch(arrayOf("*/*"))
+                    } catch (_: Exception) {
+                        onOpenFiles?.invoke() ?: run {
+                            executeCommand("/files")
+                        }
                     }
                 },
                 onWebsiteClick = {
@@ -2543,6 +2847,16 @@ private fun TerminalLineItem(
                 }
             }
         }
+
+        if (line.fileUri != null || line.fileName != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            TerminalFileAttachmentCard(
+                fileName = line.fileName ?: "file",
+                fileUri = line.fileUri,
+                fileSize = line.fileSize,
+                fileMimeType = line.fileMimeType
+            )
+        }
     }
 }
 
@@ -2651,6 +2965,96 @@ private fun UserInputCommandItem(
                         )
                     }
                 }
+            }
+
+            if (commandLine.fileUri != null || commandLine.fileName != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                TerminalFileAttachmentCard(
+                    fileName = commandLine.fileName ?: "file",
+                    fileUri = commandLine.fileUri,
+                    fileSize = commandLine.fileSize,
+                    fileMimeType = commandLine.fileMimeType
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TerminalFileAttachmentCard(
+    fileName: String,
+    fileUri: String?,
+    fileSize: Long?,
+    fileMimeType: String?,
+    modifier: Modifier = Modifier
+) {
+    val ext = fileName.substringAfterLast('.', "").lowercase()
+    val fileIcon = when (ext) {
+        "pdf" -> Icons.Rounded.PictureAsPdf
+        "kt", "java", "py", "js", "ts", "html", "css", "c", "cpp", "go", "rs", "sh" -> Icons.Rounded.Code
+        "json", "xml", "yaml", "yml" -> Icons.Rounded.Settings
+        "zip", "rar", "tar", "gz", "7z" -> Icons.Rounded.FolderZip
+        "csv", "xlsx", "xls" -> Icons.Rounded.TableChart
+        "mp3", "wav", "m4a", "ogg" -> Icons.Rounded.AudioFile
+        "mp4", "mkv", "webm" -> Icons.Rounded.VideoFile
+        "jpg", "jpeg", "png", "webp", "svg", "gif" -> Icons.Rounded.Image
+        else -> Icons.Rounded.InsertDriveFile
+    }
+
+    val formattedSize = fileSize?.let { bytes ->
+        when {
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+            else -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
+        }
+    } ?: fileMimeType ?: "Document"
+
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = Color(0xFF0F172A),
+        border = BorderStroke(1.dp, Color(0xFF334155)),
+        modifier = modifier
+            .widthIn(max = 280.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .testTag("terminal_file_attachment_card")
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color(0xFF1E293B), RoundedCornerShape(4.dp))
+                    .border(1.dp, Color(0xFF34D399).copy(alpha = 0.5f), RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = fileIcon,
+                    contentDescription = null,
+                    tint = Color(0xFF34D399),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = fileName,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFF1F5F9),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "📄 $formattedSize",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.5.sp,
+                    color = Color(0xFF38BDF8),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

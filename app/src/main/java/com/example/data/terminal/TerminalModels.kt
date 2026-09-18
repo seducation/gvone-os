@@ -24,7 +24,11 @@ data class TerminalLine(
     val id: String = UUID.randomUUID().toString(),
     val timestamp: Long = System.currentTimeMillis(),
     val taskId: String? = null,
-    val imageUri: String? = null
+    val imageUri: String? = null,
+    val fileUri: String? = null,
+    val fileName: String? = null,
+    val fileMimeType: String? = null,
+    val fileSize: Long? = null
 )
 
 data class TerminalSession(
