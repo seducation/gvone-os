@@ -1,6 +1,6 @@
 {
-  "name": "GVONE Browser",
-  "description": "Next-generation autonomous workspace browser featuring Gemini AI Search, CNS Decision Engine with Gemini Gems dashboard for global and chat-specific execution, Connector Hub, and deterministic safety rules.",
+  "name": "GVONE Terminal",
+  "description": "Multimodal Browser Terminal with native binary image receiving, local storage (~/Downloads/), and live image preview capabilities.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -1,42 +1,43 @@
 package com.example.data.terminal
 
-import java.util.UUID
+import androidx.compose.runtime.Immutable
 
 enum class TerminalLineType {
-    COMMAND,        // e.g. gvone@browser:~$ /yt lo-fi
-    OUTPUT,         // standard output text
-    SUCCESS,        // green highlighted output
-    ERROR,          // red error output
-    INFO,           // cyan / sky blue info text
-    WARNING,        // yellow warning
-    SYSTEM,         // muted system header or timestamp
-    AI_RESPONSE,    // AI response text
-    AGENT_PLAN,     // Agent plan header / breakdown
-    AGENT_STEP,     // Active agent step execution
-    AGENT_THOUGHT,  // Agent internal reasoning / thought
-    AGENT_TOOL,     // Agent tool execution / observation
-    EXPANDABLE_TASK // 3-Level Expandable Task in stream log (Task ➜ Agents ➜ Details)
+    COMMAND,
+    OUTPUT,
+    SUCCESS,
+    ERROR,
+    INFO,
+    WARNING,
+    SYSTEM,
+    AI_RESPONSE,
+    AGENT_PLAN,
+    AGENT_STEP,
+    AGENT_THOUGHT,
+    AGENT_TOOL,
+    EXPANDABLE_TASK,
+    IMAGE_PREVIEW,
+    FILE_PREVIEW
 }
 
+enum class TerminalBridgeMode {
+    OFF,
+    SHELL,
+    WEB
+}
+
+@Immutable
 data class TerminalLine(
     val text: String,
     val type: TerminalLineType = TerminalLineType.OUTPUT,
-    val id: String = UUID.randomUUID().toString(),
     val timestamp: Long = System.currentTimeMillis(),
-    val taskId: String? = null,
     val imageUri: String? = null,
     val fileUri: String? = null,
     val fileName: String? = null,
     val fileMimeType: String? = null,
-    val fileSize: Long? = null
-)
-
-data class TerminalSession(
-    val id: String = UUID.randomUUID().toString(),
-    val title: String = "Session 1",
-    val lines: List<TerminalLine> = emptyList(),
-    val currentInput: String = "",
-    val historyIndex: Int = -1,
-    val createdAt: Long = System.currentTimeMillis(),
-    val lastActiveAt: Long = System.currentTimeMillis()
+    val fileSize: Long? = null,
+    val imageWidth: Int? = null,
+    val imageHeight: Int? = null,
+    val isCollapsible: Boolean = false,
+    val isExpanded: Boolean = true
 )
