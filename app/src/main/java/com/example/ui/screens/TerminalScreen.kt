@@ -3,194 +3,2529 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.rounded.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import coil.compose.AsyncImage
+import com.example.ui.components.ActionMenuBottomSheet
+import com.example.ui.components.CommandAutocompletePopup
+import com.example.ui.components.suggestions.SuggestionChipsBar
+import com.example.ui.components.suggestions.DefaultQuickPrompts
+import com.example.ui.components.suggestions.QuickPrompt
+import com.example.ui.components.suggestions.SelectedItemType
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.withStyle
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
-import com.example.data.terminal.TerminalLine
-import com.example.data.terminal.TerminalLineType
+import com.example.agent.sandbox.AgentPersona
+import com.example.agent.sandbox.SandboxAgentEngine
+import com.example.agent.runtime.*
+import com.example.agent.nodal.NodalEngine
+import com.example.agent.registry.AgentRegistry
+import com.example.agent.cns.CentralNervousSystem
+import com.example.ui.components.RuntimeStatusPillRow
+import com.example.ui.components.ExpandableAgentTaskCard
+import com.example.ui.components.ConversationHierarchyTreeView
+import com.example.ui.components.Level1TaskItem
+import com.example.ui.components.CnsDashboardSheet
+import com.example.ui.components.ConversationHistorySheet
+import com.example.agent.memory.ContextRouter
+import com.example.data.command.CommandEngine
+import com.example.data.files.GVONEFileSystem
+import com.example.data.model.*
+import com.example.data.sync.WebAppConnectionState
+import com.example.data.terminal.*
+import com.example.data.tor.TorConnectionState
+import com.example.ui.viewmodel.ActiveSheet
+import com.example.ui.viewmodel.BrowserViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.*
 
-val TermBg = Color(0xFF0D1117)
-val TermPromptCyan = Color(0xFF38BDF8)
-val TermTextPrimary = Color(0xFFE6EDF3)
-val TermTextSuccess = Color(0xFF34D399)
-val TermTextError = Color(0xFFF87171)
-val TermTextInfo = Color(0xFF60A5FA)
-val TermTextWarning = Color(0xFFFBBF24)
-val TermTextSecondary = Color(0xFF8B949E)
+private val TermBgColor = Color(0xFF090C10)
+private val TermSurfaceColor = Color(0xFF0D1117)
+private val TermBorderColor = Color(0xFF1E2636)
+private val TermPromptGreen = Color(0xFF4ADE80)
+private val TermPromptCyan = Color(0xFF38BDF8)
+private val TermPromptPurple = Color(0xFFA855F7)
+private val TermTextPrimary = Color(0xFFE6EDF3)
+private val TermTextSecondary = Color(0xFF8B949E)
+private val TermTextSuccess = Color(0xFF3FB950)
+private val TermTextError = Color(0xFFF85149)
+private val TermTextWarning = Color(0xFFD29922)
+private val TermTextInfo = Color(0xFF58A6FF)
 
 @Composable
 fun TerminalScreen(
-    lines: List<TerminalLine>,
-    commandInput: String,
-    onCommandInputChanged: (String) -> Unit,
-    onExecuteCommand: (String) -> Unit,
+    viewModel: BrowserViewModel,
+    isAddressBarBottom: Boolean = true,
+    addressBarBottomPadding: Dp = 0.dp,
+    isFullScreen: Boolean = false,
+    autoFocus: Boolean = true,
+    isAddressBarWriting: Boolean = false,
+    onToggleFullScreen: (Boolean) -> Unit = {},
+    onOpenAgentDashboard: () -> Unit = {},
+    onOpenPhotos: (() -> Unit)? = null,
+    onOpenCamera: (() -> Unit)? = null,
+    onOpenFiles: (() -> Unit)? = null,
+    selectedPhotoUri: android.net.Uri? = null,
+    onClearSelectedPhotoUri: (() -> Unit)? = null,
+    selectedFileUri: android.net.Uri? = null,
+    selectedFileName: String? = null,
+    onClearSelectedFileUri: (() -> Unit)? = null,
+    onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) {
-            listState.animateScrollToItem(lines.size - 1)
+    // Centralized command entities from ViewModel
+    val customCommands by viewModel.customCommands.collectAsState()
+    val allCommands = remember(customCommands) {
+        CommandEngine.mergeWithBuiltIns(customCommands)
+    }
+
+    // Browser state
+    val tabs by viewModel.tabs.collectAsState()
+    val currentTab by viewModel.currentTab.collectAsState()
+    val settings by viewModel.settings.collectAsState()
+    val torStatus by viewModel.torStatus.collectAsState()
+    val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
+    val isPrivateMode = currentTab?.isPrivate == true
+
+    // Observe global terminal lines and bridge state from BrowserViewModel
+    val globalTerminalLines by viewModel.terminalLines.collectAsStateWithLifecycle()
+    val bridgeConnectionState by viewModel.webAppBridge.connectionState.collectAsStateWithLifecycle()
+
+    // Autonomous Sandbox & Shell Engines
+    val fileSystem = remember { GVONEFileSystem(context) }
+    val agentEngine = remember {
+        SandboxAgentEngine(
+            context = context,
+            viewModel = viewModel,
+            aiService = viewModel.aiService,
+            fileSystem = fileSystem
+        )
+    }
+    val shellEngine = remember {
+        TerminalShellEngine(
+            context = context,
+            viewModel = viewModel,
+            fileSystem = fileSystem,
+            agentEngine = agentEngine
+        )
+    }
+    val isAgenticMode by viewModel.terminalCommandExecutor.isAgenticMode.collectAsStateWithLifecycle()
+    var currentCwd by remember { mutableStateOf(shellEngine.promptPath) }
+    var activePersona by remember { mutableStateOf(agentEngine.activePersona) }
+
+    // Unified GVONE Runtime Mode & Task Lifecycle
+    val runtimeStateManager = remember { RuntimeStateManager.global }
+    val runtimeMode by runtimeStateManager.runtimeMode.collectAsStateWithLifecycle()
+    val activeTask by runtimeStateManager.activeTask.collectAsStateWithLifecycle()
+    var isTaskCardExpanded by remember { mutableStateOf(true) }
+
+    LaunchedEffect(runtimeMode.execution) {
+        val isAgent = runtimeMode.execution == ExecutionType.AGENT
+        if (viewModel.terminalCommandExecutor.isAgenticMode.value != isAgent) {
+            viewModel.terminalCommandExecutor.setAgenticMode(isAgent)
         }
     }
 
-    Column(
+    // 3-Level Collapsible Conversation Tree & CNS Dashboard states
+    val conversationTreeManager = remember { ConversationTreeManager.global }
+    var showCnsDashboard by remember { mutableStateOf(false) }
+    var showConversationHistorySheet by remember { mutableStateOf(false) }
+    var showActionAndCommandPopup by remember { mutableStateOf(false) }
+    var showActionBottomSheet by remember { mutableStateOf(false) }
+
+    val terminalBridgeMode by viewModel.terminalBridgeMode.collectAsStateWithLifecycle()
+    val isBridgeMode = terminalBridgeMode == TerminalBridgeMode.WEB
+    val isChatMode by viewModel.isChatMode.collectAsState()
+    val isLogMode by viewModel.isLogMode.collectAsState()
+
+    var terminalHeightFraction by remember(settings.terminalHeightFraction) {
+        mutableFloatStateOf(settings.terminalHeightFraction)
+    }
+
+    // Multi-session management
+    var sessions by remember {
+        val initialLines = viewModel.terminalLines.value.ifEmpty {
+            val isSuccess = viewModel.webAppBridge.connectionState.value == WebAppConnectionState.READY
+            createInitialBanner(viewModel.webAppBridge.connectionState.value.name, isSuccess, isLogMode = viewModel.isLogMode.value)
+        }
+        mutableStateOf(
+            listOf(
+                TerminalSession(
+                    id = "sess_1",
+                    title = "Session 1",
+                    lines = initialLines
+                )
+            )
+        )
+    }
+    var activeSessionId by remember { mutableStateOf("sess_1") }
+    val activeSession = sessions.find { it.id == activeSessionId } ?: sessions.first()
+
+    // Synchronize global terminal lines into active session in real-time
+    LaunchedEffect(globalTerminalLines) {
+        if (globalTerminalLines.isNotEmpty()) {
+            sessions = sessions.map {
+                if (it.id == activeSessionId) it.copy(lines = globalTerminalLines) else it
+            }
+        }
+    }
+
+    // Active input state
+    var inputText by remember { mutableStateOf(TextFieldValue("")) }
+
+    // Selected items (Photos, Files, Websites, Prompts) displayed near the terminal prompt
+    var selectedItems by remember { mutableStateOf<List<QuickPrompt>>(emptyList()) }
+
+    // Synchronize externally selected photo URI into selectedItems
+    LaunchedEffect(selectedPhotoUri) {
+        if (selectedPhotoUri != null) {
+            val segment = selectedPhotoUri.lastPathSegment ?: "photo_${System.currentTimeMillis()}.jpg"
+            val uriStr = selectedPhotoUri.toString()
+            val photoItem = QuickPrompt(
+                id = "photo_${System.currentTimeMillis()}_${segment.hashCode()}",
+                title = "Photo: $segment",
+                promptText = "/photos $uriStr",
+                icon = Icons.Rounded.AddPhotoAlternate,
+                category = "Photo",
+                type = SelectedItemType.PHOTO,
+                uriOrUrl = uriStr
+            )
+            if (selectedItems.none { it.uriOrUrl == uriStr && it.type == SelectedItemType.PHOTO }) {
+                selectedItems = selectedItems + photoItem
+            }
+            onClearSelectedPhotoUri?.invoke()
+        }
+    }
+
+    // Synchronize externally selected file URI into selectedItems
+    LaunchedEffect(selectedFileUri, selectedFileName) {
+        if (selectedFileUri != null || selectedFileName != null) {
+            val fname = selectedFileName ?: selectedFileUri?.lastPathSegment ?: "file_${System.currentTimeMillis()}"
+            val uriStr = selectedFileUri?.toString() ?: fname
+            val fileItem = QuickPrompt(
+                id = "file_${System.currentTimeMillis()}_${fname.hashCode()}",
+                title = "File: $fname",
+                promptText = "/files $uriStr",
+                icon = Icons.Rounded.Folder,
+                category = "File",
+                type = SelectedItemType.FILE,
+                uriOrUrl = uriStr
+            )
+            if (selectedItems.none { it.uriOrUrl == uriStr && it.type == SelectedItemType.FILE }) {
+                selectedItems = selectedItems + fileItem
+            }
+            onClearSelectedFileUri?.invoke()
+        }
+    }
+
+    // Helper functions for selecting photo, file, and website items
+    val selectPhotoItem: (String?, String?) -> Unit = { name, uriString ->
+        val photoName = name ?: "photo_${selectedItems.count { it.type == SelectedItemType.PHOTO } + 1}.jpg"
+        val item = QuickPrompt(
+            id = "photo_${System.currentTimeMillis()}_${photoName.hashCode()}",
+            title = "Photo: $photoName",
+            promptText = "/photos ${uriString ?: photoName}",
+            icon = Icons.Rounded.AddPhotoAlternate,
+            category = "Photo",
+            type = SelectedItemType.PHOTO,
+            uriOrUrl = uriString
+        )
+        // Keep unique photo attachments and add newest
+        if (selectedItems.none { it.uriOrUrl == uriString && it.type == SelectedItemType.PHOTO }) {
+            selectedItems = selectedItems + item
+        }
+    }
+
+    // Direct system photo picker within Terminal
+    val internalTerminalPhotoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            val segment = uri.lastPathSegment ?: "photo_${System.currentTimeMillis()}.jpg"
+            selectPhotoItem(segment, uri.toString())
+        }
+    }
+
+    val selectFileItem: (String?) -> Unit = { filename ->
+        val fname = filename ?: "file_${selectedItems.count { it.type == SelectedItemType.FILE } + 1}.pdf"
+        val item = QuickPrompt(
+            id = "file_${System.currentTimeMillis()}_${fname.hashCode()}",
+            title = "File: $fname",
+            promptText = "/files $fname",
+            icon = Icons.Rounded.Folder,
+            category = "File",
+            type = SelectedItemType.FILE
+        )
+        if (selectedItems.none { it.title == item.title }) {
+            selectedItems = selectedItems + item
+        }
+    }
+
+    val selectWebsiteItem: () -> Unit = {
+        val tab = currentTab
+        val webUrl = tab?.url?.ifBlank { "https://gvone.app" } ?: "https://gvone.app"
+        val domain = try {
+            java.net.URI(webUrl).host?.removePrefix("www.")?.ifBlank { null }
+        } catch (_: Exception) {
+            null
+        } ?: tab?.title?.take(25) ?: "gvone.app"
+        val webTitle = tab?.title?.takeIf { it.isNotBlank() && !it.startsWith("http") }?.take(25) ?: domain
+        val item = QuickPrompt(
+            id = "web_${tab?.id ?: webUrl.hashCode()}",
+            title = "Web: $webTitle",
+            promptText = webUrl,
+            icon = Icons.Rounded.Language,
+            category = "Website",
+            type = SelectedItemType.WEBSITE,
+            uriOrUrl = webUrl
+        )
+        if (selectedItems.none { it.type == SelectedItemType.WEBSITE && it.uriOrUrl == webUrl }) {
+            selectedItems = selectedItems + item
+        }
+    }
+
+    // Persistent command history
+    val commandHistory = remember {
+        mutableStateListOf<String>().apply {
+            addAll(viewModel.terminalRepository.getCommandHistory())
+        }
+    }
+    var historyIndex by remember { mutableIntStateOf(-1) }
+
+    // Terminal initial welcome banner if session is empty
+    LaunchedEffect(activeSessionId, isLogMode) {
+        if (activeSession.lines.isEmpty()) {
+            val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
+            val bannerLines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
+            sessions = sessions.map {
+                if (it.id == activeSessionId) it.copy(lines = bannerLines) else it
+            }
+            viewModel.appendTerminalLines(bannerLines)
+        }
+    }
+
+    // Auto-scroll to bottom on line changes safely
+    LaunchedEffect(activeSession.lines.size) {
+        if (activeSession.lines.isNotEmpty()) {
+            try {
+                listState.animateScrollToItem(activeSession.lines.size - 1)
+            } catch (_: Throwable) {
+                // Ignore scroll animation interruptions
+            }
+        }
+    }
+
+    // Request keyboard focus smoothly on launch only if actively opened as sheet
+    LaunchedEffect(autoFocus) {
+        if (autoFocus) {
+            delay(250)
+            try {
+                focusRequester.requestFocus()
+                keyboardController?.show()
+            } catch (_: Throwable) {
+                // FocusRequester may not be attached yet during animated transition; retry once smoothly
+                delay(250)
+                try {
+                    focusRequester.requestFocus()
+                    keyboardController?.show()
+                } catch (_: Throwable) {
+                    // Safe fallback if still not attached to view tree
+                }
+            }
+        }
+    }
+
+    // Hardware/system back button handling
+    BackHandler(enabled = autoFocus) {
+        onClose()
+    }
+
+    // Blinking cursor animation
+    val infiniteTransition = rememberInfiniteTransition(label = "cursor_blink")
+    val cursorAlpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "cursor_alpha"
+    )
+
+    // Autocomplete matching list
+    val currentWord = remember(inputText.text) {
+        val raw = inputText.text
+        val lastSpace = raw.lastIndexOf(' ')
+        if (lastSpace == -1) raw.trim() else raw.substring(lastSpace + 1).trim()
+    }
+    val suggestions = remember(currentWord, allCommands) {
+        if (currentWord.length >= 1) {
+            val query = if (currentWord.startsWith("/")) currentWord else "/$currentWord"
+            allCommands.filter { cmd ->
+                cmd.isEnabled && cmd.getAllTriggers().any { it.startsWith(query, ignoreCase = true) }
+            }.take(5)
+        } else {
+            emptyList()
+        }
+    }
+
+    // Collapsed user input commands in stream log (all expanded by default)
+    var collapsedCommandIds by remember { mutableStateOf(setOf<String>()) }
+
+    fun commitLines(newLines: List<TerminalLine>) {
+        val linesToAdd = if (isLogMode) {
+            newLines
+        } else {
+            newLines.filterNot { viewModel.isVerboseLogLine(it) }
+        }
+        val updated = activeSession.lines + linesToAdd
+        sessions = sessions.map {
+            if (it.id == activeSessionId) it.copy(lines = updated) else it
+        }
+        viewModel.appendTerminalLines(newLines)
+    }
+
+    fun appendLines(newLines: List<TerminalLine>, dummy: ((List<TerminalLine>) -> Unit)? = null) {
+        commitLines(newLines)
+    }
+
+    // Command execution handler delegating directly to centralized TerminalCommandExecutor
+    fun executeCommand(rawInput: String, attachedPhoto: QuickPrompt? = null) {
+        val trimmed = rawInput.trim()
+        val photoToSend = attachedPhoto ?: selectedItems.firstOrNull { it.type == SelectedItemType.PHOTO }
+
+        val promptPrefix = if (isAgenticMode) {
+            "gvone[agentic:${activePersona.badge.lowercase()}]:$currentCwd$ "
+        } else if (!isBridgeMode) {
+            "gemini@browser:$currentCwd$ "
+        } else {
+            "bridge@browser:$currentCwd$ "
+        }
+
+        if (trimmed.isEmpty() && photoToSend == null) {
+            val emptyCommandLine = TerminalLine(
+                text = promptPrefix,
+                type = TerminalLineType.COMMAND
+            )
+            appendLines(listOf(emptyCommandLine)) { newLines ->
+                sessions = sessions.map {
+                    if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                }
+            }
+            return
+        }
+
+        // Add to persistent history if input text is not empty
+        if (trimmed.isNotEmpty()) {
+            viewModel.terminalRepository.addCommandToHistory(trimmed)
+            if (commandHistory.isEmpty() || commandHistory.last() != trimmed) {
+                commandHistory.add(trimmed)
+            }
+            historyIndex = -1
+        }
+
+        // If a photo is attached, dispatch directly to terminal command executor with photo payload
+        if (photoToSend != null) {
+            viewModel.terminalCommandExecutor.executeCommand(
+                rawInput = trimmed,
+                origin = CommandOrigin.TERMINAL,
+                onOpenAgentDashboard = onOpenAgentDashboard,
+                attachedPhotoUri = photoToSend.uriOrUrl,
+                attachedPhotoName = photoToSend.title.removePrefix("Photo: ")
+            )
+            selectedItems = selectedItems.filterNot { it.id == photoToSend.id }
+            inputText = TextFieldValue("")
+            return
+        }
+
+        // Parse token and argument
+        val spaceIdx = trimmed.indexOf(' ')
+        val token = if (spaceIdx != -1) trimmed.substring(0, spaceIdx).trim() else trimmed
+        val queryArg = if (spaceIdx != -1) trimmed.substring(spaceIdx + 1).trim() else ""
+        val normalizedToken = if (token.startsWith("/")) token.lowercase() else "/${token.lowercase()}"
+
+        // Handle terminal UI-specific built-ins (screen resizing, clear, exit)
+        when (normalizedToken) {
+            "/height", "/resize" -> {
+                when {
+                    queryArg.equals("full", ignoreCase = true) || queryArg.equals("max", ignoreCase = true) -> {
+                        onToggleFullScreen(true)
+                        commitLines(listOf(
+                            TerminalLine("$promptPrefix$trimmed", TerminalLineType.COMMAND),
+                            TerminalLine("🖥️ Terminal maximized to Fullscreen mode.", TerminalLineType.SUCCESS)
+                        ))
+                    }
+                    queryArg.equals("dock", ignoreCase = true) -> {
+                        onToggleFullScreen(false)
+                        commitLines(listOf(
+                            TerminalLine("$promptPrefix$trimmed", TerminalLineType.COMMAND),
+                            TerminalLine("📱 Terminal docked to ${(terminalHeightFraction * 100).toInt()}%. ", TerminalLineType.INFO)
+                        ))
+                    }
+                    queryArg.toIntOrNull() != null -> {
+                        val pct = queryArg.toInt().coerceIn(50, 98)
+                        val frac = pct / 100f
+                        terminalHeightFraction = frac
+                        viewModel.updateTerminalHeightFraction(frac)
+                        if (isFullScreen) onToggleFullScreen(false)
+                        commitLines(listOf(
+                            TerminalLine("$promptPrefix$trimmed", TerminalLineType.COMMAND),
+                            TerminalLine("📐 Terminal height adjusted to $pct% of screen.", TerminalLineType.SUCCESS)
+                        ))
+                    }
+                    queryArg.equals("increase", ignoreCase = true) || queryArg.equals("up", ignoreCase = true) -> {
+                        val newFrac = (terminalHeightFraction + 0.10f).coerceIn(0.50f, 0.98f)
+                        terminalHeightFraction = newFrac
+                        viewModel.updateTerminalHeightFraction(newFrac)
+                        commitLines(listOf(
+                            TerminalLine("$promptPrefix$trimmed", TerminalLineType.COMMAND),
+                            TerminalLine("📐 Terminal height increased to ${(newFrac * 100).toInt()}% of screen.", TerminalLineType.SUCCESS)
+                        ))
+                    }
+                    queryArg.equals("decrease", ignoreCase = true) || queryArg.equals("down", ignoreCase = true) -> {
+                        val newFrac = (terminalHeightFraction - 0.10f).coerceIn(0.50f, 0.98f)
+                        terminalHeightFraction = newFrac
+                        viewModel.updateTerminalHeightFraction(newFrac)
+                        commitLines(listOf(
+                            TerminalLine("$promptPrefix$trimmed", TerminalLineType.COMMAND),
+                            TerminalLine("📐 Terminal height adjusted to ${(newFrac * 100).toInt()}% of screen.", TerminalLineType.SUCCESS)
+                        ))
+                    }
+                    else -> {
+                        commitLines(listOf(
+                            TerminalLine("$promptPrefix$trimmed", TerminalLineType.COMMAND),
+                            TerminalLine("📐 Current Terminal Height: ${(terminalHeightFraction * 100).toInt()}% of screen (fullscreen: $isFullScreen)", TerminalLineType.INFO),
+                            TerminalLine("Usage: /height [50-98 | increase | decrease | full | dock]", TerminalLineType.OUTPUT)
+                        ))
+                    }
+                }
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/clear", "/cls" -> {
+                sessions = sessions.map {
+                    if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
+                }
+                viewModel.clearTerminalLines()
+                inputText = TextFieldValue("")
+                return
+            }
+
+            "/exit", "/quit", "/q" -> {
+                onClose()
+                inputText = TextFieldValue("")
+                return
+            }
+
+            else -> {
+                // Delegate ALL command parsing, execution, and dispatch to centralized TerminalCommandExecutor
+                viewModel.terminalCommandExecutor.executeCommand(
+                    rawInput = trimmed,
+                    origin = CommandOrigin.TERMINAL,
+                    onOpenAgentDashboard = onOpenAgentDashboard
+                )
+                inputText = TextFieldValue("")
+            }
+        }
+    }
+
+    val density = LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    val isImeVisible = imeBottom > 0
+
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+
+    // Main terminal overlay container
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(TermBg)
+            .testTag("terminal_screen")
     ) {
-        // Top Terminal Header Bar
-        Surface(
-            color = Color(0xFF161B22),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+        val totalHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+
+        val isPinnedToScreen = settings.terminalPinnedToScreen
+        val isSwappedPosition = settings.terminalSwappedPosition
+
+        // When pinned to screen: default is Top (attached above website). Swapped is Bottom (moved down below website)!
+        // When not pinned: default is Bottom (docked above address bar). Swapped is Top.
+        val isAtTop = if (isPinnedToScreen) !isSwappedPosition else isSwappedPosition
+        val isAtBottom = !isAtTop
+
+        // Semi-transparent backdrop scrim over the background webpage when docked
+        // (Disabled when pinned to screen or in companion mode so web and address bar are 100% interactive)
+        if (!isFullScreen && !isPinnedToScreen && autoFocus) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Terminal,
-                    contentDescription = "Terminal Icon",
-                    tint = TermPromptCyan,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "GVONE Terminal • Multimodal Engine",
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-        }
-
-        HorizontalDivider(color = Color(0xFF30363D))
-
-        // Terminal Log List
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            items(lines) { line ->
-                TerminalLineItem(line = line) {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", line.text))
-                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-            }
-        }
-
-        HorizontalDivider(color = Color(0xFF30363D))
-
-        // Command Prompt Input Bar
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF161B22))
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-        ) {
-            Text(
-                text = "gvone@terminal:~$ ",
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = TermPromptCyan
-            )
-
-            BasicTextField(
-                value = commandInput,
-                onValueChange = onCommandInputChanged,
-                textStyle = TextStyle(
-                    color = TermTextPrimary,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp
-                ),
-                cursorBrush = SolidColor(TermPromptCyan),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = {
-                    if (commandInput.isNotBlank()) {
-                        onExecuteCommand(commandInput)
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        onClose()
                     }
-                }),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 4.dp)
+            )
+        }
+
+        // Terminal Panel (Docked on top of address bar / bottom bar, Half-Screen Pinned, or Fullscreen)
+        Surface(
+            color = TermBgColor,
+            shape = if (isFullScreen) {
+                RoundedCornerShape(0.dp)
+            } else if (isAtTop) {
+                RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
+            } else {
+                RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+            },
+            border = if (isFullScreen) null else BorderStroke(1.dp, TermBorderColor),
+            shadowElevation = 16.dp,
+            modifier = Modifier
+                .align(if (isAtTop) Alignment.TopCenter else Alignment.BottomCenter)
+                .fillMaxWidth()
+                .then(
+                    if (isFullScreen) {
+                        Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                            .imePadding()
+                    } else if (isPinnedToScreen) {
+                        if (isAtTop) {
+                            Modifier
+                                .statusBarsPadding()
+                                .fillMaxHeight(terminalHeightFraction.coerceIn(0.20f, 0.85f))
+                        } else {
+                            Modifier
+                                .navigationBarsPadding()
+                                .imePadding()
+                                .fillMaxHeight(terminalHeightFraction.coerceIn(0.20f, 0.85f))
+                        }
+                    } else if (isAddressBarWriting) {
+                        Modifier
+                            .statusBarsPadding()
+                            .padding(
+                                bottom = if (isAddressBarBottom) addressBarBottomPadding else 0.dp
+                            )
+                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.18f, 0.70f))
+                    } else {
+                        Modifier
+                            .statusBarsPadding()
+                            .padding(
+                                bottom = if (isAddressBarBottom && isAtBottom) {
+                                    addressBarBottomPadding
+                                } else {
+                                    0.dp
+                                }
+                            )
+                            .then(
+                                if (!isAddressBarBottom || isAtTop) {
+                                    Modifier
+                                        .navigationBarsPadding()
+                                        .imePadding()
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.25f, 0.98f))
+                    }
+                )
+                .offset { IntOffset(0, if (isAtTop) -dragOffsetY.coerceAtLeast(0f).toInt() else dragOffsetY.coerceAtLeast(0f).toInt()) }
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // 1. In DEFAULT position: Suggestion Chips Bar is on TOP of the Terminal!
+                // Layout hierarchy: Chip -> Terminal -> Address bar
+                if (!isSwappedPosition) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF0B0F17))
+                            .padding(vertical = 4.dp, horizontal = 4.dp)
+                            .testTag("terminal_top_suggestion_chips")
+                    ) {
+                        SuggestionChipsBar(
+                            prompts = DefaultQuickPrompts.items,
+                            selectedItems = selectedItems,
+                            onRemoveSelectedItem = { item ->
+                                selectedItems = selectedItems.filterNot { it.id == item.id }
+                            },
+                            isSuggestivePopupOpen = showActionAndCommandPopup || viewModel.showTerminalCommands.value,
+                            onToggleBulb = {
+                                val next = !(showActionAndCommandPopup || viewModel.showTerminalCommands.value)
+                                showActionAndCommandPopup = next
+                                viewModel.setShowTerminalCommands(next)
+                            },
+                            onSelectPrompt = { promptText ->
+                                val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
+                                    ?: QuickPrompt(
+                                        id = "prompt_${promptText.hashCode()}",
+                                        title = promptText,
+                                        promptText = promptText,
+                                        category = "Prompt",
+                                        type = SelectedItemType.PROMPT
+                                    )
+                                if (selectedItems.none { it.id == matchingPrompt.id }) {
+                                    selectedItems = selectedItems + matchingPrompt
+                                }
+                                inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
+                                try {
+                                    focusRequester.requestFocus()
+                                } catch (_: Throwable) {}
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
+                }
+
+                // Top drag/resize handle when terminal is at the BOTTOM (pinned at bottom or docked at bottom)
+                if (!isFullScreen && isAtBottom) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp, bottom = 4.dp)
+                            .pointerInput(totalHeightPx) {
+                                detectVerticalDragGestures(
+                                    onDragEnd = {
+                                        if (isAddressBarWriting) {
+                                            if (dragOffsetY > 100f) {
+                                                onClose()
+                                            } else {
+                                                viewModel.updateTerminalHeightFraction(terminalHeightFraction)
+                                            }
+                                        } else if (!isPinnedToScreen && dragOffsetY > 120f) {
+                                            onClose()
+                                        } else {
+                                            viewModel.updateTerminalHeightFraction(terminalHeightFraction)
+                                        }
+                                        dragOffsetY = 0f
+                                    },
+                                    onVerticalDrag = { _, dragAmount ->
+                                        val deltaFraction = -dragAmount / totalHeightPx
+                                        val minH = if (isAddressBarWriting) 0.18f else 0.20f
+                                        val maxH = if (isAddressBarWriting) 0.70f else 0.85f
+                                        val candidate = (terminalHeightFraction + deltaFraction).coerceIn(minH, maxH)
+                                        terminalHeightFraction = candidate
+                                        viewModel.updateTerminalHeightFraction(candidate)
+                                    }
+                                )
+                            }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                val next = if (isAddressBarWriting) {
+                                    when {
+                                        terminalHeightFraction < 0.28f -> 0.35f
+                                        terminalHeightFraction < 0.45f -> 0.55f
+                                        terminalHeightFraction < 0.62f -> 0.68f
+                                        else -> 0.22f
+                                    }
+                                } else {
+                                    when {
+                                        terminalHeightFraction < 0.35f -> 0.45f
+                                        terminalHeightFraction < 0.55f -> 0.65f
+                                        terminalHeightFraction < 0.75f -> 0.80f
+                                        else -> 0.30f
+                                    }
+                                }
+                                terminalHeightFraction = next
+                                viewModel.updateTerminalHeightFraction(next)
+                                Toast.makeText(context, "Terminal height: ${(next * 100).toInt()}%", Toast.LENGTH_SHORT).show()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(36.dp)
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(if (isPinnedToScreen || isAddressBarWriting) Color(0xFF38BDF8) else Color(0xFF484F58))
+                            )
+                            if (isPinnedToScreen || isAddressBarWriting) {
+                                Text(
+                                    text = "${(terminalHeightFraction * 100).toInt()}% • Drag or tap to resize",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            if (isPinnedToScreen) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFF21262D),
+                                    modifier = Modifier.clickable {
+                                        viewModel.toggleTerminalSwappedPosition()
+                                        Toast.makeText(context, "Terminal moved up to top (Split View)", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.ArrowUpward,
+                                            contentDescription = "Move Up",
+                                            tint = Color(0xFF38BDF8),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Text(
+                                            text = "MOVE UP",
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 1. TOP TERMINAL HEADER BAR
+                TerminalHeaderBar(
+                    sessions = sessions,
+                    activeSessionId = activeSessionId,
+                    isTorActive = isTorActive,
+                    isFullScreen = isFullScreen,
+                    isPinnedToScreen = isPinnedToScreen,
+                    onTogglePinToScreen = {
+                        val newPinned = !isPinnedToScreen
+                        viewModel.setTerminalPinnedToScreen(newPinned)
+                        Toast.makeText(
+                            context,
+                            if (newPinned) "Terminal Pinned to Screen (Split View). Website is fully interactive!" else "Terminal Unpinned. Normal docked mode restored.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    terminalHeightFraction = terminalHeightFraction,
+                    onAdjustHeight = {
+                        val next = when {
+                            terminalHeightFraction < 0.80f -> 0.85f
+                            terminalHeightFraction < 0.90f -> 0.95f
+                            else -> 0.75f
+                        }
+                        terminalHeightFraction = next
+                        viewModel.updateTerminalHeightFraction(next)
+                        Toast.makeText(context, "Terminal height: ${(next * 100).toInt()}%", Toast.LENGTH_SHORT).show()
+                    },
+                    onToggleFullScreen = { onToggleFullScreen(!isFullScreen) },
+                    isSwappedPosition = isSwappedPosition,
+                    onToggleSwapPosition = {
+                        viewModel.toggleTerminalSwappedPosition()
+                        val nextSwapped = !isSwappedPosition
+                        val msg = if (isPinnedToScreen) {
+                            if (nextSwapped) "Terminal moved down to bottom (Split View)" else "Terminal moved up to top (Split View)"
+                        } else {
+                            if (nextSwapped) "Position swapped: Terminal at Top, Suggestions below" else "Position swapped: Terminal at Bottom, Suggestions above"
+                        }
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    },
+                    onOpenConversationHistory = {
+                        showConversationHistorySheet = true
+                    },
+                    onSelectSession = { activeSessionId = it },
+                    onNewSession = {
+                        val newId = "sess_${sessions.size + 1}"
+                        val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
+                        val newSess = TerminalSession(
+                            id = newId,
+                            title = "Session ${sessions.size + 1}",
+                            lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
+                        )
+                        sessions = sessions + newSess
+                        activeSessionId = newId
+                    },
+                    onCloseSession = { sessId ->
+                        if (sessions.size > 1) {
+                            sessions = sessions.filterNot { it.id == sessId }
+                            activeSessionId = sessions.first().id
+                        } else {
+                            onClose()
+                        }
+                    },
+                    onClearScreen = {
+                        sessions = sessions.map {
+                            if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
+                        }
+                        viewModel.clearTerminalLines()
+                    },
+                    onClose = onClose
+                )
+
+                HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
+
+                // 1.5 UNIFIED RUNTIME STATUS BAR & EXPANDABLE ACTIVE TASK
+                RuntimeStatusPillRow(
+                    runtimeMode = runtimeMode,
+                    activeTask = activeTask,
+                    onToggleVoice = {
+                        executeCommand("/voice")
+                    },
+                    onToggleAgent = {
+                        executeCommand("/agent")
+                    },
+                    onToggleText = {
+                        executeCommand("/text")
+                    },
+                    onToggleDebug = {
+                        executeCommand("/debug")
+                    },
+                    onCancelTask = {
+                        executeCommand("/cancel")
+                    },
+                    isAgenticMode = isAgenticMode,
+                    activePersona = activePersona,
+                    sandboxTabCount = tabs.count { it.tabGroupId == agentEngine.activeSandboxGroupId },
+                    onFocusSandbox = {
+                        executeCommand("/sandbox")
+                    },
+                    bridgeConnectionState = bridgeConnectionState,
+                    isWebsiteBridgeActive = settings.bidirectionalBridgeEnabled,
+                    terminalBridgeMode = terminalBridgeMode,
+                    onBridgeClick = {
+                        val nextMode = viewModel.cycleTerminalBridgeMode()
+                        val label = when (nextMode) {
+                            TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON"
+                            TerminalBridgeMode.WEB -> "WEB BRIDGE: ON"
+                        }
+                        Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
+                        val bridgeLine = TerminalLine(
+                            text = if (nextMode == TerminalBridgeMode.CHAT) {
+                                "● [CHAT BRIDGE: ON] Connected to AI Chatbot (Gemini API). Conversational chat active."
+                            } else {
+                                "● [WEB BRIDGE: ON] Connected to active website. Direct input delivery active."
+                            },
+                            type = TerminalLineType.SUCCESS
+                        )
+                        sessions = sessions.map {
+                            if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
+                        }
+                    },
+                    onCnsClick = {
+                        showCnsDashboard = true
+                    },
+                    isChatMode = isChatMode,
+                    onToggleChat = {
+                        executeCommand("/chat")
+                    },
+                    isLogMode = isLogMode,
+                    onToggleLog = {
+                        executeCommand("/log")
+                    }
+                )
+
+                activeTask?.let { task ->
+                    ExpandableAgentTaskCard(
+                        task = task,
+                        isExpanded = isTaskCardExpanded,
+                        onToggleExpand = { isTaskCardExpanded = !isTaskCardExpanded },
+                        onCancelTask = {
+                            executeCommand("/cancel")
+                        }
+                    )
+                }
+
+                // 2. MAIN CLI STREAM LOG (Grouped by User Input with Expandable/Collapsible Action Logs)
+                val treeTasks by conversationTreeManager.tasks.collectAsState()
+                val activeTaskIdTree by conversationTreeManager.activeTaskId.collectAsState()
+
+                val visibleLines = remember(activeSession.lines, isLogMode) {
+                    if (isLogMode) {
+                        activeSession.lines
+                    } else {
+                        activeSession.lines.filterNot { viewModel.isVerboseLogLine(it) }
+                    }
+                }
+
+                // Group terminal lines into blocks by user input command
+                val commandGroups = remember(visibleLines) {
+                    val groups = mutableListOf<TerminalCommandBlock>()
+                    var currentCmd: TerminalLine? = null
+                    val currentActions = mutableListOf<TerminalLine>()
+
+                    for (line in visibleLines) {
+                        if (line.type == TerminalLineType.COMMAND) {
+                            if (currentCmd != null || currentActions.isNotEmpty()) {
+                                groups.add(TerminalCommandBlock(currentCmd, currentActions.toList()))
+                                currentActions.clear()
+                            }
+                            currentCmd = line
+                        } else {
+                            currentActions.add(line)
+                        }
+                    }
+                    if (currentCmd != null || currentActions.isNotEmpty()) {
+                        groups.add(TerminalCommandBlock(currentCmd, currentActions.toList()))
+                    }
+                    groups
+                }
+
+                SelectionContainer(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            try {
+                                focusRequester.requestFocus()
+                                keyboardController?.show()
+                            } catch (_: Throwable) {}
+                        }
+                ) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        commandGroups.forEachIndexed { groupIndex, group ->
+                            val cmd = group.commandLine
+                            if (cmd == null) {
+                                // Initial lines (welcome banner, status, etc.) before first user input
+                                itemsIndexed(group.actionLines, key = { idx, line -> "init_${groupIndex}_${idx}_${line.id}" }) { _, line ->
+                                    TerminalLineItem(
+                                        line = line,
+                                        onCopy = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", line.text))
+                                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            } else {
+                                val isExpanded = cmd.id !in collapsedCommandIds
+
+                                // Every User Input: with right-direction collapsible/expandable icon
+                                item(key = "cmd_${groupIndex}_${cmd.id}") {
+                                    UserInputCommandItem(
+                                        commandLine = cmd,
+                                        actionCount = group.actionLines.size,
+                                        isExpanded = isExpanded,
+                                        onToggleExpand = {
+                                            collapsedCommandIds = if (isExpanded) {
+                                                collapsedCommandIds + cmd.id
+                                            } else {
+                                                collapsedCommandIds - cmd.id
+                                            }
+                                        },
+                                        onCopy = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("Command", cmd.text))
+                                            Toast.makeText(context, "Command copied", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+
+                                if (isExpanded) {
+                                    itemsIndexed(group.actionLines, key = { idx, line -> "act_${groupIndex}_${cmd.id}_${idx}_${line.id}" }) { _, line ->
+                                        if (line.type == TerminalLineType.EXPANDABLE_TASK) {
+                                            val task = treeTasks.find { it.id == line.taskId }
+                                            if (task != null) {
+                                                Level1TaskItem(
+                                                    task = task,
+                                                    isActive = activeTaskIdTree == task.id,
+                                                    onToggleExpand = {
+                                                        conversationTreeManager.toggleTaskExpansion(task.id)
+                                                    },
+                                                    onToggleAgentExpand = { agentId ->
+                                                        conversationTreeManager.toggleAgentExpansion(task.id, agentId)
+                                                    },
+                                                    onContinue = {
+                                                        executeCommand(task.commandPrompt.ifBlank { "/agent ${task.title}" })
+                                                    },
+                                                    onInspect = {
+                                                        executeCommand("/status")
+                                                    },
+                                                    onRemove = {
+                                                        conversationTreeManager.removeTask(task.id)
+                                                    },
+                                                    modifier = Modifier.padding(start = 6.dp, top = 2.dp, bottom = 2.dp)
+                                                )
+                                            } else {
+                                                TerminalLineItem(
+                                                    line = line,
+                                                    onCopy = {
+                                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                        clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", line.text))
+                                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                )
+                                            }
+                                        } else {
+                                            TerminalLineItem(
+                                                line = line,
+                                                onCopy = {
+                                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                    clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", line.text))
+                                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                                }
+                                            )
+                                        }
+                                    }
+                                } else if (group.actionLines.isNotEmpty()) {
+                                    item(key = "${cmd.id}_collapsed_summary") {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    collapsedCommandIds = collapsedCommandIds - cmd.id
+                                                }
+                                                .padding(start = 12.dp, top = 1.dp, bottom = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "└── [▸ ${group.actionLines.size} action logs collapsed — tap to expand]",
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 10.sp,
+                                                color = Color(0xFF6E7681)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+            // 3. AUTOCOMPLETE SUGGESTION CHIPS (Visible when typing)
+            if (suggestions.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(TermSurfaceColor)
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    suggestions.forEach { cmd ->
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFF161B22),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D)),
+                            modifier = Modifier
+                                .clickable {
+                                    val trigger = cmd.command
+                                    inputText = TextFieldValue("$trigger ", selection = androidx.compose.ui.text.TextRange(trigger.length + 1))
+                                    try {
+                                        focusRequester.requestFocus()
+                                    } catch (_: Throwable) {}
+                                }
+                                .testTag("autocomplete_${cmd.command}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = cmd.command,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TermPromptCyan
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = cmd.name,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = TermTextSecondary
+                                )
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
+            }
+
+            // 3.5 ACTION & COMMAND PANEL (Integrated above the command)
+            AnimatedVisibility(
+                visible = showActionAndCommandPopup || viewModel.showTerminalCommands.value,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                CommandAutocompletePopup(
+                    suggestions = CommandEngine.getSuggestions(inputText.text, allCommands),
+                    onSelectSuggestion = { suggestion, executeNow ->
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        if (executeNow) {
+                            val arg = suggestion.queryArgument
+                            val runStr = if (arg.isNotEmpty()) "${suggestion.matchedTrigger} $arg" else suggestion.matchedTrigger
+                            executeCommand(runStr)
+                        } else {
+                            val filled = "${suggestion.matchedTrigger} "
+                            inputText = TextFieldValue(filled, selection = androidx.compose.ui.text.TextRange(filled.length))
+                            try {
+                                focusRequester.requestFocus()
+                            } catch (_: Throwable) {}
+                        }
+                    },
+                    onOpenCommandManager = {
+                        viewModel.openSheet(ActiveSheet.CustomCommands)
+                    },
+                    prompts = DefaultQuickPrompts.items,
+                    onSelectPrompt = { promptText ->
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
+                            ?: QuickPrompt(
+                                id = "prompt_${promptText.hashCode()}",
+                                title = promptText,
+                                promptText = promptText,
+                                category = "Prompt",
+                                type = SelectedItemType.PROMPT
+                            )
+                        if (selectedItems.none { it.id == matchingPrompt.id }) {
+                            selectedItems = selectedItems + matchingPrompt
+                        }
+                        inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
+                        executeCommand(promptText)
+                    },
+                    isTerminalPinned = settings.terminalPinnedToScreen,
+                    onTogglePinTerminal = {
+                        val currentPinned = settings.terminalPinnedToScreen
+                        viewModel.updateSettings(
+                            settings.copy(
+                                terminalPinnedToScreen = !currentPinned,
+                                terminalHeightFraction = if (!currentPinned) 0.50f else 0.85f
+                            )
+                        )
+                    },
+                    onAttachPhotos = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        selectPhotoItem(null, null)
+                        onOpenPhotos?.invoke() ?: run {
+                            executeCommand("/photos")
+                        }
+                    },
+                    onAttachCamera = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        selectPhotoItem("camera_snap.jpg", null)
+                        onOpenCamera?.invoke() ?: run {
+                            executeCommand("/camera")
+                        }
+                    },
+                    onAttachFiles = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        selectFileItem(null)
+                        onOpenFiles?.invoke() ?: run {
+                            executeCommand("/files")
+                        }
+                    },
+                    onWebsiteClick = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        selectWebsiteItem()
+                    },
+                    onPinCurrentTab = {
+                        selectWebsiteItem()
+                        currentTab?.let { tab ->
+                            val url = tab.url
+                            executeCommand("/pin $url")
+                        }
+                    },
+                    currentTabUrl = currentTab?.url,
+                    onPinConnector = {
+                        executeCommand("/connector")
+                    },
+                    onPinResearchCanvas = {
+                        executeCommand("/canvas")
+                    },
+                    onDismiss = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                )
+            }
+
+            // 3.8 ATTACHED PHOTO & MEDIA PANEL (Send selected photo directly in terminal)
+            val attachedPhotos = selectedItems.filter { it.type == SelectedItemType.PHOTO }
+            val otherAttachedItems = selectedItems.filterNot { it.type == SelectedItemType.PHOTO }
+
+            if (attachedPhotos.isNotEmpty()) {
+                Surface(
+                    color = Color(0xFF0F172A),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                        .testTag("terminal_attached_photos_container")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.AddPhotoAlternate,
+                                    contentDescription = null,
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "ATTACHED PHOTO (${attachedPhotos.size})",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF38BDF8)
+                                )
+                            }
+                            Text(
+                                text = "Dismiss",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8),
+                                modifier = Modifier
+                                    .clickable {
+                                        selectedItems = otherAttachedItems
+                                    }
+                                    .padding(horizontal = 4.dp)
+                            )
+                        }
+
+                        attachedPhotos.forEach { photo ->
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF1E293B),
+                                border = BorderStroke(1.dp, Color(0xFF334155)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Thumbnail preview
+                                    if (photo.uriOrUrl != null) {
+                                        AsyncImage(
+                                            model = photo.uriOrUrl,
+                                            contentDescription = photo.title,
+                                            modifier = Modifier
+                                                .size(46.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f), RoundedCornerShape(4.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(46.dp)
+                                                .background(Color(0xFF0F172A), RoundedCornerShape(4.dp))
+                                                .border(1.dp, Color(0xFF334155), RoundedCornerShape(4.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Image,
+                                                contentDescription = null,
+                                                tint = Color(0xFF94A3B8),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Photo Info
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = photo.title.removePrefix("Photo: "),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFF1F5F9),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (inputText.text.isNotBlank()) "Sends with: \"${inputText.text.take(24)}...\"" else "Ready to send directly in terminal",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF34D399),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    // Direct Send Photo Button
+                                    Button(
+                                        onClick = {
+                                            executeCommand(
+                                                rawInput = inputText.text,
+                                                attachedPhoto = photo
+                                            )
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF238636),
+                                            contentColor = Color.White
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier
+                                            .height(32.dp)
+                                            .testTag("terminal_send_photo_direct_btn")
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Rounded.Send,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Text(
+                                                text = "Send",
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(4.dp))
+
+                                    // Remove button
+                                    IconButton(
+                                        onClick = {
+                                            selectedItems = selectedItems.filterNot { it.id == photo.id }
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = "Remove photo",
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. ACTIVE COMMAND INPUT ROW (Prompt + Monospace Text Field + Cursor)
+            Surface(
+                color = TermSurfaceColor,
+                border = androidx.compose.foundation.BorderStroke(1.dp, TermBorderColor),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Prompt label
+                    Text(
+                        text = buildAnnotatedString {
+                            val isVoice = runtimeMode.isVoiceActive || runtimeMode.interaction == InteractionType.VOICE
+                            if (isAgenticMode) {
+                                withStyle(SpanStyle(color = Color(0xFFA855F7), fontWeight = FontWeight.Bold)) {
+                                    append(if (isVoice) "agent[${activePersona.badge.lowercase()}:voice]" else "agent[${activePersona.badge.lowercase()}:text]")
+                                }
+                                withStyle(SpanStyle(color = TermTextSecondary)) {
+                                    append(":")
+                                }
+                                withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
+                                    append("$currentCwd$ ")
+                                }
+                            } else if (terminalBridgeMode == TerminalBridgeMode.CHAT) {
+                                withStyle(SpanStyle(color = Color(0xFF10B981), fontWeight = FontWeight.Bold)) {
+                                    append(if (isVoice) "gvone(chat:voice)@browser" else "gvone(chat:api)@browser")
+                                }
+                                withStyle(SpanStyle(color = TermTextSecondary)) {
+                                    append(":")
+                                }
+                                withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
+                                    append("$currentCwd$ ")
+                                }
+                            } else {
+                                withStyle(SpanStyle(color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)) {
+                                    append(if (isVoice) "gvone(web:voice)@browser" else "gvone(web:bridge)@browser")
+                                }
+                                withStyle(SpanStyle(color = TermTextSecondary)) {
+                                    append(":")
+                                }
+                                withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
+                                    append("$currentCwd$ ")
+                                }
+                            }
+                        },
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.5.sp
+                    )
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Monospace text field
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 4.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (inputText.text.isEmpty()) {
+                            Text(
+                                text = if (isAgenticMode) {
+                                    "Type autonomous goal (Agent is ON)..."
+                                } else if (terminalBridgeMode == TerminalBridgeMode.CHAT) {
+                                    "Chat with AI (Chat Bridge is ON)..."
+                                } else {
+                                    "Input bridged to website (Web Bridge is ON)..."
+                                },
+                                color = Color(0xFF555D68),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.5.sp
+                            )
+                        }
+                        BasicTextField(
+                            value = inputText,
+                            onValueChange = { inputText = it },
+                            textStyle = TextStyle(
+                                color = TermTextPrimary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Normal
+                            ),
+                            cursorBrush = SolidColor(TermPromptCyan),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Ascii,
+                                imeAction = ImeAction.Go,
+                                autoCorrect = false
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onGo = {
+                                    val toExec = inputText.text
+                                    executeCommand(toExec)
+                                }
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester)
+                                .testTag("terminal_input_field")
+                        )
+
+                        // Blinking block cursor when empty
+                        if (inputText.text.isEmpty()) {
+                            Text(
+                                text = "█",
+                                color = TermPromptCyan,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.5.sp,
+                                modifier = Modifier.alpha(cursorAlpha)
+                            )
+                        }
+                    }
+
+                    // Direct Photo Picker button in terminal
+                    IconButton(
+                        onClick = {
+                            if (onOpenPhotos != null) {
+                                onOpenPhotos()
+                            } else {
+                                internalTerminalPhotoPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color(0xFF161B22), RoundedCornerShape(6.dp))
+                            .border(BorderStroke(1.dp, Color(0x33FFFFFF)), RoundedCornerShape(6.dp))
+                            .testTag("terminal_attach_photo_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AddPhotoAlternate,
+                            contentDescription = "Attach Photo Directly",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Action Menu bottom sheet trigger
+                    IconButton(
+                        onClick = {
+                            showActionBottomSheet = !showActionBottomSheet
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(if (showActionBottomSheet) Color(0xFF1E293B) else Color(0xFF161B22), RoundedCornerShape(6.dp))
+                            .border(BorderStroke(1.dp, if (showActionBottomSheet) Color(0xFF38BDF8) else Color(0x33FFFFFF)), RoundedCornerShape(6.dp))
+                            .testTag("terminal_action_menu_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.GridView,
+                            contentDescription = "Actions",
+                            tint = if (showActionBottomSheet) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Send / Execute button
+                    IconButton(
+                        onClick = {
+                            val toExec = inputText.text
+                            executeCommand(toExec)
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color(0xFF238636), RoundedCornerShape(6.dp))
+                            .testTag("terminal_send_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardReturn,
+                            contentDescription = "Execute Command",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            // 5. TERMUX-STYLE ACCESSORY TOOLBAR (Mobile Terminal Keys: agent, voice, text, groups, sandbox, ls, cd, cat, tabs, ESC, TAB, ↑, ↓, /, -, ~, |, CLEAR)
+            TermuxAccessoryBar(
+                onKey = { key ->
+                    when (key) {
+                        "agent" -> {
+                            val prompt = "/agent "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "/on" -> {
+                            val cur = inputText.text.trimEnd()
+                            val nextText = if (cur.isEmpty()) "/on " else "$cur /on "
+                            inputText = TextFieldValue(nextText, selection = androidx.compose.ui.text.TextRange(nextText.length))
+                        }
+                        "/off" -> {
+                            val cur = inputText.text.trimEnd()
+                            val nextText = if (cur.isEmpty()) "/off " else "$cur /off "
+                            inputText = TextFieldValue(nextText, selection = androidx.compose.ui.text.TextRange(nextText.length))
+                        }
+                        "voice" -> {
+                            val prompt = "/voice "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "text" -> {
+                            val prompt = "/text "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "groups" -> {
+                            val prompt = "/groups "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "sandbox" -> {
+                            val prompt = "/sandbox "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "ls" -> {
+                            val prompt = "ls "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "cd" -> {
+                            val prompt = "cd "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "cat" -> {
+                            val prompt = "cat "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "tabs" -> {
+                            val prompt = "tabs "
+                            inputText = TextFieldValue(prompt, selection = androidx.compose.ui.text.TextRange(prompt.length))
+                        }
+                        "ESC" -> {
+                            inputText = TextFieldValue("")
+                            historyIndex = -1
+                        }
+                        "TAB" -> {
+                            if (suggestions.isNotEmpty()) {
+                                val match = suggestions.first().command
+                                inputText = TextFieldValue("$match ", selection = androidx.compose.ui.text.TextRange(match.length + 1))
+                            } else if (currentWord.isNotBlank()) {
+                                val match = allCommands.find { it.getAllTriggers().any { t -> t.startsWith(currentWord, ignoreCase = true) } }
+                                if (match != null) {
+                                    val trigger = match.command
+                                    inputText = TextFieldValue("$trigger ", selection = androidx.compose.ui.text.TextRange(trigger.length + 1))
+                                }
+                            }
+                        }
+                        "↑" -> {
+                            if (commandHistory.isNotEmpty()) {
+                                val newIdx = if (historyIndex == -1) {
+                                    commandHistory.size - 1
+                                } else {
+                                    (historyIndex - 1).coerceAtLeast(0)
+                                }
+                                historyIndex = newIdx
+                                val historyCmd = commandHistory[newIdx]
+                                inputText = TextFieldValue(historyCmd, selection = androidx.compose.ui.text.TextRange(historyCmd.length))
+                            }
+                        }
+                        "↓" -> {
+                            if (commandHistory.isNotEmpty() && historyIndex != -1) {
+                                val newIdx = historyIndex + 1
+                                if (newIdx < commandHistory.size) {
+                                    historyIndex = newIdx
+                                    val historyCmd = commandHistory[newIdx]
+                                    inputText = TextFieldValue(historyCmd, selection = androidx.compose.ui.text.TextRange(historyCmd.length))
+                                } else {
+                                    historyIndex = -1
+                                    inputText = TextFieldValue("")
+                                }
+                            }
+                        }
+                        "clear" -> {
+                            sessions = sessions.map {
+                                if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
+                            }
+                            viewModel.terminalRepository.clearSavedSessionLines()
+                        }
+                        else -> {
+                            // Insert character
+                            val cur = inputText.text
+                            val sel = inputText.selection.start
+                            val newText = cur.substring(0, sel) + key + cur.substring(sel)
+                            inputText = TextFieldValue(newText, selection = androidx.compose.ui.text.TextRange(sel + key.length))
+                        }
+                    }
+                    try {
+                        focusRequester.requestFocus()
+                    } catch (_: Throwable) {}
+                }
             )
 
-            IconButton(
-                onClick = {
-                    if (commandInput.isNotBlank()) {
-                        onExecuteCommand(commandInput)
+            // 6. When in SWAPPED position: Suggestion Chips Bar is at the BOTTOM!
+            // Layout hierarchy when swapped: Terminal -> Chip -> Address bar
+            if (isSwappedPosition) {
+                HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0B0F17))
+                        .padding(vertical = 4.dp, horizontal = 4.dp)
+                        .testTag("terminal_bottom_suggestion_chips")
+                ) {
+                    SuggestionChipsBar(
+                        prompts = DefaultQuickPrompts.items,
+                        selectedItems = selectedItems,
+                        onRemoveSelectedItem = { item ->
+                            selectedItems = selectedItems.filterNot { it.id == item.id }
+                        },
+                        isSuggestivePopupOpen = showActionAndCommandPopup || viewModel.showTerminalCommands.value,
+                        onToggleBulb = {
+                            val next = !(showActionAndCommandPopup || viewModel.showTerminalCommands.value)
+                            showActionAndCommandPopup = next
+                            viewModel.setShowTerminalCommands(next)
+                        },
+                        onSelectPrompt = { promptText ->
+                            val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
+                                ?: QuickPrompt(
+                                    id = "prompt_${promptText.hashCode()}",
+                                    title = promptText,
+                                    promptText = promptText,
+                                    category = "Prompt",
+                                    type = SelectedItemType.PROMPT
+                                )
+                            if (selectedItems.none { it.id == matchingPrompt.id }) {
+                                selectedItems = selectedItems + matchingPrompt
+                            }
+                            inputText = TextFieldValue(promptText, selection = androidx.compose.ui.text.TextRange(promptText.length))
+                            try {
+                                focusRequester.requestFocus()
+                            } catch (_: Throwable) {}
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            // 7. When at TOP: Bottom Drag/Resize Handle to adjust height while working with website
+            if (!isFullScreen && isAtTop) {
+                HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF161B22))
+                        .pointerInput(totalHeightPx) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { _, dragAmount ->
+                                    val deltaFraction = dragAmount / totalHeightPx
+                                    val minH = if (isAddressBarWriting) 0.18f else 0.20f
+                                    val maxH = if (isAddressBarWriting) 0.70f else 0.85f
+                                    val candidate = (terminalHeightFraction + deltaFraction).coerceIn(minH, maxH)
+                                    terminalHeightFraction = candidate
+                                    viewModel.updateTerminalHeightFraction(candidate)
+                                }
+                            )
+                        }
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            val next = if (isAddressBarWriting) {
+                                when {
+                                    terminalHeightFraction < 0.28f -> 0.35f
+                                    terminalHeightFraction < 0.45f -> 0.55f
+                                    terminalHeightFraction < 0.62f -> 0.68f
+                                    else -> 0.22f
+                                }
+                            } else {
+                                when {
+                                    terminalHeightFraction < 0.35f -> 0.45f
+                                    terminalHeightFraction < 0.55f -> 0.65f
+                                    terminalHeightFraction < 0.75f -> 0.80f
+                                    else -> 0.30f
+                                }
+                            }
+                            terminalHeightFraction = next
+                            viewModel.updateTerminalHeightFraction(next)
+                            Toast.makeText(context, "Terminal height: ${(next * 100).toInt()}%", Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(vertical = 5.dp)
+                        .testTag("terminal_pinned_resize_handle"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color(0xFF38BDF8))
+                        )
+                        Text(
+                            text = "${(terminalHeightFraction * 100).toInt()}% • Drag or tap to adjust height",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        if (isPinnedToScreen) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF21262D),
+                                modifier = Modifier.clickable {
+                                    viewModel.toggleTerminalSwappedPosition()
+                                    Toast.makeText(context, "Terminal moved down to bottom (Split View)", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ArrowDownward,
+                                        contentDescription = "Move Down",
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text(
+                                        text = "MOVE DOWN",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Horizontal scrollable bottom sheet action menu in dark mode
+    if (showActionBottomSheet) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.6f))
+                .clickable { showActionBottomSheet = false }
+                .testTag("action_sheet_scrim"),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            ActionMenuBottomSheet(
+                onPhotosClick = {
+                    showActionBottomSheet = false
+                    if (onOpenPhotos != null) {
+                        onOpenPhotos()
+                    } else {
+                        internalTerminalPhotoPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
                     }
                 },
-                modifier = Modifier.size(32.dp)
+                onCameraClick = {
+                    showActionBottomSheet = false
+                    selectPhotoItem("camera_snap.jpg", null)
+                    onOpenCamera?.invoke() ?: run {
+                        executeCommand("/camera")
+                    }
+                },
+                onFilesClick = {
+                    showActionBottomSheet = false
+                    selectFileItem(null)
+                    onOpenFiles?.invoke() ?: run {
+                        executeCommand("/files")
+                    }
+                },
+                onWebsiteClick = {
+                    showActionBottomSheet = false
+                    selectWebsiteItem()
+                },
+                onConnectorsClick = {
+                    showActionBottomSheet = false
+                    executeCommand("/connector")
+                },
+                onResearchClick = {
+                    showActionBottomSheet = false
+                    executeCommand("/canvas")
+                },
+                onPinTerminalClick = {
+                    showActionBottomSheet = false
+                    val currentPinned = settings.terminalPinnedToScreen
+                    viewModel.updateSettings(
+                        settings.copy(
+                            terminalPinnedToScreen = !currentPinned,
+                            terminalHeightFraction = if (!currentPinned) 0.50f else 0.85f
+                        )
+                    )
+                },
+                onDismiss = { showActionBottomSheet = false },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) {}
+            )
+        }
+    }
+
+    // Sovereign CNS Dashboard Modal Sheet
+    if (showCnsDashboard) {
+        CnsDashboardSheet(
+            onDismiss = { showCnsDashboard = false },
+            onExecuteGoal = { goal ->
+                executeCommand(goal)
+            }
+        )
+    }
+
+    // Sovereign Conversation History Sheet
+    if (showConversationHistorySheet) {
+        ConversationHistorySheet(
+            onDismiss = { showConversationHistorySheet = false },
+            onSelectPrompt = { prompt ->
+                inputText = TextFieldValue(prompt, TextRange(prompt.length))
+                try {
+                    focusRequester.requestFocus()
+                    keyboardController?.show()
+                } catch (_: Throwable) {}
+            },
+            commandHistory = commandHistory,
+            treeManager = conversationTreeManager,
+            contextRouter = ContextRouter.global,
+            sessions = sessions,
+            activeSessionId = activeSessionId,
+            onSelectSession = { sessId ->
+                activeSessionId = sessId
+            },
+            onNewSession = {
+                val newId = "sess_${sessions.size + 1}"
+                val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
+                val newSess = TerminalSession(
+                    id = newId,
+                    title = "Session ${sessions.size + 1}",
+                    lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
+                )
+                sessions = sessions + newSess
+                activeSessionId = newId
+            },
+            onRenameSession = { sessId, newTitle ->
+                sessions = sessions.map {
+                    if (it.id == sessId) it.copy(title = newTitle) else it
+                }
+            },
+            onDeleteSession = { sessId ->
+                if (sessions.size > 1) {
+                    val updated = sessions.filterNot { it.id == sessId }
+                    sessions = updated
+                    if (activeSessionId == sessId) {
+                        activeSessionId = updated.first().id
+                    }
+                } else {
+                    val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
+                    val resetSess = TerminalSession(
+                        id = "sess_${System.currentTimeMillis()}",
+                        title = "Session 1",
+                        lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
+                    )
+                    sessions = listOf(resetSess)
+                    activeSessionId = resetSess.id
+                }
+            }
+        )
+    }
+}
+}
+
+@Composable
+private fun TerminalHeaderBar(
+    sessions: List<TerminalSession>,
+    activeSessionId: String,
+    isTorActive: Boolean,
+    isFullScreen: Boolean,
+    isPinnedToScreen: Boolean = false,
+    onTogglePinToScreen: () -> Unit,
+    terminalHeightFraction: Float = 0.85f,
+    onAdjustHeight: () -> Unit,
+    onToggleFullScreen: () -> Unit,
+    isSwappedPosition: Boolean = false,
+    onToggleSwapPosition: () -> Unit,
+    onOpenConversationHistory: () -> Unit,
+    onSelectSession: (String) -> Unit,
+    onNewSession: () -> Unit,
+    onCloseSession: (String) -> Unit,
+    onClearScreen: () -> Unit,
+    onClose: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(TermSurfaceColor)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Left: Conversation History Icon Button (History Icon placed on top left)
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = Color(0xFF161B22),
+            border = BorderStroke(1.dp, Color(0xFF30363D)),
+            modifier = Modifier
+                .padding(end = 6.dp)
+                .clickable { onOpenConversationHistory() }
+                .testTag("terminal_history_button")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Run Command",
+                    imageVector = Icons.Rounded.History,
+                    contentDescription = "Show Conversation History",
                     tint = TermPromptCyan,
+                    modifier = Modifier.size(16.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(if (isTorActive) TermPromptPurple else TermPromptGreen, CircleShape)
+                )
+            }
+        }
+
+        // Center / Sessions: Horizontally scrollable row taking remaining width
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            sessions.forEach { sess ->
+                val isActive = sess.id == activeSessionId
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (isActive) Color(0xFF21262D) else Color(0xFF161B22),
+                    border = BorderStroke(
+                        1.dp,
+                        if (isActive) Color(0xFF388BFD) else Color(0xFF30363D)
+                    ),
+                    modifier = Modifier
+                        .clickable { onSelectSession(sess.id) }
+                        .testTag("terminal_session_${sess.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = sess.title,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isActive) TermTextPrimary else TermTextSecondary
+                        )
+                        if (sessions.size > 1 && isActive) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Close session",
+                                tint = TermTextSecondary,
+                                modifier = Modifier
+                                    .size(13.dp)
+                                    .clickable { onCloseSession(sess.id) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // New Session (+) Button
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = Color(0xFF161B22),
+                border = BorderStroke(1.dp, Color(0xFF30363D)),
+                modifier = Modifier
+                    .clickable { onNewSession() }
+                    .testTag("terminal_new_session")
+            ) {
+                Box(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = "New Session",
+                        tint = TermTextSecondary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        // Right: Window action buttons (Swap Button + Consolidated Dropdown Menu + Close)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            // Quick Direct Button for Pin / Unpin Terminal
+            IconButton(
+                onClick = onTogglePinToScreen,
+                modifier = Modifier
+                    .size(32.dp)
+                    .testTag("terminal_header_pin_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.PushPin,
+                    contentDescription = if (isPinnedToScreen) "Unpin Terminal" else "Pin Terminal to Screen",
+                    tint = if (isPinnedToScreen) Color(0xFF38BDF8) else TermTextSecondary,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+
+            // Button for swiping/swapping the position between suggestions chip and terminal or moving down/up
+            IconButton(
+                onClick = onToggleSwapPosition,
+                modifier = Modifier
+                    .size(32.dp)
+                    .testTag("terminal_swap_position_btn")
+            ) {
+                val icon = if (isPinnedToScreen) {
+                    if (isSwappedPosition) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward
+                } else {
+                    Icons.Rounded.SwapVert
+                }
+                val desc = if (isPinnedToScreen) {
+                    if (isSwappedPosition) "Move Terminal Up (Top Split)" else "Move Terminal Down (Bottom Split)"
+                } else {
+                    if (isSwappedPosition) "Restore Position (Default: Chip Top, Terminal Bottom)" else "Swap Position (Terminal Top, Chip Bottom)"
+                }
+                Icon(
+                    imageVector = icon,
+                    contentDescription = desc,
+                    tint = if (isSwappedPosition) Color(0xFF38BDF8) else TermTextSecondary,
                     modifier = Modifier.size(18.dp)
+                )
+            }
+
+            // Single Drop-Down Menu housing: Full Screen, Adjust Height, Pin to Screen, Clear Chat
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("terminal_more_menu_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "Terminal Menu",
+                        tint = if (isPinnedToScreen) Color(0xFF38BDF8) else TermTextPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    modifier = Modifier
+                        .background(Color(0xFF161B22))
+                        .border(1.dp, Color(0xFF30363D), RoundedCornerShape(8.dp))
+                ) {
+                    // 0. Conversation History
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = "Conversation History",
+                                    color = Color(0xFFE6EDF6),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "History of all tasks, agent trees & dialogue",
+                                    color = Color(0xFF8B949E),
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.History,
+                                contentDescription = null,
+                                tint = TermPromptCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onOpenConversationHistory()
+                        },
+                        modifier = Modifier.testTag("terminal_menu_conversation_history")
+                    )
+
+                    HorizontalDivider(color = Color(0xFF21262D), thickness = 0.5.dp)
+
+                    // 1. Pin to Screen (Half Screen Split) - simultaneous interaction with website
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = if (isPinnedToScreen) "Unpin from Screen" else "Pin to Screen (50% Split)",
+                                    color = Color(0xFFE6EDF6),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = if (isPinnedToScreen) "Simultaneous web browsing active" else "Pin half-screen & interact simultaneously",
+                                    color = if (isPinnedToScreen) Color(0xFF38BDF8) else Color(0xFF8B949E),
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.PushPin,
+                                contentDescription = null,
+                                tint = if (isPinnedToScreen) Color(0xFF38BDF8) else Color(0xFF8E9BAE),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (isPinnedToScreen) {
+                                Text(
+                                    text = "PINNED",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            onTogglePinToScreen()
+                        },
+                        modifier = Modifier
+                            .testTag("terminal_pin_toggle_btn")
+                            .testTag("terminal_menu_pin_screen")
+                    )
+
+                    // 1b. Move Terminal Down / Up (when pinned)
+                    if (isPinnedToScreen) {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = if (isSwappedPosition) "Move Terminal Up (Top Split)" else "Move Terminal Down (Bottom Split)",
+                                        color = Color(0xFFE6EDF6),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = if (isSwappedPosition) "Position terminal at top of screen" else "Position terminal at bottom of screen",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 10.5.sp
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (isSwappedPosition) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward,
+                                    contentDescription = null,
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onToggleSwapPosition()
+                            },
+                            modifier = Modifier.testTag("terminal_menu_move_position")
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0xFF21262D), thickness = 0.5.dp)
+
+                    // 2. Adjust Height
+                    if (!isFullScreen) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Adjust Height (${(terminalHeightFraction * 100).toInt()}%)",
+                                    color = Color(0xFFE6EDF6),
+                                    fontSize = 13.sp
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Height,
+                                    contentDescription = null,
+                                    tint = TermPromptGreen,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onAdjustHeight()
+                            },
+                            modifier = Modifier
+                                .testTag("terminal_adjust_height_btn")
+                                .testTag("terminal_menu_adjust_height")
+                        )
+                    }
+
+                    // 3. Full Screen / Dock Toggle
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = if (isFullScreen) "Dock Terminal" else "Full Screen Mode",
+                                color = Color(0xFFE6EDF6),
+                                fontSize = 13.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isFullScreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                                contentDescription = null,
+                                tint = TermPromptCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onToggleFullScreen()
+                        },
+                        modifier = Modifier
+                            .testTag("terminal_fullscreen_toggle_btn")
+                            .testTag("terminal_menu_fullscreen")
+                    )
+
+                    // 4. Clear Chat / Screen
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "Clear Chat / Screen",
+                                color = Color(0xFFEF4444),
+                                fontSize = 13.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteSweep,
+                                contentDescription = null,
+                                tint = Color(0xFFEF4444),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onClearScreen()
+                        },
+                        modifier = Modifier
+                            .testTag("terminal_clear_btn")
+                            .testTag("terminal_menu_clear_chat")
+                    )
+
+                    HorizontalDivider(color = Color(0xFF21262D), thickness = 0.5.dp)
+
+                    // 5. Swap Suggestions & Terminal Position
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = if (isSwappedPosition) "Restore Default (Chip on Top, Terminal Bottom)" else "Swap Position (Terminal on Top, Chip Bottom)",
+                                color = Color(0xFFE6EDF6),
+                                fontSize = 13.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.SwapVert,
+                                contentDescription = null,
+                                tint = Color(0xFFFBBF24),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onToggleSwapPosition()
+                        },
+                        modifier = Modifier.testTag("terminal_menu_swap_position")
+                    )
+                }
+            }
+
+            // Close button
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier
+                    .size(32.dp)
+                    .testTag("terminal_close_btn")
+            ) {
+                Icon(
+                    imageVector = if (isFullScreen) Icons.Rounded.Close else Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = "Close Terminal",
+                    tint = TermTextPrimary,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
     }
 }
 
+data class TerminalCommandBlock(
+    val commandLine: TerminalLine?,
+    val actionLines: List<TerminalLine>
+)
+
 @Composable
 private fun TerminalLineItem(
     line: TerminalLine,
     onCopy: () -> Unit
 ) {
-    val isImage = line.type == TerminalLineType.IMAGE_PREVIEW ||
-            line.imageUri != null ||
-            (line.fileMimeType?.startsWith("image/", ignoreCase = true) == true)
-
-    if (isImage) {
-        TerminalImagePreviewCard(line = line, onCopy = onCopy)
-        return
-    }
-
     val color = when (line.type) {
         TerminalLineType.COMMAND -> TermPromptCyan
         TerminalLineType.OUTPUT -> TermTextPrimary
@@ -200,13 +2535,11 @@ private fun TerminalLineItem(
         TerminalLineType.WARNING -> TermTextWarning
         TerminalLineType.SYSTEM -> TermTextSecondary
         TerminalLineType.AI_RESPONSE -> Color(0xFFC9D1D9)
-        TerminalLineType.AGENT_PLAN -> Color(0xFFC084FC)
-        TerminalLineType.AGENT_STEP -> Color(0xFF38BDF8)
-        TerminalLineType.AGENT_THOUGHT -> Color(0xFFFBBF24)
-        TerminalLineType.AGENT_TOOL -> Color(0xFF34D399)
-        TerminalLineType.EXPANDABLE_TASK -> Color(0xFFA855F7)
-        TerminalLineType.IMAGE_PREVIEW -> Color(0xFF10B981)
-        TerminalLineType.FILE_PREVIEW -> Color(0xFF38BDF8)
+        TerminalLineType.AGENT_PLAN -> Color(0xFFC084FC) // Bright Purple
+        TerminalLineType.AGENT_STEP -> Color(0xFF38BDF8) // Cyan
+        TerminalLineType.AGENT_THOUGHT -> Color(0xFFFBBF24) // Amber
+        TerminalLineType.AGENT_TOOL -> Color(0xFF34D399) // Emerald
+        TerminalLineType.EXPANDABLE_TASK -> Color(0xFFA855F7) // Purple
     }
 
     Column(
@@ -222,319 +2555,341 @@ private fun TerminalLineItem(
             lineHeight = 17.sp,
             modifier = Modifier.fillMaxWidth()
         )
+
+        if (line.imageUri != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = Color(0xFF0F172A),
+                border = BorderStroke(1.dp, Color(0xFF334155)),
+                modifier = Modifier
+                    .widthIn(max = 240.dp)
+                    .clip(RoundedCornerShape(6.dp))
+            ) {
+                Column(modifier = Modifier.padding(6.dp)) {
+                    AsyncImage(
+                        model = line.imageUri,
+                        contentDescription = "Terminal Image Attachment",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 90.dp, max = 160.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "📷 ${android.net.Uri.parse(line.imageUri).lastPathSegment ?: "image.jpg"}",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        color = Color(0xFF94A3B8),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * User Input Item: Renders the user input command line with a right-direction
+ * expandable and collapsible icon next to it, allowing the subsequent action logs to expand and collapse.
+ */
+@Composable
+private fun UserInputCommandItem(
+    commandLine: TerminalLine,
+    actionCount: Int,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onCopy: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = if (isExpanded) Color(0xFF0D121B) else Color(0xFF161B22),
+        border = BorderStroke(
+            0.5.dp,
+            if (isExpanded) TermPromptCyan.copy(alpha = 0.35f) else Color(0xFF30363D)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { if (actionCount > 0) onToggleExpand() else onCopy() }
+            .testTag("user_input_${commandLine.id}")
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = commandLine.text,
+                    color = TermPromptCyan,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 17.sp,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Right-direction expandable and collapsible icon next to user input
+                if (actionCount > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color = if (isExpanded) TermPromptCyan.copy(alpha = 0.15f) else Color(0xFF21262D),
+                        border = BorderStroke(0.5.dp, if (isExpanded) TermPromptCyan.copy(alpha = 0.5f) else Color(0xFF30363D)),
+                        modifier = Modifier
+                            .clickable { onToggleExpand() }
+                            .testTag("user_input_toggle_${commandLine.id}")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "$actionCount actions",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isExpanded) TermPromptCyan else Color(0xFF8B949E)
+                            )
+                            // Right direction chevron icon
+                            Icon(
+                                imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = if (isExpanded) "Collapse Action Logs" else "Expand Action Logs",
+                                tint = if (isExpanded) TermPromptCyan else Color(0xFF8B949E),
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (commandLine.imageUri != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF0F172A),
+                    border = BorderStroke(1.dp, Color(0xFF334155)),
+                    modifier = Modifier
+                        .widthIn(max = 240.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                ) {
+                    Column(modifier = Modifier.padding(6.dp)) {
+                        AsyncImage(
+                            model = commandLine.imageUri,
+                            contentDescription = "User Attached Image",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 90.dp, max = 160.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "📷 ${android.net.Uri.parse(commandLine.imageUri).lastPathSegment ?: "attached_image.jpg"}",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = Color(0xFF38BDF8),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun TerminalImagePreviewCard(
-    line: TerminalLine,
-    onCopy: () -> Unit
+private fun TermuxAccessoryBar(
+    onKey: (String) -> Unit
 ) {
-    val context = LocalContext.current
-    var showDialog by remember { mutableStateOf(false) }
+    val keys = listOf(
+        "agent", "/on", "/off", "voice", "text", "groups", "sandbox", "ls", "cd", "cat", "tabs", "ESC", "TAB", "↑", "↓", "/", "-", "~", "|", ":", "$", "clear"
+    )
 
-    val imageModel = line.imageUri ?: line.fileUri ?: ""
-    val fileName = line.fileName ?: "image.png"
-    val mimeType = line.fileMimeType ?: "image/png"
-    val badge = when {
-        mimeType.contains("png", true) -> "PNG"
-        mimeType.contains("jpeg", true) || mimeType.contains("jpg", true) -> "JPEG"
-        mimeType.contains("webp", true) -> "WEBP"
-        mimeType.contains("gif", true) -> "GIF"
-        mimeType.contains("svg", true) -> "SVG"
-        else -> mimeType.substringAfter("/").uppercase()
-    }
-    val dimensions = if ((line.imageWidth ?: 0) > 0 && (line.imageHeight ?: 0) > 0) {
-        "${line.imageWidth} × ${line.imageHeight}"
-    } else {
-        "1280 × 720"
-    }
-    val sizeText = formatBytesInTerminal(line.fileSize ?: 245000L)
-
-    val imageRequest = remember(imageModel) {
-        coil.request.ImageRequest.Builder(context)
-            .data(imageModel)
-            .decoderFactory(coil.decode.SvgDecoder.Factory())
-            .crossfade(true)
-            .build()
-    }
-
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .clickable { onCopy() }
-    ) {
-        if (line.text.isNotBlank() && !line.text.trim().startsWith("{")) {
-            Text(
-                text = line.text,
-                color = TermTextSuccess,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.5.sp,
-                lineHeight = 17.sp,
-                modifier = Modifier.padding(bottom = 6.dp)
+            .background(Color(0xFF090D14))
+            .border(
+                width = 1.dp,
+                color = Color(0xFF1E2636)
             )
-        }
-
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = Color(0xFF0F172A),
-            border = BorderStroke(1.dp, Color(0xFF334155)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 520.dp)
-                .clip(RoundedCornerShape(12.dp))
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                // Title Row
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Success",
-                        tint = Color(0xFF10B981),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Received $fileName",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFF8FAFC),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFF1E293B)
-                    ) {
-                        Text(
-                            text = badge,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF38BDF8),
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Image Preview Frame
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp, max = 280.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF020617))
-                        .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
-                        .clickable { showDialog = true }
-                ) {
-                    AsyncImage(
-                        model = imageRequest,
-                        contentDescription = fileName,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 280.dp)
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                            .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.ZoomIn,
-                                contentDescription = "Enlarge",
-                                tint = Color.White,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Enlarge",
-                                fontSize = 10.sp,
-                                color = Color.White,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // File Subtext Metadata
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "$badge • $dimensions • $sizeText",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        color = Color(0xFF94A3B8)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = Color(0xFF1E293B))
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Action Toolbar
-                Row(
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    TextButton(
-                        onClick = { showDialog = true },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Icon(Icons.Default.Visibility, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Open", color = Color(0xFF38BDF8), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    }
-
-                    TextButton(
-                        onClick = {
-                            Toast.makeText(context, "Saved to ~/Downloads/$fileName", Toast.LENGTH_SHORT).show()
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Icon(Icons.Default.DownloadDone, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Save", color = Color(0xFF34D399), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    }
-
-                    TextButton(
-                        onClick = {
-                            try {
-                                val uri = android.net.Uri.parse(imageModel)
-                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(uri, mimeType)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "File path: ~/Downloads/$fileName", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Download", color = Color(0xFFFBBF24), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    }
-
-                    TextButton(
-                        onClick = {
-                            try {
-                                val uri = android.net.Uri.parse(imageModel)
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = mimeType
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share Image"))
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Sharing unavailable: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null, tint = Color(0xFFA855F7), modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Share", color = Color(0xFFA855F7), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    }
-                }
-            }
-        }
-    }
-
-    if (showDialog) {
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { showDialog = false },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Box(
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 6.dp, vertical = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        keys.forEach { key ->
+            Surface(
+                shape = RoundedCornerShape(5.dp),
+                color = Color(0xFF161B22),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D)),
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.94f))
-                    .padding(16.dp)
+                    .clickable { onKey(key) }
+                    .testTag("termux_key_$key")
             ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp)
-                    ) {
-                        Text(
-                            text = fileName,
-                            color = Color.White,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "$badge • $dimensions",
-                            color = Color(0xFF94A3B8),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(horizontal = 8.dp)
-                        )
-                        IconButton(onClick = { showDialog = false }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                        }
-                    }
-
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                    ) {
-                        AsyncImage(
-                            model = imageRequest,
-                            contentDescription = fileName,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Button(
-                        onClick = { showDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155))
-                    ) {
-                        Text("Close Viewer", color = Color.White, fontFamily = FontFamily.Monospace)
-                    }
-                }
+                Text(
+                    text = key,
+                    color = if (key in listOf("ESC", "TAB", "↑", "↓", "clear")) TermPromptCyan else TermTextPrimary,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
+                )
             }
         }
     }
 }
 
-private fun formatBytesInTerminal(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val kb = bytes / 1024.0
-    if (kb < 1024) return String.format(java.util.Locale.US, "%.0f KB", kb)
-    val mb = kb / 1024.0
-    return String.format(java.util.Locale.US, "%.1f MB", mb)
+private fun createInitialBanner(bridgeStatus: String = "IDLE", isBridgeSuccess: Boolean = false, isLogMode: Boolean = false): List<TerminalLine> {
+    val lines = mutableListOf<TerminalLine>()
+    lines.add(
+        TerminalLine(
+            text = """
+================================================================
+ GVONE UNIVERSAL BROWSER CLI [v2.4] - aarch64-linux-android
+ Built-in Centralized Command Engine & Browser Shell
+ Type 'help' for command manual | 'cns' for neural dashboard
+================================================================
+            """.trimIndent(),
+            type = TerminalLineType.SYSTEM
+        )
+    )
+    lines.add(
+        TerminalLine(
+            text = "Connected to Browser Core. Address bar & command dispatcher ready.",
+            type = TerminalLineType.INFO
+        )
+    )
+    if (isLogMode) {
+        lines.add(
+            TerminalLine(
+                text = "Bridge Status: $bridgeStatus (" + (if (isBridgeSuccess) "SUCCESSFUL - Connected" else "NOT CONNECTED") + ")",
+                type = if (isBridgeSuccess) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+            )
+        )
+    }
+    lines.add(
+        TerminalLine(
+            text = "── RECENT CONVERSATIONS (3-Level Expandable Stream Log) ──",
+            type = TerminalLineType.SYSTEM
+        )
+    )
+
+    // Seed the conversation tasks as live expandable blocks directly in the stream
+    ConversationTreeManager.global.tasks.value.forEach { task ->
+        lines.add(
+            TerminalLine(
+                text = task.title,
+                type = TerminalLineType.EXPANDABLE_TASK,
+                taskId = task.id
+            )
+        )
+    }
+
+    lines.add(
+        TerminalLine(
+            text = "💡 Tap any [TASK] above to expand Agents (Level 2) and Steps/Tools (Level 3).",
+            type = TerminalLineType.INFO
+        )
+    )
+
+    return lines
+}
+
+private fun generateHelpOutput(commands: List<CustomCommandEntity>): List<TerminalLine> {
+    val lines = mutableListOf<TerminalLine>()
+    lines.add(TerminalLine("--- GVONE COMMAND ENGINE MANUAL ---", TerminalLineType.SYSTEM))
+    lines.add(TerminalLine("Syntax: <command> [arguments...] or /<command> [arguments...]", TerminalLineType.INFO))
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[1] TERMINAL & SYSTEM UTILITIES", TerminalLineType.SUCCESS))
+    lines.add(TerminalLine("  help, ?              Display this manual", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  height [50-98|full]  Adjust or increase docked terminal height", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  clear, cls           Clear terminal screen", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  bridge               Check Web App Bridge status report", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  bridge website       Toggle 'Apply Bridge to Website'", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  bridge all           Toggle 'General Apply Bridge to All' (Web, APIs & Tasks)", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  addressbar           Check address bar stream link status", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  history              Show recently executed commands", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  tabs, lstabs         List all browser tabs with index and URLs", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  tab <index|name>     Switch active browser tab", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  newtab [-p] [url]    Open new regular or private tab", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  closetab [index]     Close current or specified tab", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  url [address]        Navigate to URL or print current URL", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  tor [on|off|status]  Toggle or inspect Tor Onion Shield", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  desktop              Toggle desktop mode for webpage", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  js <expression>      Evaluate JavaScript in webpage context", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  ai <prompt>          Query GVONE AI Q&A directly", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  ping <host>          Test network latency", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  whoami, date, uname  Terminal system information", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  exit, quit           Close terminal interface", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[2] AGENTIC RUNTIME (ChatGPT Atlas, Comet, Dia)", TerminalLineType.SUCCESS))
+    lines.add(TerminalLine("  /agent [goal]        Execute autonomous multi-step agentic goal", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /agent on|off        Toggle persistent agentic input prompt", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /agent persona <p>   Switch persona: atlas, comet, dia, auto", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /agent status        Inspect active agent runtime, sandbox group & tools", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /organize            Auto-cluster all open tabs into domain cohorts", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[3] SANDBOX TAB GROUPS & COHORTS", TerminalLineType.SUCCESS))
+    lines.add(TerminalLine("  /groups, /tabgroups  List all tab groups with tab counts and colors", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /sandbox             Focus or create dedicated Sandbox tab group", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /group create <n> [c]Create tab cohort with custom name and color", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /group add <tab> <g> Move a tab into a group", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /group close <g>     Close tab group and all its member tabs", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /ungroup [tab]       Remove tab from its current group", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[4] SANDBOX FILESYSTEM & WORKSPACE", TerminalLineType.SUCCESS))
+    lines.add(TerminalLine("  pwd                  Print working directory", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  cd [path]            Change directory (~, .., relative, absolute)", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  ls, dir [-l] [path]  List files, permissions, sizes, and timestamps", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  cat <file>           Display content of file", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  touch <file>         Create empty file", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  mkdir <dir>          Create directory", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  rm [-r] <path>       Remove file or directory", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  tree [path]          Display ASCII directory tree structure", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  view, openfile <f>   Open sandbox file in a live browser tab", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  df, du               Inspect disk space & sandbox storage consumption", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[5] BROWSER DOM & WEB INSPECTION", TerminalLineType.SUCCESS))
+    lines.add(TerminalLine("  click <sel|text>     Click DOM element by CSS selector or button text", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  type <sel> <text>    Type text into input element", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  scroll <dir>         Scroll page: down, up, top, bottom", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  links                Extract all hyperlinks from active page", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  text, extract        Extract visible textual content from page", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  cookies              Inspect active site session cookies & Tor status", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[6] SEARCH COMMANDS", TerminalLineType.SUCCESS))
+    commands.filter { it.type == CommandType.SEARCH }.forEach { cmd ->
+        lines.add(TerminalLine("  ${cmd.command.padEnd(12)} ${cmd.name} (${cmd.description})", TerminalLineType.OUTPUT))
+    }
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[3] GVONE AI COMMANDS", TerminalLineType.SUCCESS))
+    commands.filter { it.type == CommandType.AI }.forEach { cmd ->
+        lines.add(TerminalLine("  ${cmd.command.padEnd(12)} ${cmd.name} (${cmd.description})", TerminalLineType.OUTPUT))
+    }
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[4] BROWSER & PAGE ACTIONS", TerminalLineType.SUCCESS))
+    commands.filter { it.type == CommandType.BROWSER_ACTION || it.type == CommandType.PAGE_ACTION }.forEach { cmd ->
+        lines.add(TerminalLine("  ${cmd.command.padEnd(12)} ${cmd.name} (${cmd.description})", TerminalLineType.OUTPUT))
+    }
+    lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+    lines.add(TerminalLine("[5] AUTOMATION COMMANDS", TerminalLineType.SUCCESS))
+    commands.filter { it.type == CommandType.AUTOMATION }.forEach { cmd ->
+        lines.add(TerminalLine("  ${cmd.command.padEnd(12)} ${cmd.name} (${cmd.description})", TerminalLineType.OUTPUT))
+    }
+    lines.add(TerminalLine("-----------------------------------", TerminalLineType.SYSTEM))
+
+    return lines
 }

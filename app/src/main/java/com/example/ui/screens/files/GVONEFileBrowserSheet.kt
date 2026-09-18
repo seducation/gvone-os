@@ -626,10 +626,8 @@ fun GVONEFileBrowserSheet(
                         fileSystem.createFolder(currentFolder, name)
                     } else {
                         val file = fileSystem.createFile(currentFolder, name, ext, content)
-                        if (file != null) {
-                            onOpenFileInTab(file, false)
-                            onDismiss()
-                        }
+                        onOpenFileInTab(file, false)
+                        onDismiss()
                     }
                     refreshList()
                 }

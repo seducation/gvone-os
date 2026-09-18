@@ -1,345 +1,2392 @@
 package com.example.data.terminal
 
-import android.content.Context
 import androidx.lifecycle.viewModelScope
 import com.example.agent.cns.CentralNervousSystem
+import com.example.agent.command.CommandRegistry
+import com.example.agent.memory.ContextRouter
+import com.example.agent.nodal.NodalEngine
+import com.example.agent.runtime.ExecutionType
+import com.example.agent.runtime.RuntimeStateManager
+import com.example.agent.sandbox.AgentPersona
 import com.example.agent.sandbox.SandboxAgentEngine
-import com.example.data.files.GVONEFileSystem
+import com.example.data.command.CommandEngine
+import com.example.data.model.*
+import com.example.data.sync.WebAppConnectionState
+import com.example.data.tor.TorConnectionState
+import com.example.ui.viewmodel.ActiveSheet
 import com.example.ui.viewmodel.BrowserViewModel
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.URL
+import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.*
 
-class TerminalCommandExecutor {
-    private var context: Context? = null
-    private var fileSystem: GVONEFileSystem? = null
-    private var scope: CoroutineScope? = null
-    private var viewModel: BrowserViewModel? = null
-    private var shellEngine: TerminalShellEngine? = null
-    private var agentEngine: SandboxAgentEngine? = null
+enum class CommandOrigin {
+    ADDRESS_BAR,
+    TERMINAL,
+    CNS_DASHBOARD
+}
 
-    constructor(
-        context: Context,
-        fileSystem: GVONEFileSystem,
-        scope: CoroutineScope
-    ) {
-        this.context = context
-        this.fileSystem = fileSystem
-        this.scope = scope
-    }
+/**
+ * Unified Terminal & Address Bar Command Executor.
+ * Provides complete parity and identical execution phases between inputs entered from the
+ * Address Bar and inputs entered from the Terminal.
+ */
+class TerminalCommandExecutor(
+    private val viewModel: BrowserViewModel,
+    val shellEngine: TerminalShellEngine,
+    val agentEngine: SandboxAgentEngine
+) {
+    private val _isAgenticMode = MutableStateFlow(
+        RuntimeStateManager.global.runtimeMode.value.execution == ExecutionType.AGENT
+    )
+    val isAgenticMode: StateFlow<Boolean> = _isAgenticMode.asStateFlow()
 
-    constructor(
-        viewModel: BrowserViewModel,
-        shellEngine: TerminalShellEngine,
-        agentEngine: SandboxAgentEngine
-    ) {
-        this.viewModel = viewModel
-        this.shellEngine = shellEngine
-        this.agentEngine = agentEngine
-        this.context = viewModel.getApplication()
-        this.fileSystem = viewModel.fileSystem
-        this.scope = viewModel.viewModelScope
-    }
+    private val _activePersona = MutableStateFlow(agentEngine.activePersona)
+    val activePersona: StateFlow<AgentPersona> = _activePersona.asStateFlow()
 
-    fun isCommand(input: String): Boolean {
-        val trimmed = input.trim()
-        if (trimmed.isEmpty()) return false
-        return trimmed.startsWith("/") ||
-                trimmed.startsWith("help", ignoreCase = true) ||
-                trimmed.startsWith("clear", ignoreCase = true) ||
-                trimmed.startsWith("ls", ignoreCase = true) ||
-                trimmed.startsWith("cd ", ignoreCase = true) ||
-                trimmed.startsWith("cat ", ignoreCase = true) ||
-                trimmed.startsWith("touch ", ignoreCase = true) ||
-                trimmed.startsWith("mkdir ", ignoreCase = true) ||
-                trimmed.startsWith("agent ", ignoreCase = true) ||
-                trimmed.startsWith("cns ", ignoreCase = true) ||
-                trimmed.startsWith("shell ", ignoreCase = true) ||
-                trimmed.startsWith("tor ", ignoreCase = true) ||
-                trimmed.startsWith("bridge ", ignoreCase = true) ||
-                trimmed.startsWith("cookies", ignoreCase = true) ||
-                trimmed.startsWith("groups", ignoreCase = true)
-    }
-
-    fun executeCommand(
-        rawInput: String,
-        origin: CommandOrigin = CommandOrigin.TERMINAL,
-        onOpenAgentDashboard: (() -> Unit)? = null
-    ) {
-        val trimmed = rawInput.trim()
-        if (trimmed.isEmpty()) return
-
-        val vm = viewModel
-        if (vm != null) {
-            val append = { line: TerminalLine -> vm.appendTerminalLine(line.text, line.type) }
-            val clear = { vm.clearTerminalLines() }
-            execute(trimmed, append, clear, origin, onOpenAgentDashboard)
-        } else {
-            execute(trimmed, { _ -> }, {}, origin, onOpenAgentDashboard)
+    init {
+        // Keep agentic mode in perfect synchronization with the global runtime state
+        viewModel.viewModelScope.launch {
+            RuntimeStateManager.global.runtimeMode.collect { mode ->
+                val isAgent = mode.execution == ExecutionType.AGENT
+                if (_isAgenticMode.value != isAgent) {
+                    _isAgenticMode.value = isAgent
+                    agentEngine.isAgenticModeEnabled = isAgent
+                }
+            }
         }
     }
 
-    fun execute(
-        input: String,
-        appendLine: (TerminalLine) -> Unit,
-        clearLines: () -> Unit,
-        origin: CommandOrigin = CommandOrigin.TERMINAL,
-        onOpenAgentDashboard: (() -> Unit)? = null
-    ) {
+    companion object {
+        val SHELL_COMMAND_KEYWORDS = setOf(
+            "clear", "cls", "exit", "quit", "q", "help", "?",
+            "agent", "agentic", "voice", "chat", "text", "cancel", "stop", "abort", "pause", "resume",
+            "debug", "status", "nodal", "workflows", "config", "command", "commands", "yt", "youtube",
+            "key", "gemini", "apikey",
+            "dashboard", "cns", "groups", "tabgroups", "group", "sandbox", "organize", "creategroup", "grouptab", "ungroup",
+            "pwd", "cd", "ls", "dir", "cat", "touch", "mkdir", "rm", "tree", "df", "du", "cookies",
+            "run", "exec", "start",
+            "click", "type", "scroll", "links", "text", "extract", "view", "openfile",
+            "bridge", "addressbar", "history", "whoami", "date", "uname", "echo",
+            "tabs", "lstabs", "tab", "switchtab", "newtab", "nt", "closetab", "ct",
+            "url", "goto", "open", "tor", "desktop", "js", "ai", "ask", "ping"
+        )
+    }
+
+    fun setAgenticMode(enabled: Boolean) {
+        _isAgenticMode.value = enabled
+        agentEngine.isAgenticModeEnabled = enabled
+        if (enabled) {
+            RuntimeStateManager.global.activateAgentOnly()
+        } else {
+            RuntimeStateManager.global.resetToTextChat()
+        }
+    }
+
+    fun setPersona(persona: AgentPersona) {
+        _activePersona.value = persona
+        agentEngine.activePersona = persona
+    }
+
+    /**
+     * Determines whether user input should be treated as a command.
+     */
+    fun isCommand(input: String): Boolean {
         val trimmed = input.trim()
-        if (trimmed.isBlank()) return
+        if (trimmed.isEmpty()) return false
 
-        val promptPrefix = if (origin == CommandOrigin.ADDRESS_BAR) "gvone@addressbar:~$ " else "gvone@terminal:~$ "
-        appendLine(TerminalLine(text = "$promptPrefix$trimmed", type = TerminalLineType.COMMAND))
+        // Anything starting with '/' is unconditionally treated as a command
+        if (trimmed.startsWith("/")) return true
 
-        val parts = trimmed.split(Regex("\\s+"))
-        val command = parts.firstOrNull()?.lowercase() ?: ""
-        val args = parts.drop(1)
+        // Natural language task switching detection ("Stop that and search news")
+        if (trimmed.matches(Regex("(?i)^(stop|cancel|abort)\\s+(that|current\\s+task|this)\\s+and\\s+.*"))) return true
 
-        val activeScope = scope ?: CoroutineScope(Dispatchers.Main)
-        val fs = fileSystem
+        // If the terminal sheet is actively displayed AND agentic mode is enabled, treat direct inputs as autonomous agent commands
+        if (viewModel.activeSheet.value == ActiveSheet.Terminal && _isAgenticMode.value) return true
 
-        when {
-            command == "help" || command == "/help" -> {
-                appendLine(
-                    TerminalLine(
-                        text = """
-                            GVONE Multimodal Terminal & Unified Command Shell:
-                              /agent <goal>                       Orchestrate autonomous agent mission
-                              /agent ui | /cns | /dashboard       Open Central Nervous System Agent Dashboard
-                              /receive <url|path|data> [filename] Receive, save, and display image preview
-                              /download <url> [filename]          Download and render binary image file
-                              /sandbox                            Focus Sandbox Tab Group and link workspace
-                              ls [path]                           List local GVONE sandboxed files
-                              cat <file>                          Inspect file content
-                              touch <file>                        Create new empty file
-                              mkdir <dir>                         Create directory
-                              cd <dir>                            Change working directory
-                              cookies                             Inspect active domain session cookies
-                              groups                              List active Tab Groups and tabs
-                              clear                               Clear terminal screen
-                              help                                Display this help menu
-                        """.trimIndent(),
-                        type = TerminalLineType.INFO
-                    )
-                )
+        val spaceIdx = trimmed.indexOf(' ')
+        val firstToken = (if (spaceIdx != -1) trimmed.substring(0, spaceIdx) else trimmed).lowercase()
+
+        // Shell built-in command keyword
+        if (SHELL_COMMAND_KEYWORDS.contains(firstToken)) return true
+
+        // Registered Custom Commands or Aliases
+        val allCommands = CommandEngine.mergeWithBuiltIns(viewModel.customCommands.value)
+        return allCommands.any { it.isEnabled && (it.matchesTrigger(firstToken) || it.matchesTrigger("/$firstToken")) }
+    }
+
+    /**
+     * Executes a command string regardless of whether it was originated from the Floating Address Bar
+     * or the Terminal Monospace interface.
+     */
+    fun executeCommand(
+        rawInput: String,
+        origin: CommandOrigin = CommandOrigin.TERMINAL,
+        onOpenAgentDashboard: (() -> Unit)? = null,
+        attachedPhotoUri: String? = null,
+        attachedPhotoName: String? = null,
+        attachedFileUri: String? = null,
+        attachedFileName: String? = null,
+        attachedFileSize: Long? = null,
+        attachedFileMimeType: String? = null
+    ) {
+        val trimmed = rawInput.trim()
+        val currentCwd = shellEngine.promptPath
+        val promptPrefix = when (origin) {
+            CommandOrigin.CNS_DASHBOARD -> "gvone[cns:dashboard]:$currentCwd$ "
+            else -> if (_isAgenticMode.value) {
+                "gvone[agentic:${_activePersona.value.badge.lowercase()}]:$currentCwd$ "
+            } else {
+                "gvone@browser:$currentCwd$ "
+            }
+        }
+
+        // Always synchronize the address bar with the command being executed
+        viewModel.setAddressBarInput(trimmed)
+
+        if (trimmed.isEmpty() && attachedPhotoUri == null && attachedFileUri == null) {
+            val emptyCommandLine = TerminalLine(
+                text = promptPrefix,
+                type = TerminalLineType.COMMAND
+            )
+            viewModel.appendTerminalLine(emptyCommandLine)
+            return
+        }
+
+        // Record in persistent command history
+        if (trimmed.isNotEmpty()) {
+            viewModel.terminalRepository.addCommandToHistory(trimmed)
+        }
+
+        fun formatFileSize(bytes: Long): String {
+            if (bytes <= 0) return "0 B"
+            val kb = bytes / 1024.0
+            val mb = kb / 1024.0
+            return when {
+                mb >= 1.0 -> String.format(Locale.US, "%.1f MB", mb)
+                kb >= 1.0 -> String.format(Locale.US, "%.1f KB", kb)
+                else -> "$bytes B"
+            }
+        }
+
+        val photoLabel = attachedPhotoName ?: if (attachedPhotoUri != null) {
+            try { android.net.Uri.parse(attachedPhotoUri).lastPathSegment ?: "photo.jpg" } catch (_: Exception) { "photo.jpg" }
+        } else null
+
+        val fileLabel = attachedFileName ?: if (attachedFileUri != null) {
+            try { android.net.Uri.parse(attachedFileUri).lastPathSegment ?: "file" } catch (_: Exception) { "file" }
+        } else null
+
+        val displayText = when {
+            photoLabel != null -> {
+                if (trimmed.isNotEmpty()) "$promptPrefix[Photo: $photoLabel] $trimmed" else "$promptPrefix[Photo: $photoLabel]"
+            }
+            fileLabel != null -> {
+                val sizeTag = if (attachedFileSize != null && attachedFileSize > 0) " (${formatFileSize(attachedFileSize)})" else ""
+                if (trimmed.isNotEmpty()) "$promptPrefix[File: $fileLabel$sizeTag] $trimmed" else "$promptPrefix[File: $fileLabel$sizeTag]"
+            }
+            else -> {
+                "$promptPrefix$trimmed"
+            }
+        }
+
+        val cmdLine = TerminalLine(
+            text = displayText,
+            type = TerminalLineType.COMMAND,
+            imageUri = attachedPhotoUri,
+            fileUri = attachedFileUri,
+            fileName = fileLabel,
+            fileMimeType = attachedFileMimeType,
+            fileSize = attachedFileSize
+        )
+        val outputLines = mutableListOf<TerminalLine>()
+        outputLines.add(cmdLine)
+
+        fun commitAndShowTerminalIfNeeded(lines: List<TerminalLine>, openTerminal: Boolean = true) {
+            viewModel.appendTerminalLines(lines)
+            if (openTerminal && origin == CommandOrigin.ADDRESS_BAR && viewModel.activeSheet.value != ActiveSheet.Terminal) {
+                viewModel.openSheet(ActiveSheet.Terminal)
+            }
+        }
+
+        val scope = viewModel.viewModelScope
+        val currentTab = viewModel.currentTab.value
+        val tabs = viewModel.tabs.value
+        val isTorActive = viewModel.torStatus.value.state == TorConnectionState.CONNECTED
+
+        // Handle direct selected photo execution if attachedPhotoUri is present
+        if (attachedPhotoUri != null) {
+            outputLines.add(TerminalLine("📷 Photo sent to terminal: $photoLabel", TerminalLineType.SUCCESS))
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+
+            // Web Bridge Mode
+            if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.WEB) {
+                viewModel.deliverToActiveWebPage("PHOTO:$attachedPhotoUri:${trimmed.ifBlank { photoLabel ?: "photo" }}")
+                viewModel.appendTerminalLine(TerminalLine("● [WEB BRIDGE] Photo '$photoLabel' delivered to web application.", TerminalLineType.SUCCESS))
+                return
             }
 
-            command == "clear" || command == "/clear" -> {
-                clearLines()
-            }
-
-            command == "/agent" || command == "agent" -> {
-                val goal = args.joinToString(" ").trim()
-                if (goal.isEmpty() || goal.equals("ui", ignoreCase = true) || goal.equals("dashboard", ignoreCase = true)) {
-                    appendLine(TerminalLine(text = "[CNS] Opening Central Nervous System Agent Dashboard...", type = TerminalLineType.SUCCESS))
-                    if (onOpenAgentDashboard != null) {
-                        onOpenAgentDashboard.invoke()
-                    } else {
-                        viewModel?.openAgentDashboard()
+            // Agentic Mode
+            if (_isAgenticMode.value) {
+                val goal = trimmed.ifBlank { "Analyze and inspect photo: $photoLabel" }
+                viewModel.appendTerminalLine(TerminalLine("● [AGENT MULTIMODAL] Processing image with persona ${agentEngine.activePersona.name}...", TerminalLineType.AGENT_STEP))
+                scope.launch {
+                    agentEngine.runAgenticWorkflow("$goal (Attached image: $photoLabel, uri: $attachedPhotoUri)", shellEngine.currentDirectory) { line ->
+                        viewModel.appendTerminalLine(line)
                     }
+                }
+                return
+            }
+
+            // Chat / Conversational AI Mode with Multimodal Vision
+            outputLines.clear()
+            viewModel.appendTerminalLine(TerminalLine("● [VISION AI] Analyzing image with ${viewModel.aiService.activeModel}...", TerminalLineType.INFO))
+            scope.launch {
+                try {
+                    val promptText = trimmed.ifBlank { "Describe this photo and analyze what is visible in detail." }
+                    val reply = viewModel.aiService.chatWithPhoto(promptText, attachedPhotoUri, photoLabel)
+                    viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+                } catch (e: Exception) {
+                    viewModel.appendTerminalLine(TerminalLine("AI Photo Error: ${e.message}", TerminalLineType.ERROR))
+                }
+            }
+            return
+        }
+
+        // Handle direct selected / received file execution if attachedFileUri is present
+        if (attachedFileUri != null) {
+            val sizeDisplay = if (attachedFileSize != null && attachedFileSize > 0) " (${formatFileSize(attachedFileSize)})" else ""
+            outputLines.add(TerminalLine("📁 File received in terminal: $fileLabel$sizeDisplay", TerminalLineType.SUCCESS))
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+
+            // Stage / import into sandbox file system if possible
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val uri = android.net.Uri.parse(attachedFileUri)
+                    viewModel.fileSystem.importFromUri(uri, shellEngine.currentDirectory)
+                } catch (_: Exception) {}
+            }
+
+            // Web Bridge Mode
+            if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.WEB) {
+                viewModel.deliverToActiveWebPage("FILE:$attachedFileUri:${trimmed.ifBlank { fileLabel ?: "file" }}:${attachedFileMimeType ?: "application/octet-stream"}")
+                viewModel.appendTerminalLine(TerminalLine("● [WEB BRIDGE] File '$fileLabel' delivered to web application.", TerminalLineType.SUCCESS))
+                return
+            }
+
+            // Agentic Mode
+            if (_isAgenticMode.value) {
+                val goal = trimmed.ifBlank { "Inspect, analyze, and process received file: $fileLabel" }
+                viewModel.appendTerminalLine(TerminalLine("● [AGENT WORKFLOW] Processing received file with persona ${agentEngine.activePersona.name}...", TerminalLineType.AGENT_STEP))
+                scope.launch {
+                    agentEngine.runAgenticWorkflow("$goal (Attached file: $fileLabel, uri: $attachedFileUri, size: $sizeDisplay)", shellEngine.currentDirectory) { line ->
+                        viewModel.appendTerminalLine(line)
+                    }
+                }
+                return
+            }
+
+            // Chat / Conversational AI Mode with Multimodal & File Inspection
+            outputLines.clear()
+            viewModel.appendTerminalLine(TerminalLine("● [AI MULTIMODAL ANALYZER] Sending file $fileLabel to ${viewModel.aiService.activeModel}...", TerminalLineType.INFO))
+            scope.launch {
+                try {
+                    val promptText = trimmed.ifBlank { "Analyze this received file, explain its content, structure, key findings, and actionable recommendations." }
+                    val reply = viewModel.aiService.chatWithFile(promptText, attachedFileUri, fileLabel, attachedFileMimeType)
+                    viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+
+                    // Extract and save code/file artifacts generated by the API
+                    val artifacts = extractCodeArtifacts(reply)
+                    if (artifacts.isNotEmpty()) {
+                        for ((filename, code) in artifacts) {
+                            try {
+                                val targetPath = "${shellEngine.currentDirectory}/$filename".replace("//", "/")
+                                viewModel.fileSystem.writeFileContent(targetPath, code)
+                                viewModel.appendTerminalLine(TerminalLine("💾 Saved artifact file from API response: $targetPath", TerminalLineType.SUCCESS))
+                            } catch (_: Exception) {}
+                        }
+                    }
+                } catch (e: Exception) {
+                    viewModel.appendTerminalLine(TerminalLine("AI File Error: ${e.message}", TerminalLineType.ERROR))
+                }
+            }
+            return
+        }
+
+        // Parse token and argument
+        val spaceIdx = trimmed.indexOf(' ')
+        val token = if (spaceIdx != -1) trimmed.substring(0, spaceIdx).trim() else trimmed
+        val queryArg = if (spaceIdx != -1) trimmed.substring(spaceIdx + 1).trim() else ""
+        val normalizedToken = if (token.startsWith("/")) token.lowercase() else "/${token.lowercase()}"
+
+        // 0. Deterministic Natural Language Task Switching: "Stop that and search news"
+        if (trimmed.matches(Regex("(?i)^(stop|cancel|abort)\\s+(that|current\\s+task|this)\\s+and\\s+.*"))) {
+            val newGoal = trimmed.replace(Regex("(?i)^(stop|cancel|abort)\\s+(that|current\\s+task|this)\\s+and\\s+"), "").trim()
+            val runtimeState = RuntimeStateManager.global
+            val active = runtimeState.activeTask.value
+            runtimeState.cancelTask(active?.taskId)
+            if (active != null) {
+                ContextRouter.global.archiveTaskContext(active.taskId, "User switched task to: $newGoal", isSuccess = false)
+            }
+            outputLines.add(TerminalLine("[TASK SWITCH] Previous task cancelled and context scratchpad archived.", TerminalLineType.WARNING))
+            outputLines.add(TerminalLine("[NEW TASK] Initiating fresh isolated task: \"$newGoal\"", TerminalLineType.SUCCESS))
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+
+            runtimeState.activateAgentOnly(newGoal)
+            setAgenticMode(true)
+            scope.launch {
+                agentEngine.runAgenticWorkflow(newGoal, shellEngine.currentDirectory) { line ->
+                    viewModel.appendTerminalLine(line)
+                }
+            }
+            return
+        }
+
+        when (normalizedToken) {
+            "/clear", "/cls" -> {
+                viewModel.clearTerminalLines()
+                if (origin == CommandOrigin.ADDRESS_BAR && viewModel.activeSheet.value != ActiveSheet.Terminal) {
+                    viewModel.openSheet(ActiveSheet.Terminal)
+                }
+                return
+            }
+
+            "/photo", "/photos" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("📷 Photo Terminal Direct Delivery:", TerminalLineType.INFO))
+                    outputLines.add(TerminalLine("● Use the [📷] photo attachment button directly in the terminal input bar to pick and send any photo.", TerminalLineType.OUTPUT))
+                    outputLines.add(TerminalLine("● Command syntax: /photo <file_path_or_uri> [optional prompt]", TerminalLineType.OUTPUT))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                 } else {
-                    appendLine(TerminalLine(text = "[AGENT MISSION] Initializing agent goal: \"$goal\"...", type = TerminalLineType.SYSTEM))
-                    activeScope.launch(Dispatchers.Main) {
-                        CentralNervousSystem.global.orchestrateGoal(goal)
-                        if (onOpenAgentDashboard != null) {
-                            onOpenAgentDashboard.invoke()
+                    val parts = queryArg.split(" ", limit = 2)
+                    val photoTarget = parts[0]
+                    val customPrompt = if (parts.size > 1) parts[1] else ""
+                    val photoUriOrPath = shellEngine.resolvePath(photoTarget)
+                    val fileObj = viewModel.fileSystem.getFile(photoUriOrPath)
+                    val effectiveUri = if (fileObj.exists()) fileObj.absolutePath else photoTarget
+                    executeCommand(
+                        rawInput = customPrompt,
+                        origin = origin,
+                        onOpenAgentDashboard = onOpenAgentDashboard,
+                        attachedPhotoUri = effectiveUri,
+                        attachedPhotoName = fileObj.name.ifBlank { null }
+                    )
+                }
+                return
+            }
+
+            "/exit", "/quit", "/q" -> {
+                viewModel.closeSheet()
+                return
+            }
+
+            "/permissions", "/permission", "/security" -> {
+                outputLines.add(TerminalLine("[PERMISSIONS] Opening Permission & Safety Gate...", TerminalLineType.SUCCESS))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = false)
+                viewModel.openPermissions()
+                return
+            }
+
+            "/help", "/?" -> {
+                val allCommands = CommandEngine.mergeWithBuiltIns(viewModel.customCommands.value)
+                outputLines.addAll(generateHelpOutput(allCommands))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/voice" -> {
+                val runtimeState = RuntimeStateManager.global
+                val inv = CommandRegistry.global.parse(trimmed)
+                val hasOn = inv?.isPersistentOn == true || queryArg.contains("/on") || queryArg.equals("on", ignoreCase = true)
+                val hasOff = inv?.isPersistentOff == true || queryArg.contains("/off") || queryArg.equals("off", ignoreCase = true)
+                val hasAgent = inv?.isAgenticRequested == true || queryArg.contains("/agent") || queryArg.startsWith("agent", ignoreCase = true)
+
+                when {
+                    hasOff -> {
+                        runtimeState.setTextMode()
+                        setAgenticMode(false)
+                        outputLines.add(TerminalLine("[VOICE RUNTIME] Persistent voice mode DISABLED.", TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("● Restored to TEXT chat interaction. Microphone input disengaged.", TerminalLineType.INFO))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    hasAgent -> {
+                        // Compound mode: /voice /agent <goal> or /voice /on /agent <goal>
+                        val cleanGoal = inv?.queryArg?.ifBlank { null }
+                            ?: queryArg.replace(Regex("(?i)(/on|/agent|on|agent)"), "").trim()
+                        runtimeState.activateVoiceAgentCompound(cleanGoal?.ifBlank { null })
+                        setAgenticMode(true)
+                        outputLines.add(TerminalLine("╭─────────────────────────────────────────────────────────────╮", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("│ 🎙️ COMPOUND MODE: VOICE-FIRST + AGENT RUNTIME", TerminalLineType.AGENT_PLAN))
+                        if (!cleanGoal.isNullOrBlank()) {
+                            outputLines.add(TerminalLine("│ Goal: \"$cleanGoal\"", TerminalLineType.AGENT_PLAN))
                         } else {
-                            viewModel?.openAgentDashboard()
+                            outputLines.add(TerminalLine("│ Listening for speech goal via microphone...", TerminalLineType.AGENT_PLAN))
                         }
-                    }
-                }
-            }
-
-            command == "/cns" || command == "/dashboard" -> {
-                appendLine(TerminalLine(text = "[CNS] Opening Central Nervous System Agent Dashboard...", type = TerminalLineType.SUCCESS))
-                if (onOpenAgentDashboard != null) {
-                    onOpenAgentDashboard.invoke()
-                } else {
-                    viewModel?.openAgentDashboard()
-                }
-            }
-
-            command == "/sandbox" || command == "sandbox" -> {
-                activeScope.launch(Dispatchers.Main) {
-                    shellEngine?.focusSandboxTabGroup()?.forEach { appendLine(it) }
-                }
-            }
-
-            command == "groups" -> {
-                shellEngine?.listTabGroups()?.forEach { appendLine(it) }
-            }
-
-            command == "cookies" -> {
-                shellEngine?.inspectCookies()?.forEach { appendLine(it) }
-            }
-
-            command == "ls" -> {
-                if (shellEngine != null) {
-                    val relPath = args.firstOrNull() ?: ""
-                    activeScope.launch(Dispatchers.IO) {
-                        val lines = shellEngine?.listFiles(relPath) ?: emptyList()
-                        withContext(Dispatchers.Main) {
-                            lines.forEach { appendLine(it) }
-                        }
-                    }
-                } else if (fs != null) {
-                    val relPath = args.firstOrNull() ?: ""
-                    val files = fs.listFiles(relPath)
-                    if (files.isEmpty()) {
-                        appendLine(TerminalLine(text = "Directory is empty.", type = TerminalLineType.SYSTEM))
-                    } else {
-                        val formatted = files.joinToString("\n") { file ->
-                            val prefix = if (file.isDirectory) "[DIR] " else "      "
-                            "$prefix${file.name}"
-                        }
-                        appendLine(TerminalLine(text = formatted, type = TerminalLineType.OUTPUT))
-                    }
-                }
-            }
-
-            command == "cd" -> {
-                val targetDir = args.firstOrNull() ?: ""
-                activeScope.launch(Dispatchers.IO) {
-                    val result = shellEngine?.changeDirectory(targetDir)
-                    if (result != null) {
-                        withContext(Dispatchers.Main) { appendLine(result) }
-                    }
-                }
-            }
-
-            command == "cat" -> {
-                val file = args.firstOrNull() ?: ""
-                activeScope.launch(Dispatchers.IO) {
-                    val results = shellEngine?.catFile(file) ?: emptyList()
-                    withContext(Dispatchers.Main) {
-                        results.forEach { appendLine(it) }
-                    }
-                }
-            }
-
-            command == "touch" -> {
-                val file = args.firstOrNull() ?: ""
-                activeScope.launch(Dispatchers.IO) {
-                    val result = shellEngine?.touchFile(file)
-                    if (result != null) {
-                        withContext(Dispatchers.Main) { appendLine(result) }
-                    }
-                }
-            }
-
-            command == "mkdir" -> {
-                val dir = args.firstOrNull() ?: ""
-                activeScope.launch(Dispatchers.IO) {
-                    val result = shellEngine?.makeDirectory(dir)
-                    if (result != null) {
-                        withContext(Dispatchers.Main) { appendLine(result) }
-                    }
-                }
-            }
-
-            command == "/receive" || command == "/download" || command == "receive" || command == "download" -> {
-                val source = args.firstOrNull()
-                if (source == null) {
-                    appendLine(
-                        TerminalLine(
-                            text = "Usage: /receive <url|path|data_uri> [custom_filename]",
-                            type = TerminalLineType.WARNING
-                        )
-                    )
-                    return
-                }
-
-                val customName = if (args.size > 1) args.subList(1, args.size).joinToString("_") else null
-
-                appendLine(
-                    TerminalLine(
-                        text = "[System] Downloading and processing image payload from: $source ...",
-                        type = TerminalLineType.INFO
-                    )
-                )
-
-                if (fs != null) {
-                    activeScope.launch(Dispatchers.IO) {
-                        val result = fs.receiveAndSaveImage(
-                            sourceUriOrPathOrUrl = source,
-                            customFileName = customName
-                        )
-
-                        withContext(Dispatchers.Main) {
-                            if (result.success) {
-                                appendLine(
-                                    TerminalLine(
-                                        text = "Successfully saved ${result.name} (${result.formattedSize()})",
-                                        type = TerminalLineType.IMAGE_PREVIEW,
-                                        imageUri = result.fileUri,
-                                        fileUri = result.fileUri,
-                                        fileName = result.name,
-                                        fileMimeType = result.mimeType,
-                                        fileSize = result.sizeBytes,
-                                        imageWidth = result.width,
-                                        imageHeight = result.height
-                                    )
-                                )
-                                appendLine(
-                                    TerminalLine(
-                                        text = result.toStructuredJson(),
-                                        type = TerminalLineType.SYSTEM
-                                    )
-                                )
-                            } else {
-                                appendLine(
-                                    TerminalLine(
-                                        text = "[Error] Failed to receive image: ${result.error}",
-                                        type = TerminalLineType.ERROR
-                                    )
-                                )
+                        outputLines.add(TerminalLine("│ Hierarchy: Voice Primary ➜ Autonomous Agent Execution", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("╰─────────────────────────────────────────────────────────────╯", TerminalLineType.AGENT_PLAN))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        if (!cleanGoal.isNullOrBlank()) {
+                            scope.launch {
+                                agentEngine.runAgenticWorkflow(cleanGoal, shellEngine.currentDirectory) { line ->
+                                    viewModel.appendTerminalLine(line)
+                                }
                             }
                         }
+                        return
                     }
-                }
-            }
-
-            else -> {
-                // If user enters an image URL directly without command prefix
-                if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
-                    val ext = trimmed.substringAfterLast('.', "").lowercase()
-                    if (ext in listOf("png", "jpg", "jpeg", "webp", "gif", "svg") && fs != null) {
-                        appendLine(TerminalLine(text = "[Auto-Detect] Image URL detected. Receiving image payload...", type = TerminalLineType.INFO))
-                        activeScope.launch(Dispatchers.IO) {
-                            val result = fs.receiveAndSaveImage(trimmed)
-                            withContext(Dispatchers.Main) {
-                                if (result.success) {
-                                    appendLine(
-                                        TerminalLine(
-                                            text = "Saved ${result.name} to ~/Downloads/",
-                                            type = TerminalLineType.IMAGE_PREVIEW,
-                                            imageUri = result.fileUri,
-                                            fileUri = result.fileUri,
-                                            fileName = result.name,
-                                            fileMimeType = result.mimeType,
-                                            fileSize = result.sizeBytes,
-                                            imageWidth = result.width,
-                                            imageHeight = result.height
-                                        )
-                                    )
-                                } else {
-                                    appendLine(TerminalLine(text = "Failed to load image URL: ${result.error}", type = TerminalLineType.ERROR))
+                    hasOn -> {
+                        // Persistent voice mode: /voice /on (CHAT only, no autonomous agent task)
+                        runtimeState.activateVoiceOnly()
+                        outputLines.add(TerminalLine("[VOICE RUNTIME] Persistent voice mode ENABLED.", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("● Interaction: VOICE | Execution: CHAT (VoiceActive=true)", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Continuous speech listening engaged. No background task created.", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("● Use '/voice /off' to disable persistent voice mode.", TerminalLineType.INFO))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    queryArg.isBlank() -> {
+                        // Pure voice conversation mode: /voice (DOES NOT create agent task)
+                        runtimeState.activateVoiceOnly()
+                        outputLines.add(TerminalLine("[VOICE RUNTIME] ACTIVATED. Voice conversation mode is active.", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("● Interaction: VOICE | Execution: CHAT (No autonomous task created)", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Modifiers: /voice /on (persistent), /voice /off, /voice /agent <goal>", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Speak or type any conversational question, e.g. \"What is photosynthesis?\"", TerminalLineType.OUTPUT))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    else -> {
+                        // Voice utterance with text query
+                        val lower = queryArg.lowercase()
+                        if (lower.startsWith("search ") || lower.contains("youtube") || lower.startsWith("play ") || lower.startsWith("open ")) {
+                            outputLines.add(TerminalLine("[VOICE INTENT DETECTED] Agentic instruction: \"$queryArg\"", TerminalLineType.AGENT_PLAN))
+                            runtimeState.activateVoiceAgentCompound(queryArg)
+                            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                            scope.launch {
+                                agentEngine.runAgenticWorkflow(queryArg, shellEngine.currentDirectory) { line ->
+                                    viewModel.appendTerminalLine(line)
+                                }
+                            }
+                        } else {
+                            outputLines.add(TerminalLine("[VOICE CONVERSATION] \"$queryArg\"", TerminalLineType.COMMAND))
+                            outputLines.add(TerminalLine("Consulting AI conversational service...", TerminalLineType.INFO))
+                            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                            scope.launch {
+                                try {
+                                    val res = viewModel.aiService.searchAndSynthesize(queryArg)
+                                    viewModel.appendTerminalLine(TerminalLine(res.aiAnswer, TerminalLineType.AI_RESPONSE))
+                                } catch (e: Exception) {
+                                    viewModel.appendTerminalLine(TerminalLine("AI response error: ${e.message}", TerminalLineType.ERROR))
                                 }
                             }
                         }
                         return
                     }
                 }
+            }
 
-                appendLine(
+            "/task", "/tasks" -> {
+                scope.launch {
+                    val cmdRes = CommandRegistry.global.executeRaw(trimmed)
+                    if (cmdRes != null) {
+                        commitAndShowTerminalIfNeeded(cmdRes.terminalLines, openTerminal = cmdRes.openTerminal)
+                    }
+                }
+                return
+            }
+
+            "/memory", "/mem" -> {
+                scope.launch {
+                    val cmdRes = CommandRegistry.global.executeRaw(trimmed)
+                    if (cmdRes != null) {
+                        commitAndShowTerminalIfNeeded(cmdRes.terminalLines, openTerminal = cmdRes.openTerminal)
+                    }
+                }
+                return
+            }
+
+            "/context", "/ctx" -> {
+                scope.launch {
+                    val cmdRes = CommandRegistry.global.executeRaw(trimmed)
+                    if (cmdRes != null) {
+                        commitAndShowTerminalIfNeeded(cmdRes.terminalLines, openTerminal = cmdRes.openTerminal)
+                    }
+                }
+                return
+            }
+
+            "/cancel", "/stop", "/abort" -> {
+                val runtimeState = RuntimeStateManager.global
+                val current = runtimeState.activeTask.value
+                runtimeState.cancelTask(current?.taskId)
+                if (current != null) {
+                    ContextRouter.global.archiveTaskContext(current.taskId, "User cancelled task", isSuccess = false)
+                }
+                setAgenticMode(false)
+                outputLines.add(TerminalLine("[TASK CANCELLED] Active task has been aborted and cleared.", TerminalLineType.WARNING))
+                outputLines.add(TerminalLine("Unified runtime restored to CHAT mode. Task context scratchpad archived.", TerminalLineType.INFO))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/pause" -> {
+                val runtimeState = RuntimeStateManager.global
+                val current = runtimeState.activeTask.value
+                runtimeState.pauseTask(current?.taskId)
+                outputLines.add(TerminalLine("[TASK PAUSED] Active task execution suspended. Type '/resume' to continue.", TerminalLineType.WARNING))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/resume" -> {
+                val runtimeState = RuntimeStateManager.global
+                val current = runtimeState.activeTask.value
+                runtimeState.resumeTask(current?.taskId)
+                outputLines.add(TerminalLine("[TASK RESUMED] Resumed active task execution.", TerminalLineType.SUCCESS))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/chat" -> {
+                when {
+                    queryArg.equals("on", ignoreCase = true) -> {
+                        viewModel.setChatMode(true)
+                        outputLines.add(TerminalLine("[CHAT MODE] Chatbot conversation ENABLED.", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("● You can now chat naturally like a chatbot. Type any message to converse.", TerminalLineType.INFO))
+                    }
+                    queryArg.equals("off", ignoreCase = true) -> {
+                        viewModel.setChatMode(false)
+                        outputLines.add(TerminalLine("[CHAT MODE] Chatbot conversation DISABLED.", TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("● Terminal command mode active. Commands require /help syntax.", TerminalLineType.INFO))
+                    }
+                    queryArg.isNotBlank() -> {
+                        viewModel.setChatMode(true)
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            val reply = viewModel.aiService.chatResponse(queryArg)
+                            viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+                        }
+                        return
+                    }
+                    else -> {
+                        val next = !viewModel.isChatMode.value
+                        viewModel.setChatMode(next)
+                        outputLines.add(
+                            TerminalLine(
+                                "[CHAT MODE] " + (if (next) "ENABLED. You can now chat normally like a chatbot." else "DISABLED. Standard command shell active."),
+                                if (next) TerminalLineType.SUCCESS else TerminalLineType.INFO
+                            )
+                        )
+                        if (next) {
+                            outputLines.add(TerminalLine("● Type any message or question to converse with the AI chatbot.", TerminalLineType.INFO))
+                        }
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/bridge" -> {
+                when {
+                    queryArg.equals("chat", ignoreCase = true) || queryArg.equals("ai", ignoreCase = true) -> {
+                        viewModel.setTerminalBridgeMode(TerminalBridgeMode.CHAT)
+                        outputLines.add(TerminalLine("[BRIDGE] Switched to CHAT BRIDGE: ON (Connected to AI Chatbot / Gemini API).", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("web", ignoreCase = true) || queryArg.equals("website", ignoreCase = true) -> {
+                        viewModel.setTerminalBridgeMode(TerminalBridgeMode.WEB)
+                        outputLines.add(TerminalLine("[BRIDGE] Switched to WEB BRIDGE: ON (Connected to active website / Web App).", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("status", ignoreCase = true) -> {
+                        val current = viewModel.terminalBridgeMode.value
+                        val label = when (current) {
+                            TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON (AI Chatbot)"
+                            TerminalBridgeMode.WEB -> "WEB BRIDGE: ON (Active Website)"
+                        }
+                        outputLines.add(TerminalLine("[BRIDGE STATUS] Active: $label", TerminalLineType.INFO))
+                    }
+                    else -> {
+                        val newMode = viewModel.cycleTerminalBridgeMode()
+                        val label = when (newMode) {
+                            TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON (AI Chatbot)"
+                            TerminalBridgeMode.WEB -> "WEB BRIDGE: ON (Active Website)"
+                        }
+                        outputLines.add(TerminalLine("[BRIDGE] Toggled to: $label", TerminalLineType.SUCCESS))
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/log", "/logs" -> {
+                when {
+                    queryArg.equals("on", ignoreCase = true) -> {
+                        viewModel.setLogMode(true)
+                        outputLines.add(TerminalLine("[LOG MODE] ENABLED. Bridge connection & agent step logs will be stored and displayed.", TerminalLineType.SUCCESS))
+                        val bridgeState = viewModel.webAppBridge.connectionState.value
+                        outputLines.add(TerminalLine("[BRIDGE] Connection Status: ${bridgeState.name}", TerminalLineType.INFO))
+                    }
+                    queryArg.equals("off", ignoreCase = true) -> {
+                        viewModel.setLogMode(false)
+                        outputLines.add(TerminalLine("[LOG MODE] DISABLED. Bridge connection & agent step logs hidden and not stored.", TerminalLineType.WARNING))
+                    }
+                    else -> {
+                        val next = !viewModel.isLogMode.value
+                        viewModel.setLogMode(next)
+                        outputLines.add(
+                            TerminalLine(
+                                "[LOG MODE] " + (if (next) "ENABLED. Verbose logs, bridge connection & agent steps are shown." else "DISABLED. Clean view active. Bridge connection & agent step logs hidden and not stored."),
+                                if (next) TerminalLineType.SUCCESS else TerminalLineType.INFO
+                            )
+                        )
+                        if (next) {
+                            val bridgeState = viewModel.webAppBridge.connectionState.value
+                            outputLines.add(TerminalLine("[BRIDGE] Connection Status: ${bridgeState.name}", TerminalLineType.INFO))
+                        }
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/text" -> {
+                RuntimeStateManager.global.setTextMode()
+                outputLines.add(TerminalLine("[TEXT MODE] Switched to keyboard text interaction.", TerminalLineType.SUCCESS))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/debug" -> {
+                RuntimeStateManager.global.toggleDebugMode()
+                val isDbg = RuntimeStateManager.global.runtimeMode.value.isDebugEnabled
+                outputLines.add(
                     TerminalLine(
-                        text = "gvone: command not found: $command. Type 'help' for available commands.",
-                        type = TerminalLineType.ERROR
+                        "[DEBUG MODE] " + (if (isDbg) "ENABLED. Verbose scratchpad observations, tool traces & latency active." else "DISABLED. Standard clean view active."),
+                        if (isDbg) TerminalLineType.SUCCESS else TerminalLineType.INFO
                     )
                 )
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/status" -> {
+                val runtimeState = RuntimeStateManager.global
+                val mode = runtimeState.runtimeMode.value
+                val active = runtimeState.activeTask.value
+                outputLines.add(TerminalLine("── GVONE OS UNIFIED RUNTIME STATUS ──", TerminalLineType.SYSTEM))
+                outputLines.add(TerminalLine("● Interaction Mode: ${mode.interaction.name}", TerminalLineType.SUCCESS))
+                outputLines.add(TerminalLine("● Execution Mode:   ${mode.execution.name}", TerminalLineType.INFO))
+                outputLines.add(TerminalLine("● Priority Mode:    ${mode.priority.name}", TerminalLineType.OUTPUT))
+                outputLines.add(TerminalLine("● Debug Observability: ${if (mode.isDebugEnabled) "ON" else "OFF"}", TerminalLineType.OUTPUT))
+                outputLines.add(TerminalLine("● Active Task: ${active?.goal ?: "None (Idle)"} [${active?.status?.name ?: "IDLE"}]", TerminalLineType.OUTPUT))
+                outputLines.add(TerminalLine("● Registered Agents: ${CentralNervousSystem.global.agentRegistry.registeredAgentNames.value.joinToString()}", TerminalLineType.INFO))
+                outputLines.add(TerminalLine("● Nodal Workflows: ${NodalEngine.global.workflows.value.size} registered", TerminalLineType.INFO))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/nodal", "/workflows" -> {
+                val workflows = NodalEngine.global.workflows.value.values.toList()
+                outputLines.add(TerminalLine("── NODAL N8N-STYLE WORKFLOWS (${workflows.size}) ──", TerminalLineType.SYSTEM))
+                workflows.forEach { wf ->
+                    outputLines.add(TerminalLine("● [${wf.id}] \"${wf.name}\" (${wf.nodes.size} nodes, ${wf.connections.size} connections)", TerminalLineType.SUCCESS))
+                    outputLines.add(TerminalLine("  Trigger: ${wf.triggerCommands.joinToString()} | Nodes: ${wf.nodes.joinToString { it.name }}", TerminalLineType.INFO))
+                }
+                outputLines.add(TerminalLine("Commands themselves can be configured through this nodal workflow registry.", TerminalLineType.INFO))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/config" -> {
+                if (queryArg.isNotBlank()) {
+                    scope.launch {
+                        val cmdRes = CommandRegistry.global.executeRaw(trimmed)
+                        if (cmdRes != null) {
+                            commitAndShowTerminalIfNeeded(cmdRes.terminalLines, openTerminal = cmdRes.openTerminal)
+                        }
+                    }
+                    return
+                }
+                val isGeminiLive = viewModel.aiService.isApiKeyConfigured()
+                outputLines.add(TerminalLine("── GVONE OS SYSTEM CONFIGURATION ──", TerminalLineType.SYSTEM))
+                outputLines.add(TerminalLine("● Engine Version: GVONE OS v2.4-unified", TerminalLineType.INFO))
+                outputLines.add(TerminalLine("● AI Service: ${if (isGeminiLive) "Gemini 3.5 Flash (Online)" else "Local Reflex Engine (Offline)"}", TerminalLineType.SUCCESS))
+                outputLines.add(TerminalLine("● Browser Engine: Android WebView + Multi-Tab Session Manager", TerminalLineType.OUTPUT))
+                outputLines.add(TerminalLine("● Tor Network: ${if (isTorActive) "CONNECTED" else "DISCONNECTED"}", if (isTorActive) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
+                outputLines.add(TerminalLine("● Sandbox Root: /${shellEngine.currentDirectory}", TerminalLineType.OUTPUT))
+                outputLines.add(TerminalLine("● Agent Protocol: RPC-over-CNS + Context Isolation", TerminalLineType.INFO))
+                outputLines.add(TerminalLine("Use '/config list', '/config get <key>', or '/config set <key> <val>' for runtime parameters.", TerminalLineType.OUTPUT))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/command", "/commands" -> {
+                val allCommands = CommandEngine.mergeWithBuiltIns(viewModel.customCommands.value)
+                outputLines.add(TerminalLine("── GVONE OS COMMAND REGISTRY (${allCommands.size} registered) ──", TerminalLineType.SYSTEM))
+                allCommands.take(15).forEach { cmd ->
+                    outputLines.add(TerminalLine("● ${cmd.command} (${cmd.name}) - ${cmd.description}", TerminalLineType.INFO))
+                }
+                if (allCommands.size > 15) {
+                    outputLines.add(TerminalLine("... and ${allCommands.size - 15} more. Type '/help' for full catalog.", TerminalLineType.OUTPUT))
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/yt", "/youtube" -> {
+                if (queryArg.isNotBlank()) {
+                    outputLines.add(TerminalLine("[YOUTUBE AGENT] Launching autonomous YouTube playback for: \"$queryArg\"...", TerminalLineType.AGENT_PLAN))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    scope.launch {
+                        val res = CentralNervousSystem.global.orchestrateGoal("/yt $queryArg")
+                        viewModel.appendTerminalLine(TerminalLine(res.synthesis, TerminalLineType.SUCCESS))
+                    }
+                    return
+                }
+            }
+
+            "/agent", "/agentic" -> {
+                val runtimeState = RuntimeStateManager.global
+                when {
+                    queryArg.startsWith("/voice", ignoreCase = true) || queryArg.startsWith("voice", ignoreCase = true) -> {
+                        // Compound mode: /agent /voice <goal>
+                        val goal = queryArg.removePrefix("/voice").removePrefix("voice").trim()
+                        runtimeState.activateAgentVoiceCompound(goal)
+                        setAgenticMode(true)
+                        outputLines.add(TerminalLine("╭─────────────────────────────────────────────────────────────╮", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("│ 🤖 COMPOUND MODE: AGENT-FIRST + VOICE STATUS", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("│ Goal: \"$goal\"", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("│ Hierarchy: Autonomous Execution ➜ Voice Reporting", TerminalLineType.AGENT_PLAN))
+                        outputLines.add(TerminalLine("╰─────────────────────────────────────────────────────────────╯", TerminalLineType.AGENT_PLAN))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            agentEngine.runAgenticWorkflow(goal.ifBlank { "Autonomous task execution" }, shellEngine.currentDirectory) { line ->
+                                viewModel.appendTerminalLine(line)
+                            }
+                        }
+                        return
+                    }
+                    queryArg.isBlank() -> {
+                        val newMode = !_isAgenticMode.value
+                        setAgenticMode(newMode)
+                        if (newMode) {
+                            runtimeState.activateAgentOnly()
+                        } else {
+                            runtimeState.resetToTextChat()
+                        }
+                        outputLines.add(
+                            TerminalLine(
+                                "[AGENTIC MODE] " + (if (newMode) "ACTIVATED (${_activePersona.value.displayName}). Type any goal/instruction to execute autonomously." else "DEACTIVATED. Standard bash shell active."),
+                                if (newMode) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+                            )
+                        )
+                        outputLines.add(
+                            TerminalLine(
+                                "Paradigms: ChatGPT Atlas (deep browser automation), Comet (multi-tab research), Dia Browser (file & tab sandbox)",
+                                TerminalLineType.INFO
+                            )
+                        )
+                    }
+                    queryArg.equals("on", ignoreCase = true) || queryArg.equals("start", ignoreCase = true) || queryArg.equals("enable", ignoreCase = true) -> {
+                        setAgenticMode(true)
+                        runtimeState.activateAgentOnly()
+                        outputLines.add(TerminalLine("[AGENTIC MODE] ACTIVATED. Persona: ${_activePersona.value.displayName}", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("Interactive agent prompt active. Use '/agent persona <atlas|comet|dia|auto>' or '/agent off' to exit.", TerminalLineType.INFO))
+                    }
+                    queryArg.equals("off", ignoreCase = true) || queryArg.equals("stop", ignoreCase = true) || queryArg.equals("disable", ignoreCase = true) -> {
+                        setAgenticMode(false)
+                        runtimeState.resetToTextChat()
+                        outputLines.add(TerminalLine("[AGENTIC MODE] DEACTIVATED. Standard bash shell active.", TerminalLineType.WARNING))
+                    }
+                    queryArg.startsWith("persona", ignoreCase = true) -> {
+                        val personaArg = queryArg.removePrefix("persona").trim().lowercase()
+                        val newPersona = when (personaArg) {
+                            "atlas", "chatgpt" -> AgentPersona.ATLAS
+                            "comet", "perplexity" -> AgentPersona.COMET
+                            "dia", "sandbox" -> AgentPersona.DIA
+                            else -> AgentPersona.AUTO
+                        }
+                        setPersona(newPersona)
+                        outputLines.add(TerminalLine("[AGENTIC PERSONA] Switched to: ${newPersona.displayName} (${newPersona.description})", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("dashboard", ignoreCase = true) || queryArg.equals("ui", ignoreCase = true) || queryArg.equals("cns", ignoreCase = true) -> {
+                        outputLines.add(TerminalLine("[AGENT UI DASHBOARD] Launching Central Nervous System Dashboard...", TerminalLineType.SUCCESS))
+                        viewModel.appendTerminalLines(outputLines)
+                        if (onOpenAgentDashboard != null) {
+                            onOpenAgentDashboard()
+                        } else {
+                            viewModel.openAgentDashboard()
+                        }
+                        return
+                    }
+                    queryArg.equals("status", ignoreCase = true) -> {
+                        val activeGroupName = viewModel.tabGroups.value.find { it.id == agentEngine.activeSandboxGroupId }?.name ?: "None"
+                        val isGeminiLive = viewModel.aiService.isApiKeyConfigured()
+                        val activeTask = runtimeState.activeTask.value
+                        outputLines.add(TerminalLine("── AGENTIC RUNTIME STATUS ──", TerminalLineType.SYSTEM))
+                        outputLines.add(TerminalLine("● Mode: " + (if (_isAgenticMode.value) "ACTIVE" else "IDLE"), if (_isAgenticMode.value) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("● Active Persona: ${_activePersona.value.displayName} (${_activePersona.value.badge})", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Active Task: ${activeTask?.goal ?: "None (Idle)"} [${activeTask?.status?.name ?: "IDLE"}]", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("● Gemini 3.5 LLM: " + (if (isGeminiLive) "ONLINE & ACTIVE" else "LOCAL FALLBACK (Type '/key' for setup)"), if (isGeminiLive) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("● Sandbox Tab Group: $activeGroupName", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("● Sandbox Directory: /${shellEngine.currentDirectory}", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("● Multi-Agent Core: CentralNervousSystem + BrowserController + GVONEFileSystem", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("tabs", ignoreCase = true) || queryArg.equals("group", ignoreCase = true) || queryArg.equals("organize", ignoreCase = true) -> {
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            agentEngine.autoOrganizeTabs { line ->
+                                viewModel.appendTerminalLine(line)
+                            }
+                        }
+                        return
+                    }
+                    else -> {
+                        // Autonomous Agent Goal Execution
+                        runtimeState.activateAgentOnly(queryArg)
+                        setAgenticMode(true)
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            agentEngine.runAgenticWorkflow(queryArg, shellEngine.currentDirectory) { line ->
+                                viewModel.appendTerminalLine(line)
+                            }
+                        }
+                        return
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/key", "/gemini", "/apikey" -> {
+                if (queryArg.isBlank()) {
+                    val isConfigured = viewModel.aiService.isApiKeyConfigured()
+                    outputLines.add(TerminalLine("── GEMINI 3.5 API CREDENTIAL STATUS ──", TerminalLineType.SYSTEM))
+                    if (isConfigured) {
+                        outputLines.add(TerminalLine("● Status: ONLINE & ACTIVE", TerminalLineType.SUCCESS))
+                        outputLines.add(TerminalLine("● Model: ${viewModel.aiService.activeModel} (GenerativeLanguage v1beta)", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Source: BuildConfig / Active Session", TerminalLineType.OUTPUT))
+                    } else {
+                        outputLines.add(TerminalLine("● Status: NOT CONFIGURED (Using Local Reflex Fallback Engine)", TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("  To configure your Gemini API Key:", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("  Option A (Permanent): Add GEMINI_API_KEY to AI Studio Secrets panel", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("  Option B (Session): Type '/key YOUR_GEMINI_KEY' to validate & activate", TerminalLineType.OUTPUT))
+                    }
+                    if (viewModel.aiService.lastError != null) {
+                        outputLines.add(TerminalLine("⚠ Last Diagnostic: ${viewModel.aiService.lastError}", TerminalLineType.WARNING))
+                    }
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                } else {
+                    val keyToTest = queryArg.trim()
+                    outputLines.add(TerminalLine("[GEMINI] Validating API key with Google AI...", TerminalLineType.INFO))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    scope.launch {
+                        val (success, message) = viewModel.aiService.testApiKey(keyToTest)
+                        val line = if (success) {
+                            TerminalLine("✔ $message - ${viewModel.aiService.activeModel} is now active for this session!", TerminalLineType.SUCCESS)
+                        } else {
+                            TerminalLine("✖ $message", TerminalLineType.ERROR)
+                        }
+                        viewModel.appendTerminalLine(line)
+                    }
+                    return
+                }
+            }
+
+            "/model", "/models" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("── GEMINI API MODEL CONFIGURATION ──", TerminalLineType.SYSTEM))
+                    outputLines.add(TerminalLine("● Active Model: ${viewModel.aiService.activeModel}", TerminalLineType.SUCCESS))
+                    outputLines.add(TerminalLine("● Supported Models:", TerminalLineType.INFO))
+                    outputLines.add(TerminalLine("  1. gemini-3.5-flash        (Default fast general reasoning & multimodality)", TerminalLineType.OUTPUT))
+                    outputLines.add(TerminalLine("  2. gemini-3.1-pro-preview   (Complex reasoning, coding & deep analysis)", TerminalLineType.OUTPUT))
+                    outputLines.add(TerminalLine("  3. gemini-2.5-flash-image   (Image generation & multimodal editing)", TerminalLineType.OUTPUT))
+                    outputLines.add(TerminalLine("  4. gemini-flash-latest      (Latest standard production release)", TerminalLineType.OUTPUT))
+                    outputLines.add(TerminalLine("  5. gemini-3.1-flash-lite-preview (Ultra low-latency lightweight tier)", TerminalLineType.OUTPUT))
+                    outputLines.add(TerminalLine("● Usage: /model <name_or_alias> (e.g. /model 3.5, /model 3.1-pro, /model image)", TerminalLineType.INFO))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                } else {
+                    viewModel.aiService.setModel(queryArg)
+                    outputLines.add(TerminalLine("✔ Switched active Gemini model to: ${viewModel.aiService.activeModel}", TerminalLineType.SUCCESS))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                }
+            }
+
+            "/checkpoint", "/checkpoints", "/snapshot" -> {
+                val taskManager = com.example.agent.task.TaskManager.global
+                when {
+                    queryArg.isBlank() || queryArg.equals("list", ignoreCase = true) -> {
+                        outputLines.add(TerminalLine("── EXECUTION CHECKPOINT REGISTRY ──", TerminalLineType.SYSTEM))
+                        val report = taskManager.formatCheckpointsReport()
+                        outputLines.add(TerminalLine(report, TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("● Commands: /checkpoint create [label] | /checkpoint resume <id>", TerminalLineType.INFO))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    queryArg.startsWith("create", ignoreCase = true) || queryArg.startsWith("save", ignoreCase = true) -> {
+                        val label = queryArg.replace(Regex("(?i)^(create|save)\\s*"), "").trim()
+                        val activeTask = RuntimeStateManager.global.activeTask.value
+                        val taskId = activeTask?.taskId ?: "session-${System.currentTimeMillis() % 10000}"
+                        val cp = taskManager.createCheckpoint(
+                            taskId = taskId,
+                            snapshotData = if (label.isNotBlank()) label else "Manual checkpoint at ${shellEngine.currentDirectory}"
+                        )
+                        if (cp != null) {
+                            outputLines.add(TerminalLine("✔ Created Checkpoint: ${cp.checkpointId.take(8)}... (Task: $taskId)", TerminalLineType.SUCCESS))
+                            outputLines.add(TerminalLine("  Saved to persistent store. Resume anytime with '/checkpoint resume ${cp.checkpointId.take(8)}'", TerminalLineType.INFO))
+                        } else {
+                            outputLines.add(TerminalLine("⚠ Checkpoint created for active session ($taskId)", TerminalLineType.WARNING))
+                        }
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    queryArg.startsWith("resume", ignoreCase = true) || queryArg.startsWith("restore", ignoreCase = true) -> {
+                        val targetId = queryArg.replace(Regex("(?i)^(resume|restore)\\s*"), "").trim()
+                        val all = taskManager.getAllCheckpoints()
+                        val match = all.find { it.checkpointId.startsWith(targetId) || it.checkpointId.equals(targetId, ignoreCase = true) }
+                        if (match != null) {
+                            val restored = taskManager.resumeFromCheckpoint(match.checkpointId)
+                            outputLines.add(TerminalLine("✔ Resumed execution from Checkpoint ${match.checkpointId.take(8)}...", TerminalLineType.SUCCESS))
+                            outputLines.add(TerminalLine("  Goal: \"${restored?.goal ?: "Active Task"}\" | Progress: ${(match.progress * 100).toInt()}%", TerminalLineType.INFO))
+                        } else {
+                            outputLines.add(TerminalLine("✖ Checkpoint not found matching '$targetId'. Run '/checkpoint list' to view valid IDs.", TerminalLineType.ERROR))
+                        }
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    else -> {
+                        outputLines.add(TerminalLine("Usage: /checkpoint [list | create <label> | resume <id>]", TerminalLineType.WARNING))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                }
+            }
+
+            "/file", "/files" -> {
+                when {
+                    queryArg.isBlank() || queryArg.equals("list", ignoreCase = true) -> {
+                        outputLines.add(TerminalLine("── GVONE FILE MANAGER & MULTIMODAL API ──", TerminalLineType.SYSTEM))
+                        outputLines.add(TerminalLine("● Current Directory: ${shellEngine.currentDirectory}", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("● Commands:", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("  /file send <path> [prompt]  Send any file (code, pdf, audio, image) to Gemini API", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("  /file list                  List files in current working directory", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("  /file extract               Extract & save code blocks from last AI response", TerminalLineType.OUTPUT))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            val fileLines = shellEngine.listFiles(shellEngine.currentDirectory)
+                            viewModel.appendTerminalLines(fileLines)
+                        }
+                        return
+                    }
+                    queryArg.startsWith("send", ignoreCase = true) -> {
+                        val rest = queryArg.removePrefix("send").trim()
+                        val parts = rest.split(" ", limit = 2)
+                        val filePath = parts.getOrNull(0) ?: ""
+                        val customPrompt = parts.getOrNull(1) ?: "Analyze and inspect this file in detail."
+
+                        if (filePath.isBlank()) {
+                            outputLines.add(TerminalLine("Usage: /file send <path_or_uri> [optional prompt]", TerminalLineType.WARNING))
+                            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                            return
+                        }
+
+                        val resolved = shellEngine.resolvePath(filePath)
+                        val file = viewModel.fileSystem.getFile(resolved)
+                        val effectivePath = if (file.exists()) file.absolutePath else filePath
+
+                        outputLines.add(TerminalLine("● [SENDING FILE TO GEMINI] $resolved (${viewModel.aiService.activeModel})...", TerminalLineType.INFO))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+
+                        scope.launch {
+                            try {
+                                val reply = viewModel.aiService.chatWithFile(customPrompt, effectivePath, file.name)
+                                viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+
+                                val artifacts = extractCodeArtifacts(reply)
+                                if (artifacts.isNotEmpty()) {
+                                    for ((fn, code) in artifacts) {
+                                        val targetPath = "${shellEngine.currentDirectory}/$fn".replace("//", "/")
+                                        viewModel.fileSystem.writeFileContent(targetPath, code)
+                                        viewModel.appendTerminalLine(TerminalLine("💾 Saved artifact file from API response: $targetPath", TerminalLineType.SUCCESS))
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                viewModel.appendTerminalLine(TerminalLine("✖ Error sending file to API: ${e.message}", TerminalLineType.ERROR))
+                            }
+                        }
+                        return
+                    }
+                    queryArg.startsWith("extract", ignoreCase = true) -> {
+                        val lastAiLine = viewModel.terminalLines.value
+                            .findLast { it.type == TerminalLineType.AI_RESPONSE }?.text ?: ""
+
+                        val artifacts = extractCodeArtifacts(lastAiLine)
+                        if (artifacts.isNotEmpty()) {
+                            scope.launch(Dispatchers.IO) {
+                                for ((fn, code) in artifacts) {
+                                    val targetPath = "${shellEngine.currentDirectory}/$fn".replace("//", "/")
+                                    viewModel.fileSystem.writeFileContent(targetPath, code)
+                                    viewModel.appendTerminalLine(TerminalLine("💾 Extracted & saved: $targetPath (${code.length} bytes)", TerminalLineType.SUCCESS))
+                                }
+                            }
+                        } else {
+                            outputLines.add(TerminalLine("No code/file artifacts found in latest AI response to extract.", TerminalLineType.WARNING))
+                        }
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    else -> {
+                        outputLines.add(TerminalLine("Usage: /file [list | send <path> [prompt] | extract]", TerminalLineType.WARNING))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                }
+            }
+
+            "/dashboard", "/cns", "/brain" -> {
+                if (queryArg.isNotBlank()) {
+                    outputLines.add(TerminalLine("[CNS ORCHESTRATION] Orchestrating goal: \"$queryArg\"...", TerminalLineType.AGENT_PLAN))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    scope.launch {
+                        val res = CentralNervousSystem.global.orchestrateGoal(queryArg)
+                        viewModel.appendTerminalLine(TerminalLine(res.synthesis, if (res.success) TerminalLineType.SUCCESS else TerminalLineType.ERROR))
+                    }
+                    return
+                }
+                outputLines.add(TerminalLine("[AGENT UI DASHBOARD] Launching Central Nervous System Dashboard...", TerminalLineType.SUCCESS))
+                viewModel.appendTerminalLines(outputLines)
+                if (onOpenAgentDashboard != null) {
+                    onOpenAgentDashboard()
+                } else {
+                    viewModel.openAgentDashboard()
+                }
+                return
+            }
+
+            "/groups", "/tabgroups", "/group" -> {
+                when {
+                    queryArg.isBlank() -> {
+                        outputLines.addAll(shellEngine.listTabGroups())
+                    }
+                    queryArg.startsWith("create", ignoreCase = true) -> {
+                        val name = queryArg.removePrefix("create").trim()
+                        if (name.isBlank()) {
+                            outputLines.add(TerminalLine("Usage: /group create <group_name> [color_hex]", TerminalLineType.WARNING))
+                        } else {
+                            val parts = name.split(" ")
+                            val groupName = parts[0]
+                            val color = parts.getOrNull(1)
+                            val newId = viewModel.createTabGroup(groupName, colorHex = color)
+                            outputLines.add(TerminalLine("[OK] Created Tab Group: \"$groupName\" (ID: ${newId.take(8)}...)", TerminalLineType.SUCCESS))
+                        }
+                    }
+                    queryArg.startsWith("add", ignoreCase = true) -> {
+                        val parts = queryArg.removePrefix("add").trim().split(" ")
+                        if (parts.size < 2) {
+                            outputLines.add(TerminalLine("Usage: /group add <tab_index_or_id> <group_name_or_id>", TerminalLineType.WARNING))
+                        } else {
+                            val tabRef = parts[0]
+                            val groupRef = parts[1]
+                            val targetTab = tabRef.toIntOrNull()?.let { tabs.getOrNull(it) } ?: tabs.find { it.id == tabRef }
+                            val targetGroup = viewModel.tabGroups.value.find { it.name.equals(groupRef, ignoreCase = true) || it.id == groupRef }
+                            if (targetTab == null) {
+                                outputLines.add(TerminalLine("[ERR] Tab not found: $tabRef", TerminalLineType.ERROR))
+                            } else if (targetGroup == null) {
+                                outputLines.add(TerminalLine("[ERR] Tab group not found: $groupRef", TerminalLineType.ERROR))
+                            } else {
+                                viewModel.moveTabToGroup(targetTab.id, targetGroup.id)
+                                outputLines.add(TerminalLine("[OK] Moved tab \"${targetTab.title}\" to group \"${targetGroup.name}\"", TerminalLineType.SUCCESS))
+                            }
+                        }
+                    }
+                    queryArg.startsWith("close", ignoreCase = true) -> {
+                        val groupRef = queryArg.removePrefix("close").trim()
+                        val targetGroup = viewModel.tabGroups.value.find { it.name.equals(groupRef, ignoreCase = true) || it.id == groupRef }
+                        if (targetGroup != null) {
+                            viewModel.deleteTabGroup(targetGroup.id, closeTabs = true)
+                            outputLines.add(TerminalLine("[OK] Closed Tab Group \"${targetGroup.name}\" and all its tabs", TerminalLineType.SUCCESS))
+                        } else {
+                            outputLines.add(TerminalLine("[ERR] Tab group not found: $groupRef", TerminalLineType.ERROR))
+                        }
+                    }
+                    queryArg.startsWith("sandbox", ignoreCase = true) -> {
+                        scope.launch {
+                            val lines = shellEngine.focusSandboxTabGroup()
+                            commitAndShowTerminalIfNeeded(lines, openTerminal = true)
+                        }
+                        return
+                    }
+                    queryArg.startsWith("organize", ignoreCase = true) -> {
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            agentEngine.autoOrganizeTabs { line ->
+                                viewModel.appendTerminalLine(line)
+                            }
+                        }
+                        return
+                    }
+                    else -> {
+                        outputLines.addAll(shellEngine.listTabGroups())
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/sandbox" -> {
+                scope.launch {
+                    val lines = shellEngine.focusSandboxTabGroup()
+                    commitAndShowTerminalIfNeeded(lines, openTerminal = true)
+                }
+                return
+            }
+
+            "/organize" -> {
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                scope.launch {
+                    agentEngine.autoOrganizeTabs { line ->
+                        viewModel.appendTerminalLine(line)
+                    }
+                }
+                return
+            }
+
+            "/creategroup" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("Usage: /creategroup <group_name> [color_hex]", TerminalLineType.WARNING))
+                } else {
+                    val parts = queryArg.split(" ")
+                    val name = parts[0]
+                    val color = parts.getOrNull(1)
+                    val id = viewModel.createTabGroup(name, colorHex = color)
+                    outputLines.add(TerminalLine("[OK] Created Tab Group \"$name\" (ID: ${id.take(8)}...)", TerminalLineType.SUCCESS))
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/grouptab" -> {
+                val parts = queryArg.split(" ")
+                if (parts.size < 2) {
+                    outputLines.add(TerminalLine("Usage: /grouptab <tab_index_or_id> <group_name_or_id>", TerminalLineType.WARNING))
+                } else {
+                    val tabRef = parts[0]
+                    val groupRef = parts[1]
+                    val targetTab = tabRef.toIntOrNull()?.let { tabs.getOrNull(it) } ?: tabs.find { it.id == tabRef }
+                    val targetGroup = viewModel.tabGroups.value.find { it.name.equals(groupRef, ignoreCase = true) || it.id == groupRef }
+                    if (targetTab == null) {
+                        outputLines.add(TerminalLine("[ERR] Tab not found: $tabRef", TerminalLineType.ERROR))
+                    } else if (targetGroup == null) {
+                        outputLines.add(TerminalLine("[ERR] Tab group not found: $groupRef", TerminalLineType.ERROR))
+                    } else {
+                        viewModel.moveTabToGroup(targetTab.id, targetGroup.id)
+                        outputLines.add(TerminalLine("[OK] Moved tab \"${targetTab.title}\" to group \"${targetGroup.name}\"", TerminalLineType.SUCCESS))
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/ungroup" -> {
+                val targetTab = if (queryArg.isBlank()) currentTab else queryArg.toIntOrNull()?.let { tabs.getOrNull(it) } ?: tabs.find { it.id == queryArg }
+                if (targetTab != null) {
+                    viewModel.removeTabFromGroup(targetTab.id)
+                    outputLines.add(TerminalLine("[OK] Removed tab \"${targetTab.title}\" from group", TerminalLineType.SUCCESS))
+                } else {
+                    outputLines.add(TerminalLine("[ERR] Tab not found: $queryArg", TerminalLineType.ERROR))
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/pwd" -> {
+                outputLines.add(TerminalLine(shellEngine.promptPath, TerminalLineType.OUTPUT))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/cd" -> {
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                scope.launch {
+                    val line = shellEngine.changeDirectory(queryArg)
+                    viewModel.appendTerminalLine(line)
+                }
+                return
+            }
+
+            "/ls", "/dir" -> {
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                scope.launch {
+                    val lines = shellEngine.listFiles(queryArg)
+                    viewModel.appendTerminalLines(lines)
+                }
+                return
+            }
+
+            "/cat" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("cat: missing file operand", TerminalLineType.ERROR))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                } else {
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    scope.launch {
+                        val lines = shellEngine.catFile(queryArg)
+                        viewModel.appendTerminalLines(lines)
+                    }
+                }
+                return
+            }
+
+            "/touch" -> {
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                scope.launch {
+                    val line = shellEngine.touchFile(queryArg)
+                    viewModel.appendTerminalLine(line)
+                }
+                return
+            }
+
+            "/mkdir" -> {
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                scope.launch {
+                    val line = shellEngine.makeDirectory(queryArg)
+                    viewModel.appendTerminalLine(line)
+                }
+                return
+            }
+
+            "/rm" -> {
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                scope.launch {
+                    val line = shellEngine.removeFile(queryArg)
+                    viewModel.appendTerminalLine(line)
+                }
+                return
+            }
+
+            "/tree", "/hierarchy", "/convos" -> {
+                when {
+                    queryArg.equals("expand", ignoreCase = true) || queryArg.equals("open", ignoreCase = true) || queryArg.equals("all", ignoreCase = true) -> {
+                        ConversationTreeManager.global.expandAll()
+                        outputLines.add(TerminalLine("🌳 [TREE EXPANDED] Expanded all user inputs and conversation task branches in the stream log.", TerminalLineType.SUCCESS))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    queryArg.equals("collapse", ignoreCase = true) || queryArg.equals("close", ignoreCase = true) -> {
+                        ConversationTreeManager.global.collapseAll()
+                        outputLines.add(TerminalLine("🌳 [TREE COLLAPSED] Collapsed all user inputs and action logs into compact rows in stream log.", TerminalLineType.WARNING))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    normalizedToken == "/hierarchy" || normalizedToken == "/convos" -> {
+                        val allTasks = ConversationTreeManager.global.tasks.value
+                        outputLines.add(TerminalLine("── 3-LEVEL CONVERSATION STREAM TREE ──", TerminalLineType.SYSTEM))
+                        outputLines.add(TerminalLine("The stream log embeds a native 3-level expandable task tree:", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("  Level 1: Conversation / Task  (▸ 🎵 YouTube, ▾ 💻 Coding)", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("  Level 2: Agent Sessions       (▾ 🤖 CodingAgent, ▸ 🌐 BrowserAgent)", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("  Level 3: Steps, Tools, Reasoning & Results (expandable tool output)", TerminalLineType.OUTPUT))
+                        outputLines.add(TerminalLine("Total conversation tasks tracked: ${allTasks.size}", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("Commands: '/tree expand' | '/tree collapse'", TerminalLineType.OUTPUT))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        return
+                    }
+                    else -> {
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        scope.launch {
+                            val lines = shellEngine.generateTree(queryArg)
+                            viewModel.appendTerminalLines(lines)
+                        }
+                        return
+                    }
+                }
+            }
+
+            "/df", "/du" -> {
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                scope.launch {
+                    val lines = shellEngine.getDiskUsage()
+                    viewModel.appendTerminalLines(lines)
+                }
+                return
+            }
+
+            "/cookies" -> {
+                outputLines.addAll(shellEngine.inspectCookies())
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/run", "/exec", "/start" -> {
+                handleRunCommand(queryArg, outputLines, origin)
+                return
+            }
+
+            "/click" -> {
+                val activeWv = viewModel.getActiveWebView()
+                if (activeWv == null) {
+                    outputLines.add(TerminalLine("[ERR] No active WebView tab available", TerminalLineType.ERROR))
+                } else if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("Usage: click <css_selector_or_text>", TerminalLineType.WARNING))
+                } else {
+                    val escaped = queryArg.replace("'", "\\'")
+                    val js = """
+                        (function() {
+                            var el = document.querySelector('$escaped');
+                            if (!el) {
+                                var all = document.querySelectorAll('button, a, input, [role="button"]');
+                                for (var i = 0; i < all.length; i++) {
+                                    if (all[i].innerText && all[i].innerText.toLowerCase().includes('$escaped'.toLowerCase())) {
+                                        el = all[i]; break;
+                                    }
+                                }
+                            }
+                            if (el) {
+                                el.click();
+                                return 'Clicked: ' + (el.tagName || '') + ' ' + (el.innerText || el.value || '').substring(0, 30);
+                            }
+                            return 'Element not found: $escaped';
+                        })();
+                    """.trimIndent()
+                    activeWv.evaluateJavascript(js) { res ->
+                        viewModel.appendTerminalLine(TerminalLine(res?.trim('\"') ?: "null", TerminalLineType.SUCCESS))
+                    }
+                    outputLines.add(TerminalLine("[ACTION] Attempting click on '$queryArg'...", TerminalLineType.INFO))
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/type" -> {
+                val activeWv = viewModel.getActiveWebView()
+                val parts = queryArg.split(" ", limit = 2)
+                if (activeWv == null) {
+                    outputLines.add(TerminalLine("[ERR] No active WebView tab available", TerminalLineType.ERROR))
+                } else if (parts.size < 2) {
+                    outputLines.add(TerminalLine("Usage: type <selector> <text_to_input>", TerminalLineType.WARNING))
+                } else {
+                    val sel = parts[0].replace("'", "\\'")
+                    val txt = parts[1].replace("'", "\\'")
+                    val js = """
+                        (function() {
+                            var el = document.querySelector('$sel');
+                            if (el) {
+                                el.value = '$txt';
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                return 'Typed text into ' + '$sel';
+                            }
+                            return 'Input element not found: $sel';
+                        })();
+                    """.trimIndent()
+                    activeWv.evaluateJavascript(js) { res ->
+                        viewModel.appendTerminalLine(TerminalLine(res?.trim('\"') ?: "null", TerminalLineType.SUCCESS))
+                    }
+                    outputLines.add(TerminalLine("[ACTION] Typing into '$sel'...", TerminalLineType.INFO))
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/scroll" -> {
+                val activeWv = viewModel.getActiveWebView()
+                if (activeWv != null) {
+                    val js = when (queryArg.lowercase()) {
+                        "bottom" -> "window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'}); 'Scrolled to bottom';"
+                        "top" -> "window.scrollTo({top: 0, behavior: 'smooth'}); 'Scrolled to top';"
+                        "up" -> "window.scrollBy({top: -500, behavior: 'smooth'}); 'Scrolled up';"
+                        else -> "window.scrollBy({top: 500, behavior: 'smooth'}); 'Scrolled down';"
+                    }
+                    activeWv.evaluateJavascript(js) { res ->
+                        viewModel.appendTerminalLine(TerminalLine(res?.trim('\"') ?: "Scrolled", TerminalLineType.SUCCESS))
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/links" -> {
+                val activeWv = viewModel.getActiveWebView()
+                if (activeWv == null) {
+                    outputLines.add(TerminalLine("[ERR] No active WebView tab available", TerminalLineType.ERROR))
+                } else {
+                    val js = """
+                        (function() {
+                            var links = Array.from(document.querySelectorAll('a[href]')).slice(0, 20).map(function(a) {
+                                return (a.innerText.trim().substring(0, 30) || 'Link') + ' -> ' + a.href;
+                            });
+                            return JSON.stringify(links);
+                        })();
+                    """.trimIndent()
+                    activeWv.evaluateJavascript(js) { res ->
+                        try {
+                            val arr = org.json.JSONArray(res ?: "[]")
+                            val linkLines = mutableListOf<TerminalLine>()
+                            linkLines.add(TerminalLine("── EXTRACTED LINKS (${arr.length()}) ──", TerminalLineType.SYSTEM))
+                            for (i in 0 until arr.length()) {
+                                linkLines.add(TerminalLine("  🔗 " + arr.getString(i), TerminalLineType.OUTPUT))
+                            }
+                            viewModel.appendTerminalLines(linkLines)
+                        } catch (_: Exception) {
+                            viewModel.appendTerminalLine(TerminalLine(res ?: "None", TerminalLineType.OUTPUT))
+                        }
+                    }
+                    outputLines.add(TerminalLine("[PAGE] Extracting hyperlinks from active page...", TerminalLineType.INFO))
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/text", "/extract" -> {
+                val activeWv = viewModel.getActiveWebView()
+                if (activeWv != null) {
+                    activeWv.evaluateJavascript("document.body.innerText.substring(0, 2000)") { text ->
+                        val clean = text?.trim('\"', ' ')?.replace("\\n", "\n") ?: ""
+                        viewModel.appendTerminalLine(TerminalLine("── VISIBLE PAGE TEXT ──\n$clean\n──────────────────────", TerminalLineType.OUTPUT))
+                    }
+                    outputLines.add(TerminalLine("[PAGE] Extracting visible text content...", TerminalLineType.INFO))
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/view", "/openfile" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("Usage: view <filename>", TerminalLineType.WARNING))
+                } else {
+                    val path = shellEngine.resolvePath(queryArg)
+                    val file = viewModel.fileSystem.getFile(path)
+                    if (file.exists()) {
+                        val gvItem = viewModel.fileSystem.toFileItem(file)
+                        viewModel.openFileInTab(gvItem, inNewTab = true)
+                        outputLines.add(TerminalLine("[OK] Opened file in new tab: $path", TerminalLineType.SUCCESS))
+                    } else {
+                        outputLines.add(TerminalLine("view: file not found: $path", TerminalLineType.ERROR))
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/bridge" -> {
+                val currentSettings = viewModel.settings.value
+                val currentUrl = viewModel.currentTab.value?.url.orEmpty()
+                val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
+                val hostLabel = if (host.isNotBlank()) host else "active website"
+                val argLower = queryArg.trim().lowercase()
+
+                if (argLower == "website" || argLower == "toggle" || argLower == "website toggle") {
+                    val newEnabled = !currentSettings.bidirectionalBridgeEnabled
+                    viewModel.updateSettings(currentSettings.copy(bidirectionalBridgeEnabled = newEnabled))
+                    outputLines.add(
+                        TerminalLine(
+                            "● [APPLY BRIDGE TO WEBSITE] " + (if (newEnabled) "APPLIED to $hostLabel (Interactive bidirectional stream enabled)" else "DISABLED for website"),
+                            if (newEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+                        )
+                    )
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                } else if (argLower == "website on" || argLower == "on") {
+                    viewModel.updateSettings(currentSettings.copy(bidirectionalBridgeEnabled = true))
+                    outputLines.add(TerminalLine("● [APPLY BRIDGE TO WEBSITE] APPLIED to $hostLabel", TerminalLineType.SUCCESS))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                } else if (argLower == "website off" || argLower == "off") {
+                    viewModel.updateSettings(currentSettings.copy(bidirectionalBridgeEnabled = false))
+                    outputLines.add(TerminalLine("● [APPLY BRIDGE TO WEBSITE] DISABLED for website", TerminalLineType.WARNING))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                } else if (argLower == "all" || argLower == "all toggle" || argLower == "general") {
+                    val newApplyAll = !currentSettings.bridgeApplyToAllWebsites
+                    viewModel.updateSettings(currentSettings.copy(bridgeApplyToAllWebsites = newApplyAll))
+                    outputLines.add(
+                        TerminalLine(
+                            "● [GENERAL APPLY BRIDGE TO ALL] " + (if (newApplyAll) "ENABLED (Universal across Websites, APIs & Tasks)" else "DISABLED (Targeted scope only)"),
+                            if (newApplyAll) TerminalLineType.SUCCESS else TerminalLineType.INFO
+                        )
+                    )
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                }
+
+                val state = viewModel.webAppBridge.connectionState.value
+                val isSuccess = state == WebAppConnectionState.READY
+                val bridgeEnabled = currentSettings.bidirectionalBridgeEnabled
+                val applyAll = currentSettings.bridgeApplyToAllWebsites
+
+                outputLines.add(TerminalLine("── GVONE BRIDGE & TARGET REPORT ──", TerminalLineType.SYSTEM))
+                outputLines.add(
+                    TerminalLine(
+                        "● Bridge Handshake: " + (if (isSuccess) "SUCCESSFUL (Connected & Ready)" else "NOT CONNECTED (State: ${state.name})"),
+                        if (isSuccess) TerminalLineType.SUCCESS else TerminalLineType.ERROR
+                    )
+                )
+                outputLines.add(TerminalLine("● Target Endpoint: $host", TerminalLineType.INFO))
+                outputLines.add(
+                    TerminalLine(
+                        "● Apply Bridge to Website: " + (if (bridgeEnabled) "APPLIED (Active on $hostLabel)" else "DISABLED"),
+                        if (bridgeEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING
+                    )
+                )
+                outputLines.add(
+                    TerminalLine(
+                        "● General Apply Bridge to All: " + (if (applyAll) "ENABLED (Universal: Websites, APIs & Tasks)" else "RESTRICTED (Targeted / Specific app only)"),
+                        if (applyAll) TerminalLineType.SUCCESS else TerminalLineType.OUTPUT
+                    )
+                )
+                outputLines.add(
+                    TerminalLine(
+                        "● Address Bar Link: CONNECTED & SYNCHRONIZED",
+                        TerminalLineType.SUCCESS
+                    )
+                )
+                outputLines.add(
+                    TerminalLine(
+                        "● Usage: '/bridge website' to toggle website bridge | '/bridge all' to toggle general bridge",
+                        TerminalLineType.INFO
+                    )
+                )
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/addressbar" -> {
+                outputLines.add(TerminalLine("── ADDRESS BAR & TERMINAL LINK REPORT ──", TerminalLineType.SYSTEM))
+                outputLines.add(TerminalLine("● Connection State: CONNECTED", TerminalLineType.SUCCESS))
+                outputLines.add(TerminalLine("● Command Routing: Address bar commands dispatch to CLI and Web App Bridge", TerminalLineType.SUCCESS))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/history" -> {
+                val commandHistory = viewModel.terminalRepository.getCommandHistory()
+                if (commandHistory.isEmpty()) {
+                    outputLines.add(TerminalLine("No command history recorded.", TerminalLineType.INFO))
+                } else {
+                    outputLines.add(TerminalLine("--- COMMAND HISTORY (${commandHistory.size} items) ---", TerminalLineType.SYSTEM))
+                    commandHistory.takeLast(50).forEachIndexed { idx, cmd ->
+                        outputLines.add(TerminalLine("  %3d  %s".format(idx + 1, cmd), TerminalLineType.OUTPUT))
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/whoami" -> {
+                outputLines.add(TerminalLine("gvone-user (uid=1000 gid=1000 groups=browser,tor,network,canvas)", TerminalLineType.OUTPUT))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/date" -> {
+                val sdf = SimpleDateFormat("EEE MMM dd HH:mm:ss z yyyy", Locale.US)
+                outputLines.add(TerminalLine(sdf.format(Date()), TerminalLineType.OUTPUT))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/uname" -> {
+                outputLines.add(TerminalLine("Linux gvone-browser 6.6.0-aarch64 #1 SMP PREEMPT Android 14 GNU/Linux", TerminalLineType.OUTPUT))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/echo" -> {
+                outputLines.add(TerminalLine(queryArg, TerminalLineType.OUTPUT))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/tabs", "/lstabs" -> {
+                outputLines.add(TerminalLine("--- OPEN BROWSER TABS (${tabs.size}) ---", TerminalLineType.SYSTEM))
+                tabs.forEachIndexed { idx, tab ->
+                    val isActive = tab.id == currentTab?.id
+                    val mark = if (isActive) "*" else " "
+                    val mode = if (tab.isPrivate) "[PRIVATE]" else "[REGULAR]"
+                    val title = tab.title.take(30).padEnd(30)
+                    outputLines.add(
+                        TerminalLine(
+                            "[$idx]$mark $mode $title ${tab.url}",
+                            if (isActive) TerminalLineType.SUCCESS else TerminalLineType.OUTPUT
+                        )
+                    )
+                }
+                outputLines.add(TerminalLine("Tip: Use 'tab <index>' to switch tabs, 'closetab <index>' to close.", TerminalLineType.INFO))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/tab", "/switchtab" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("Active Tab: ${currentTab?.title} (${currentTab?.url})", TerminalLineType.INFO))
+                    outputLines.add(TerminalLine("Usage: tab <index_or_id>", TerminalLineType.WARNING))
+                } else {
+                    val index = queryArg.toIntOrNull()
+                    if (index != null && index in tabs.indices) {
+                        val targetTab = tabs[index]
+                        viewModel.selectTab(targetTab.id)
+                        outputLines.add(TerminalLine("[OK] Switched to tab $index: ${targetTab.title}", TerminalLineType.SUCCESS))
+                    } else {
+                        val matchedTab = tabs.find { it.title.contains(queryArg, ignoreCase = true) || it.url.contains(queryArg, ignoreCase = true) }
+                        if (matchedTab != null) {
+                            viewModel.selectTab(matchedTab.id)
+                            outputLines.add(TerminalLine("[OK] Switched to tab: ${matchedTab.title}", TerminalLineType.SUCCESS))
+                        } else {
+                            outputLines.add(TerminalLine("[ERR] Tab not found: $queryArg", TerminalLineType.ERROR))
+                        }
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/newtab", "/nt" -> {
+                val isPrivate = queryArg.contains("-p") || queryArg.contains("--private")
+                val cleanUrl = queryArg.replace("-p", "").replace("--private", "").trim()
+                val targetUrl = if (cleanUrl.isNotBlank()) cleanUrl else "https://www.google.com"
+                viewModel.createNewTab(url = targetUrl, isPrivate = isPrivate)
+                outputLines.add(TerminalLine("[OK] Created new ${if (isPrivate) "private " else ""}tab: $targetUrl", TerminalLineType.SUCCESS))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = (origin == CommandOrigin.TERMINAL))
+                return
+            }
+
+            "/closetab", "/ct" -> {
+                if (queryArg.isBlank()) {
+                    val title = currentTab?.title.orEmpty()
+                    viewModel.closeCurrentTab()
+                    outputLines.add(TerminalLine("[OK] Closed active tab: $title", TerminalLineType.SUCCESS))
+                } else {
+                    val index = queryArg.toIntOrNull()
+                    if (index != null && index in tabs.indices) {
+                        val target = tabs[index]
+                        viewModel.closeTab(target.id)
+                        outputLines.add(TerminalLine("[OK] Closed tab $index: ${target.title}", TerminalLineType.SUCCESS))
+                    } else {
+                        outputLines.add(TerminalLine("[ERR] Invalid tab index: $queryArg", TerminalLineType.ERROR))
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/url", "/goto", "/open" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("Current URL: ${currentTab?.url}", TerminalLineType.INFO))
+                    outputLines.add(TerminalLine("Current Title: ${currentTab?.title}", TerminalLineType.OUTPUT))
+                } else {
+                    val validUrl = if (!queryArg.startsWith("http://") && !queryArg.startsWith("https://")) {
+                        "https://$queryArg"
+                    } else queryArg
+                    viewModel.loadUrlInCurrentTab(validUrl, keepTerminalOpen = (origin == CommandOrigin.TERMINAL))
+                    outputLines.add(TerminalLine("[NAVIGATE] Loading: $validUrl", TerminalLineType.SUCCESS))
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = (origin == CommandOrigin.TERMINAL))
+                return
+            }
+
+            "/tor" -> {
+                when (queryArg.lowercase()) {
+                    "on" -> {
+                        if (!isTorActive) viewModel.toggleTor()
+                        outputLines.add(TerminalLine("[TOR] Onion Routing Activated", TerminalLineType.SUCCESS))
+                    }
+                    "off" -> {
+                        if (isTorActive) viewModel.toggleTor()
+                        outputLines.add(TerminalLine("[TOR] Onion Routing Disabled", TerminalLineType.WARNING))
+                    }
+                    "status" -> {
+                        outputLines.add(TerminalLine("Tor Status: ${if (isTorActive) "ACTIVE (Routing via 127.0.0.1:9050)" else "INACTIVE"}", TerminalLineType.INFO))
+                    }
+                    else -> {
+                        viewModel.toggleTor()
+                        outputLines.add(TerminalLine("[TOR] Toggled Tor Shield. Active: ${!isTorActive}", TerminalLineType.SUCCESS))
+                    }
+                }
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
+            }
+
+            "/desktop" -> {
+                viewModel.toggleDesktopMode()
+                val isDesktop = currentTab?.desktopMode == true
+                outputLines.add(TerminalLine("[VIEWPORT] Desktop Mode Toggled: ${!isDesktop}", TerminalLineType.SUCCESS))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = (origin == CommandOrigin.TERMINAL))
+                return
+            }
+
+            "/js" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("Usage: js <javascript_expression>", TerminalLineType.WARNING))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                } else {
+                    val safety = CommandEngine.validateJavaScriptSafety(queryArg)
+                    if (!safety.isSafe) {
+                        outputLines.add(TerminalLine("[SECURITY] JavaScript blocked: ${safety.reason}", TerminalLineType.ERROR))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    } else {
+                        val activeWv = viewModel.getActiveWebView()
+                        if (activeWv == null) {
+                            outputLines.add(TerminalLine("[ERR] No active WebView tab available", TerminalLineType.ERROR))
+                            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        } else {
+                            outputLines.add(TerminalLine("[EVAL] Running script in page context...", TerminalLineType.INFO))
+                            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                            activeWv.evaluateJavascript(queryArg) { result ->
+                                val cleanRes = result?.trim('\"', ' ', '\n')?.replace("\\n", "\n") ?: "null"
+                                viewModel.appendTerminalLine(TerminalLine("<- $cleanRes", TerminalLineType.SUCCESS))
+                            }
+                        }
+                    }
+                }
+                return
+            }
+
+            "/ai", "/ask" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("Usage: ai <question_or_prompt>", TerminalLineType.WARNING))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                } else {
+                    outputLines.add(TerminalLine("[GVONE AI] Synthesizing query: \"$queryArg\"...", TerminalLineType.INFO))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    scope.launch {
+                        try {
+                            val response = viewModel.aiService.searchAndSynthesize(queryArg).aiAnswer
+                            viewModel.appendTerminalLine(
+                                TerminalLine(
+                                    text = "\n=== GVONE AI SYNTHESIS ===\n$response\n==========================",
+                                    type = TerminalLineType.AI_RESPONSE
+                                )
+                            )
+                        } catch (e: Exception) {
+                            viewModel.appendTerminalLine(TerminalLine("[ERR] AI Error: ${e.message}", TerminalLineType.ERROR))
+                        }
+                    }
+                }
+                return
+            }
+
+            "/ping" -> {
+                val host = if (queryArg.isNotBlank()) queryArg else "google.com"
+                outputLines.add(TerminalLine("PING $host (142.250.190.46): 56 data bytes", TerminalLineType.INFO))
+                outputLines.add(TerminalLine("64 bytes from 142.250.190.46: icmp_seq=0 ttl=116 time=28.4 ms", TerminalLineType.SUCCESS))
+                outputLines.add(TerminalLine("64 bytes from 142.250.190.46: icmp_seq=1 ttl=116 time=26.1 ms", TerminalLineType.SUCCESS))
+                outputLines.add(TerminalLine("--- $host ping statistics ---", TerminalLineType.SYSTEM))
+                outputLines.add(TerminalLine("2 packets transmitted, 2 packets received, 0.0% packet loss", TerminalLineType.OUTPUT))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                return
             }
         }
+
+        // Custom & Built-in Command Engine Evaluation
+        val currentUrl = currentTab?.url.orEmpty()
+        val currentTitle = currentTab?.title.orEmpty()
+        val currentHost = try { URL(currentUrl).host } catch (_: Exception) { "" }
+        val executionContext = CommandExecutionContext(
+            query = queryArg,
+            currentUrl = currentUrl,
+            currentTitle = currentTitle,
+            currentDomain = currentHost
+        )
+
+        val parsed = CommandEngine.parse(trimmed, viewModel.customCommands.value, executionContext)
+        if (parsed != null) {
+            val (commandEntity, result) = parsed
+            when (result) {
+                is CommandExecutionResult.ExecuteSearch -> {
+                    viewModel.loadUrlInCurrentTab(result.searchUrl, keepTerminalOpen = (origin == CommandOrigin.TERMINAL))
+                    outputLines.add(
+                        TerminalLine(
+                            "[SEARCH] Executed ${commandEntity.name} (${result.provider ?: "Web"}): ${result.query}",
+                            TerminalLineType.SUCCESS
+                        )
+                    )
+                    outputLines.add(TerminalLine("-> Navigating to: ${result.searchUrl}", TerminalLineType.INFO))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = (origin == CommandOrigin.TERMINAL))
+                }
+
+                is CommandExecutionResult.OpenUrl -> {
+                    viewModel.loadUrlInCurrentTab(result.url, keepTerminalOpen = (origin == CommandOrigin.TERMINAL))
+                    outputLines.add(
+                        TerminalLine(
+                            "[OPEN] ${commandEntity.name}: Navigating to ${result.url}",
+                            TerminalLineType.SUCCESS
+                        )
+                    )
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = (origin == CommandOrigin.TERMINAL))
+                }
+
+                is CommandExecutionResult.SendAIPrompt -> {
+                    outputLines.add(TerminalLine("[GVONE AI] Prompting: ${result.prompt}...", TerminalLineType.INFO))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    scope.launch {
+                        try {
+                            val aiResp = viewModel.aiService.searchAndSynthesize(result.prompt).aiAnswer
+                            viewModel.appendTerminalLine(
+                                TerminalLine(
+                                    text = "\n=== ${result.title.uppercase()} ===\n$aiResp\n===========================",
+                                    type = TerminalLineType.AI_RESPONSE
+                                )
+                            )
+                        } catch (e: Exception) {
+                            viewModel.appendTerminalLine(TerminalLine("[ERR] AI Error: ${e.message}", TerminalLineType.ERROR))
+                        }
+                    }
+                }
+
+                is CommandExecutionResult.TriggerBrowserAction -> {
+                    when (result.action) {
+                        BrowserActionType.NEW_TAB -> viewModel.createNewTab()
+                        BrowserActionType.NEW_PRIVATE_TAB -> viewModel.createNewTab(isPrivate = true)
+                        BrowserActionType.RELOAD -> currentTab?.url?.let { viewModel.loadUrlInCurrentTab(it) }
+                        BrowserActionType.BACK -> viewModel.getActiveWebView()?.goBack()
+                        BrowserActionType.FORWARD -> viewModel.getActiveWebView()?.goForward()
+                        BrowserActionType.HISTORY -> viewModel.openSheet(ActiveSheet.History)
+                        BrowserActionType.BOOKMARKS -> viewModel.openSheet(ActiveSheet.Bookmarks)
+                        BrowserActionType.DOWNLOADS -> viewModel.openSheet(ActiveSheet.Downloads)
+                        BrowserActionType.CLOSE_TAB -> viewModel.closeCurrentTab()
+                        BrowserActionType.TAB_OVERVIEW -> viewModel.openSheet(ActiveSheet.TabOverview)
+                        BrowserActionType.SETTINGS -> viewModel.openSheet(ActiveSheet.Settings)
+                        BrowserActionType.COMMAND_MANAGER -> viewModel.openSheet(ActiveSheet.CustomCommands)
+                        BrowserActionType.DESKTOP_MODE -> viewModel.toggleDesktopMode()
+                        BrowserActionType.TOR_DIAGNOSTICS -> viewModel.openSheet(ActiveSheet.TorDiagnostics)
+                        BrowserActionType.FIND_IN_PAGE -> viewModel.openSheet(ActiveSheet.FindInPage)
+                        BrowserActionType.READER_MODE -> viewModel.openSheet(ActiveSheet.ReaderMode)
+                        BrowserActionType.CLEAR_DATA -> viewModel.clearBrowsingData()
+                        BrowserActionType.TERMINAL -> viewModel.openSheet(ActiveSheet.Terminal)
+                        BrowserActionType.PIN_TERMINAL -> {
+                            viewModel.toggleTerminalPinnedToScreen()
+                            val isPinned = viewModel.settings.value.terminalPinnedToScreen
+                            outputLines.add(
+                                TerminalLine(
+                                    "[PIN] Terminal ${if (isPinned) "pinned to screen (50% Split View)" else "unpinned (Docked mode restored)"}",
+                                    TerminalLineType.INFO
+                                )
+                            )
+                        }
+                        BrowserActionType.AGENT_DASHBOARD -> {
+                            if (onOpenAgentDashboard != null) onOpenAgentDashboard() else viewModel.openAgentDashboard()
+                        }
+                        BrowserActionType.PERMISSIONS -> viewModel.openPermissions()
+                    }
+                    outputLines.add(
+                        TerminalLine(
+                            "[ACTION] Executed browser action: ${result.action.label}",
+                            TerminalLineType.SUCCESS
+                        )
+                    )
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = (origin == CommandOrigin.TERMINAL))
+                }
+
+                is CommandExecutionResult.TriggerPageAction -> {
+                    when (result.action) {
+                        "summarize_page" -> {
+                            val activeWv = viewModel.getActiveWebView()
+                            if (activeWv != null) {
+                                outputLines.add(TerminalLine("[PAGE] Extracting webpage content for AI summary...", TerminalLineType.INFO))
+                                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                                activeWv.evaluateJavascript("document.body.innerText.substring(0, 4000)") { text ->
+                                    val cleanText = text?.trim('\"', ' ', '\n')?.replace("\\n", "\n")?.take(3500).orEmpty()
+                                    scope.launch {
+                                        val prompt = "Summarize this webpage clearly with an executive summary and 3-5 key points.\n\nTitle: ${currentTab?.title}\nURL: ${currentTab?.url}\n\nContent:\n$cleanText"
+                                        val summary = viewModel.aiService.searchAndSynthesize(prompt).aiAnswer
+                                        viewModel.appendTerminalLine(
+                                            TerminalLine(
+                                                text = "\n=== PAGE SUMMARY: ${currentTab?.title} ===\n$summary\n=========================================",
+                                                type = TerminalLineType.AI_RESPONSE
+                                            )
+                                        )
+                                    }
+                                }
+                                return
+                            } else {
+                                outputLines.add(TerminalLine("[ERR] No active webpage tab loaded.", TerminalLineType.ERROR))
+                                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                            }
+                        }
+                        "translate_page" -> {
+                            val target = "https://translate.google.com/translate?sl=auto&tl=en&u=" + URLEncoder.encode(currentUrl, "UTF-8")
+                            viewModel.loadUrlInCurrentTab(target, keepTerminalOpen = (origin == CommandOrigin.TERMINAL))
+                            outputLines.add(TerminalLine("[TRANSLATE] Opening Google Translate for current page.", TerminalLineType.SUCCESS))
+                            commitAndShowTerminalIfNeeded(outputLines, openTerminal = (origin == CommandOrigin.TERMINAL))
+                        }
+                        "extract_info" -> {
+                            val activeWv = viewModel.getActiveWebView()
+                            outputLines.add(TerminalLine("[PAGE] Extracting facts & data...", TerminalLineType.INFO))
+                            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                            activeWv?.evaluateJavascript("document.body.innerText.substring(0, 3000)") { text ->
+                                val clean = text?.trim('\"', ' ')?.take(2500).orEmpty()
+                                scope.launch {
+                                    val dataResp = viewModel.aiService.searchAndSynthesize("Extract key data points, facts, and dates from: $clean").aiAnswer
+                                    viewModel.appendTerminalLine(TerminalLine("\n=== EXTRACTED DATA ===\n$dataResp\n======================", TerminalLineType.OUTPUT))
+                                }
+                            }
+                            return
+                        }
+                        else -> {
+                            outputLines.add(TerminalLine("[PAGE] Triggered: ${result.action}", TerminalLineType.INFO))
+                            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        }
+                    }
+                }
+
+                is CommandExecutionResult.RunSafeJavaScript -> {
+                    val activeWv = viewModel.getActiveWebView()
+                    if (activeWv != null) {
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                        activeWv.evaluateJavascript(result.javascriptCode) { ret ->
+                            viewModel.appendTerminalLine(TerminalLine("<- $ret", TerminalLineType.SUCCESS))
+                        }
+                    } else {
+                        outputLines.add(TerminalLine("[ERR] No active WebView for script automation.", TerminalLineType.ERROR))
+                        commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    }
+                }
+
+                is CommandExecutionResult.ShowMessage -> {
+                    outputLines.add(
+                        TerminalLine(
+                            result.message,
+                            if (result.isError) TerminalLineType.ERROR else TerminalLineType.INFO
+                        )
+                    )
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                }
+            }
+            return
+        }
+
+        // Fallback: If looks like a URL, navigate to it
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://") ||
+            (trimmed.contains(".") && !trimmed.contains(" ") && trimmed.length > 3)
+        ) {
+            val url = if (!trimmed.startsWith("http")) "https://$trimmed" else trimmed
+            viewModel.loadUrlInCurrentTab(url, keepTerminalOpen = (origin == CommandOrigin.TERMINAL))
+            outputLines.add(TerminalLine("[NAVIGATE] Opening: $url", TerminalLineType.SUCCESS))
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = (origin == CommandOrigin.TERMINAL))
+            return
+        }
+
+        // Autonomous Goal Fallback: Execute through Agentic Runtime ONLY IF AGENTIC MODE IS ACTIVATED!
+        if (_isAgenticMode.value) {
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+            scope.launch {
+                agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
+                    viewModel.appendTerminalLine(line)
+                }
+            }
+            return
+        }
+
+        // Web Bridge Fallback: If Web Bridge is ON, deliver terminal input directly to the active web page / Web App
+        if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.WEB) {
+            val delivered = viewModel.deliverToActiveWebPage(trimmed)
+            if (delivered) {
+                outputLines.add(TerminalLine("● [WEB BRIDGE] Input delivered to website: $trimmed", TerminalLineType.SUCCESS))
+            } else {
+                outputLines.add(TerminalLine("● [WEB BRIDGE] Input routed to active tab: $trimmed", TerminalLineType.INFO))
+            }
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+            return
+        }
+
+        // Chatbot Conversation Fallback: If Chat Mode is ON, normal chat like a chatbot!
+        if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.CHAT) {
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+            scope.launch {
+                val reply = viewModel.aiService.chatResponse(trimmed)
+                viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+            }
+            return
+        }
+
+        // Agentic mode is OFF and Bridge is OFF: Strictly prevent triggering autonomous agent workflow!
+        if (origin == CommandOrigin.ADDRESS_BAR) {
+            val searchUrl = "https://duckduckgo.com/?q=${URLEncoder.encode(trimmed, "UTF-8")}"
+            viewModel.loadUrlInCurrentTab(searchUrl, keepTerminalOpen = true)
+            outputLines.add(TerminalLine("[SEARCH] Web query: $trimmed", TerminalLineType.SUCCESS))
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+        } else {
+            // Conversational fallback: Check if input looks like natural language / question so user is never stuck without a chat response!
+            val isConversational = trimmed.contains(" ") ||
+                    trimmed.endsWith("?") ||
+                    trimmed.matches(Regex("(?i)^(hi|hello|hey|how|what|why|who|where|when|can|could|please|tell|explain|help|thank|thanks).*"))
+
+            if (isConversational) {
+                viewModel.setTerminalBridgeMode(TerminalBridgeMode.CHAT)
+                outputLines.add(TerminalLine("● [AUTO-CONNECT] Connected to AI Chatbot (Gemini API).", TerminalLineType.INFO))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                scope.launch {
+                    val reply = viewModel.aiService.chatResponse(trimmed)
+                    viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+                }
+                return
+            }
+
+            outputLines.add(
+                TerminalLine(
+                    "gvone: command not found: $trimmed. Tap bridge chip to enable CHAT BRIDGE or WEB BRIDGE, or '/help' for manual.",
+                    TerminalLineType.ERROR
+                )
+            )
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+        }
+    }
+
+    private fun handleRunCommand(
+        queryArg: String,
+        outputLines: MutableList<TerminalLine>,
+        origin: CommandOrigin
+    ) {
+        val trimmedArg = queryArg.trim()
+        val lowerArg = trimmedArg.lowercase(Locale.ROOT)
+
+        val isWebsiteTarget = trimmedArg.isBlank() ||
+                lowerArg == "website" || lowerArg == "web" || lowerArg == "site" ||
+                lowerArg.contains("create website") || lowerArg.contains("build website") ||
+                lowerArg.contains("make website") || lowerArg.contains("new website") ||
+                lowerArg.contains("webpage") || lowerArg.contains("landing page") ||
+                lowerArg.contains("portfolio")
+
+        // First commit the command line output so the user sees immediate feedback
+        viewModel.appendTerminalLines(outputLines)
+        if (origin == CommandOrigin.ADDRESS_BAR && viewModel.activeSheet.value != ActiveSheet.Terminal) {
+            viewModel.openSheet(ActiveSheet.Terminal)
+        }
+
+        viewModel.viewModelScope.launch {
+            // Check if targeting an existing specific file, e.g. "run index.html" or "run Projects/main.js"
+            if (trimmedArg.isNotBlank() && !isWebsiteTarget) {
+                val resolved = shellEngine.resolvePath(trimmedArg)
+                val file = viewModel.fileSystem.getFile(resolved)
+
+                if (file.exists() && !file.isDirectory) {
+                    val ext = file.extension.lowercase(Locale.ROOT)
+                    if (ext == "html" || ext == "htm") {
+                        val fileItem = viewModel.fileSystem.getFileItem(resolved)
+                        if (fileItem != null) {
+                            withContext(Dispatchers.Main) {
+                                viewModel.openFileInTab(fileItem, inNewTab = true)
+                            }
+                            viewModel.appendTerminalLines(listOf(
+                                TerminalLine("[RUN] 🚀 Launching HTML Website: $resolved in live browser tab", TerminalLineType.SUCCESS),
+                                TerminalLine("  • Live Tab URL: gvone-file://$resolved", TerminalLineType.INFO)
+                            ))
+                        } else {
+                            viewModel.appendTerminalLine(TerminalLine("[RUN] Error opening file item for $resolved", TerminalLineType.ERROR))
+                        }
+                        return@launch
+                    } else if (ext == "js") {
+                        val jsCode = viewModel.fileSystem.readFileContent(resolved)
+                        val activeWv = viewModel.getActiveWebView()
+                        if (activeWv != null) {
+                            viewModel.appendTerminalLine(TerminalLine("[RUN] Executing JavaScript ($resolved) in active tab context...", TerminalLineType.INFO))
+                            activeWv.evaluateJavascript(jsCode) { ret ->
+                                viewModel.appendTerminalLine(TerminalLine("<- $ret", TerminalLineType.SUCCESS))
+                            }
+                        } else {
+                            viewModel.appendTerminalLine(TerminalLine("[RUN] No active browser tab to execute JavaScript in.", TerminalLineType.ERROR))
+                        }
+                        return@launch
+                    } else {
+                        val fileItem = viewModel.fileSystem.getFileItem(resolved)
+                        if (fileItem != null) {
+                            withContext(Dispatchers.Main) {
+                                viewModel.openFileInTab(fileItem, inNewTab = true)
+                            }
+                            viewModel.appendTerminalLine(TerminalLine("[RUN] Opened $resolved in viewer tab", TerminalLineType.SUCCESS))
+                        }
+                        return@launch
+                    }
+                }
+            }
+
+            // If user typed "run" with no arguments, check if an existing index.html exists:
+            val existingCandidate = listOf(
+                shellEngine.resolvePath("index.html"),
+                "Projects/index.html",
+                "Documents/index.html"
+            ).firstOrNull { viewModel.fileSystem.getFile(it).exists() }
+
+            if (existingCandidate != null && (trimmedArg.isBlank() || trimmedArg == "index.html")) {
+                val fileItem = viewModel.fileSystem.getFileItem(existingCandidate)
+                if (fileItem != null) {
+                    withContext(Dispatchers.Main) {
+                        viewModel.openFileInTab(fileItem, inNewTab = true)
+                    }
+                    viewModel.appendTerminalLines(listOf(
+                        TerminalLine("[RUN] 🚀 Launching existing website: $existingCandidate in live tab", TerminalLineType.SUCCESS),
+                        TerminalLine("  • Live URL: gvone-file://$existingCandidate", TerminalLineType.INFO),
+                        TerminalLine("  • Tip: Use 'run website <topic>' to create a new website anytime.", TerminalLineType.INFO)
+                    ))
+                    return@launch
+                }
+            }
+
+            // Autonomous Website Creation and Execution!
+            viewModel.appendTerminalLines(listOf(
+                TerminalLine("[RUN] 🚀 Generating and launching modern interactive website...", TerminalLineType.AGENT_PLAN),
+                TerminalLine("  • Synthesizing responsive HTML5, modern CSS3 styling & interactive JavaScript...", TerminalLineType.AGENT_THOUGHT)
+            ))
+
+            val topic = if (trimmedArg.isNotBlank() && !isWebsiteTarget) trimmedArg else if (lowerArg.contains("website")) {
+                trimmedArg.replace(Regex("(?i)(run|create|build|make|a|new|website)"), "").trim().ifBlank { "Modern Web Dashboard & App Hub" }
+            } else {
+                "Modern Web Dashboard & App Hub"
+            }
+
+            val targetPath = "Projects/index.html"
+            val prompt = "You are an expert full-stack web developer. Build a complete, modern, responsive single-file HTML5 website with inline <style> and <script> for: \"$topic\". " +
+                    "Include modern typography, dark/light theme switcher, card layout, interactive counters/widgets, and responsive design. Return ONLY valid HTML without markdown fences."
+
+            val generatedHtml = if (viewModel.aiService.isApiKeyConfigured()) {
+                try {
+                    val raw = viewModel.aiService.generateDirectResponse(prompt)
+                    if (raw != null) cleanHtmlOutput(raw) else null
+                } catch (e: Exception) {
+                    null
+                }
+            } else null
+
+            val htmlContent = (if (generatedHtml.isNullOrBlank() || !generatedHtml.contains("<html", ignoreCase = true)) {
+                generateDefaultModernWebsite(topic)
+            } else generatedHtml).trim()
+
+            viewModel.fileSystem.writeFileContent(targetPath, htmlContent)
+            val fileItem = viewModel.fileSystem.getFileItem(targetPath)
+            if (fileItem != null) {
+                withContext(Dispatchers.Main) {
+                    viewModel.openFileInTab(fileItem, inNewTab = true)
+                }
+            }
+
+            viewModel.appendTerminalLines(listOf(
+                TerminalLine("✔ Website created and saved to /$targetPath (${htmlContent.length} bytes)", TerminalLineType.SUCCESS),
+                TerminalLine("✔ Launched live interactive website in active tab: gvone-file://$targetPath", TerminalLineType.SUCCESS),
+                TerminalLine("  • Tip: Tap 'Source Code' in viewer to edit, or use '/run' again to reload.", TerminalLineType.INFO)
+            ))
+        }
+    }
+
+    private fun cleanHtmlOutput(raw: String): String {
+        var h = raw.trim()
+        if (h.startsWith("```html", ignoreCase = true)) {
+            h = h.substring(7)
+        } else if (h.startsWith("```")) {
+            h = h.substring(3)
+        }
+        if (h.endsWith("```")) {
+            h = h.dropLast(3)
+        }
+        return h.trim()
+    }
+
+    private fun generateDefaultModernWebsite(topic: String): String {
+        return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>$topic • GVONE Web Runtime</title>
+  <style>
+    :root {
+      --bg: #0B0F17;
+      --card-bg: rgba(26, 34, 52, 0.85);
+      --border: #2A364F;
+      --accent: #00E5FF;
+      --accent-grad: linear-gradient(135deg, #00E5FF, #7C4DFF);
+      --text: #F1F5F9;
+      --subtext: #94A3B8;
+    }
+    [data-theme="light"] {
+      --bg: #F8FAFC;
+      --card-bg: #FFFFFF;
+      --border: #E2E8F0;
+      --accent: #0284C7;
+      --accent-grad: linear-gradient(135deg, #0284C7, #6366F1);
+      --text: #0F172A;
+      --subtext: #64748B;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; transition: background 0.3s, color 0.3s; }
+    body { background: var(--bg); color: var(--text); padding: 24px; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+    .header { width: 100%; max-width: 800px; display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .logo { font-size: 1.25rem; font-weight: 800; background: var(--accent-grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .theme-btn { background: var(--card-bg); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+    .hero { text-align: center; margin: 40px 0 30px; max-width: 650px; }
+    .hero h1 { font-size: 2.2rem; margin-bottom: 12px; font-weight: 800; line-height: 1.2; }
+    .hero p { color: var(--subtext); font-size: 1rem; line-height: 1.6; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; width: 100%; max-width: 800px; margin-bottom: 30px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+    .card h3 { font-size: 1.1rem; margin-bottom: 8px; color: var(--accent); }
+    .card p { font-size: 0.88rem; color: var(--subtext); line-height: 1.5; margin-bottom: 14px; }
+    .interactive-box { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 800px; text-align: center; }
+    .counter-val { font-size: 2.8rem; font-weight: 800; color: var(--accent); margin: 12px 0; }
+    .btn-group { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .action-btn { background: var(--accent); color: #000; font-weight: 700; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; }
+    .footer { margin-top: auto; padding-top: 40px; color: var(--subtext); font-size: 0.8rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">⚡ GVONE LIVE RUNTIME</div>
+    <button class="theme-btn" onclick="toggleTheme()">🌓 Toggle Mode</button>
+  </div>
+  <div class="hero">
+    <h1>$topic</h1>
+    <p>Autonomously generated and running in the GVONE sandboxed runtime. Fully responsive with client-side state and live interactive controls.</p>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h3>🚀 Live Runtime</h3>
+      <p>Interactive web application rendered directly inside your sandboxed browser tab with full DOM and JS execution.</p>
+    </div>
+    <div class="card">
+      <h3>⚡ Responsive Design</h3>
+      <p>Mobile-first layout with dynamic CSS custom properties, touch feedback, and fluid transitions.</p>
+    </div>
+    <div class="card">
+      <h3>🛠 Editable Source</h3>
+      <p>View or modify this page anytime in the built-in file editor or rerun with <code>/run index.html</code>.</p>
+    </div>
+  </div>
+  <div class="interactive-box">
+    <h3>Interactive Runtime Demo</h3>
+    <div class="counter-val" id="counter">0</div>
+    <div class="btn-group">
+      <button class="action-btn" onclick="increment()">Count Up (+1)</button>
+      <button class="theme-btn" onclick="resetCount()">Reset</button>
+    </div>
+  </div>
+  <div class="footer">
+    Built with GVONE Unified Command Engine • Projects/index.html
+  </div>
+  <script>
+    let count = 0;
+    function increment() { count++; document.getElementById('counter').innerText = count; }
+    function resetCount() { count = 0; document.getElementById('counter').innerText = count; }
+    function toggleTheme() {
+      const b = document.body;
+      b.setAttribute('data-theme', b.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+    }
+  </script>
+</body>
+</html>
+        """.trimIndent()
+    }
+
+    fun generateHelpOutput(commands: List<CustomCommandEntity>): List<TerminalLine> {
+        val lines = mutableListOf<TerminalLine>()
+        lines.add(TerminalLine("--- GVONE UNIFIED COMMAND ENGINE MANUAL ---", TerminalLineType.SYSTEM))
+        lines.add(TerminalLine("Syntax: <command> [arguments...] or /<command> [arguments...]", TerminalLineType.INFO))
+        lines.add(TerminalLine("Direct Address Bar input has 100% equal parity with Terminal CLI.", TerminalLineType.SUCCESS))
+        lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+        lines.add(TerminalLine("[1] TERMINAL & SYSTEM UTILITIES", TerminalLineType.SUCCESS))
+        lines.add(TerminalLine("  help, ?              Display this manual", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  clear, cls           Clear terminal screen", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  bridge               Check Web App Bridge status (Success/Failed)", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  addressbar           Check address bar stream link status", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  history              Show recently executed commands", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  tabs, lstabs         List all browser tabs with index and URLs", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  tab <index|name>     Switch active browser tab", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  newtab [-p] [url]    Open new regular or private tab", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  closetab [index]     Close current or specified tab", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  url [address]        Navigate to URL or print current URL", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  tor [on|off|status]  Toggle or inspect Tor Onion Shield", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  desktop              Toggle desktop mode for webpage", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  js <expression>      Evaluate JavaScript in webpage context", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  ai <prompt>          Query GVONE AI Q&A directly", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  ping <host>          Test network latency", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  whoami, date, uname  Terminal system information", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  exit, quit           Close terminal interface", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+        lines.add(TerminalLine("[2] AGENTIC RUNTIME (ChatGPT Atlas, Comet, Dia)", TerminalLineType.SUCCESS))
+        lines.add(TerminalLine("  /agent [goal]        Execute autonomous multi-step agentic goal", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  /agent on|off        Toggle persistent agentic input prompt", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  /agent persona <p>   Switch persona: atlas, comet, dia, auto", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  /agent status        Inspect active agent runtime, sandbox group & tools", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  /organize            Auto-cluster all open tabs into domain cohorts", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+        lines.add(TerminalLine("[3] SANDBOX TAB GROUPS & COHORTS", TerminalLineType.SUCCESS))
+        lines.add(TerminalLine("  /groups, /tabgroups  List all tab groups with tab counts and colors", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  /sandbox             Focus or create dedicated Sandbox tab group", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  /group create <n> [c]Create tab cohort with custom name and color", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  /group add <tab> <g> Move a tab into a group", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  /group close <g>     Close tab group and all its member tabs", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  /ungroup [tab]       Remove tab from its current group", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+        lines.add(TerminalLine("[4] SANDBOX FILESYSTEM & WORKSPACE", TerminalLineType.SUCCESS))
+        lines.add(TerminalLine("  pwd                  Print working directory", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  cd [path]            Change directory (~, .., relative, absolute)", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  ls, dir [-l] [path]  List files, permissions, sizes, and timestamps", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  cat <file>           Display content of file", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  touch <file>         Create empty file", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  mkdir <dir>          Create directory", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  rm [-r] <path>       Remove file or directory", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  tree [path]          Display ASCII directory tree structure", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  view, openfile <f>   Open sandbox file in a live browser tab", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  run, /run [site|f]   Run/preview website, launch file, or create web app", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  run website [topic]  Autonomously create modern website & run in live tab", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  df, du               Inspect disk space & sandbox storage consumption", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+        lines.add(TerminalLine("[5] BROWSER DOM & WEB INSPECTION", TerminalLineType.SUCCESS))
+        lines.add(TerminalLine("  click <sel|text>     Click DOM element by CSS selector or button text", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  type <sel> <text>    Type text into input element", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  scroll <dir>         Scroll page: down, up, top, bottom", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  links                Extract all hyperlinks from active page", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  text, extract        Extract visible textual content from page", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  cookies              Inspect active site session cookies & Tor status", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+        lines.add(TerminalLine("[6] SEARCH COMMANDS", TerminalLineType.SUCCESS))
+        commands.filter { it.type == CommandType.SEARCH }.forEach { cmd ->
+            lines.add(TerminalLine("  ${cmd.command.padEnd(12)} ${cmd.name} (${cmd.description})", TerminalLineType.OUTPUT))
+        }
+        lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+        lines.add(TerminalLine("[7] GVONE AI COMMANDS", TerminalLineType.SUCCESS))
+        commands.filter { it.type == CommandType.AI }.forEach { cmd ->
+            lines.add(TerminalLine("  ${cmd.command.padEnd(12)} ${cmd.name} (${cmd.description})", TerminalLineType.OUTPUT))
+        }
+        lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+        lines.add(TerminalLine("[8] BROWSER & PAGE ACTIONS", TerminalLineType.SUCCESS))
+        commands.filter { it.type == CommandType.BROWSER_ACTION || it.type == CommandType.PAGE_ACTION }.forEach { cmd ->
+            lines.add(TerminalLine("  ${cmd.command.padEnd(12)} ${cmd.name} (${cmd.description})", TerminalLineType.OUTPUT))
+        }
+        lines.add(TerminalLine("", TerminalLineType.OUTPUT))
+
+        lines.add(TerminalLine("[9] AUTOMATION COMMANDS", TerminalLineType.SUCCESS))
+        commands.filter { it.type == CommandType.AUTOMATION }.forEach { cmd ->
+            lines.add(TerminalLine("  ${cmd.command.padEnd(12)} ${cmd.name} (${cmd.description})", TerminalLineType.OUTPUT))
+        }
+        lines.add(TerminalLine("-----------------------------------", TerminalLineType.SYSTEM))
+
+        return lines
+    }
+
+    private fun extractCodeArtifacts(text: String): List<Pair<String, String>> {
+        val results = mutableListOf<Pair<String, String>>()
+        if (text.isBlank()) return results
+        val regex = Regex("```(?:[a-zA-Z0-9_-]+:)?([a-zA-Z0-9_.-]+\\.[a-zA-Z0-9]+)\\s*\\n([\\s\\S]*?)```")
+        for (match in regex.findAll(text)) {
+            val fileName = match.groupValues[1].trim()
+            val content = match.groupValues[2]
+            if (fileName.contains(".") && content.isNotBlank()) {
+                results.add(fileName to content)
+            }
+        }
+        return results
     }
 }

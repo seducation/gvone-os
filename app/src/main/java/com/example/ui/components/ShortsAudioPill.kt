@@ -82,7 +82,10 @@ fun ShortsAudioPill(
                         shape = RoundedCornerShape(20.dp)
                     )
                     .clip(RoundedCornerShape(20.dp))
-                    .clickable {
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple()
+                    ) {
                         if (!isExpanded) {
                             isExpanded = true
                         } else {
