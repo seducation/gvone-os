@@ -5,6 +5,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -23,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,6 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import coil.compose.AsyncImage
 import com.example.ui.components.ActionMenuBottomSheet
 import com.example.ui.components.CommandAutocompletePopup
 import com.example.ui.components.suggestions.SuggestionChipsBar
@@ -229,8 +236,29 @@ fun TerminalScreen(
     // Active input state
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
 
-    // Selected items (Photos, Files, Websites, Prompts) displayed near the bulb icon
+    // Selected items (Photos, Files, Websites, Prompts) displayed near the terminal prompt
     var selectedItems by remember { mutableStateOf<List<QuickPrompt>>(emptyList()) }
+
+    // Synchronize externally selected photo URI into selectedItems
+    LaunchedEffect(selectedPhotoUri) {
+        if (selectedPhotoUri != null) {
+            val segment = selectedPhotoUri.lastPathSegment ?: "photo_${System.currentTimeMillis()}.jpg"
+            val uriStr = selectedPhotoUri.toString()
+            val photoItem = QuickPrompt(
+                id = "photo_${System.currentTimeMillis()}_${segment.hashCode()}",
+                title = "Photo: $segment",
+                promptText = "/photos $uriStr",
+                icon = Icons.Rounded.AddPhotoAlternate,
+                category = "Photo",
+                type = SelectedItemType.PHOTO,
+                uriOrUrl = uriStr
+            )
+            if (selectedItems.none { it.uriOrUrl == uriStr && it.type == SelectedItemType.PHOTO }) {
+                selectedItems = selectedItems + photoItem
+            }
+            onClearSelectedPhotoUri?.invoke()
+        }
+    }
 
     // Helper functions for selecting photo, file, and website items
     val selectPhotoItem: (String?, String?) -> Unit = { name, uriString ->
@@ -244,8 +272,19 @@ fun TerminalScreen(
             type = SelectedItemType.PHOTO,
             uriOrUrl = uriString
         )
-        if (selectedItems.none { it.title == item.title }) {
+        // Keep unique photo attachments and add newest
+        if (selectedItems.none { it.uriOrUrl == uriString && it.type == SelectedItemType.PHOTO }) {
             selectedItems = selectedItems + item
+        }
+    }
+
+    // Direct system photo picker within Terminal
+    val internalTerminalPhotoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            val segment = uri.lastPathSegment ?: "photo_${System.currentTimeMillis()}.jpg"
+            selectPhotoItem(segment, uri.toString())
         }
     }
 
@@ -387,8 +426,10 @@ fun TerminalScreen(
     }
 
     // Command execution handler delegating directly to centralized TerminalCommandExecutor
-    fun executeCommand(rawInput: String) {
+    fun executeCommand(rawInput: String, attachedPhoto: QuickPrompt? = null) {
         val trimmed = rawInput.trim()
+        val photoToSend = attachedPhoto ?: selectedItems.firstOrNull { it.type == SelectedItemType.PHOTO }
+
         val promptPrefix = if (isAgenticMode) {
             "gvone[agentic:${activePersona.badge.lowercase()}]:$currentCwd$ "
         } else if (!isBridgeMode) {
@@ -396,7 +437,8 @@ fun TerminalScreen(
         } else {
             "bridge@browser:$currentCwd$ "
         }
-        if (trimmed.isEmpty()) {
+
+        if (trimmed.isEmpty() && photoToSend == null) {
             val emptyCommandLine = TerminalLine(
                 text = promptPrefix,
                 type = TerminalLineType.COMMAND
@@ -409,12 +451,28 @@ fun TerminalScreen(
             return
         }
 
-        // Add to persistent history
-        viewModel.terminalRepository.addCommandToHistory(trimmed)
-        if (commandHistory.isEmpty() || commandHistory.last() != trimmed) {
-            commandHistory.add(trimmed)
+        // Add to persistent history if input text is not empty
+        if (trimmed.isNotEmpty()) {
+            viewModel.terminalRepository.addCommandToHistory(trimmed)
+            if (commandHistory.isEmpty() || commandHistory.last() != trimmed) {
+                commandHistory.add(trimmed)
+            }
+            historyIndex = -1
         }
-        historyIndex = -1
+
+        // If a photo is attached, dispatch directly to terminal command executor with photo payload
+        if (photoToSend != null) {
+            viewModel.terminalCommandExecutor.executeCommand(
+                rawInput = trimmed,
+                origin = CommandOrigin.TERMINAL,
+                onOpenAgentDashboard = onOpenAgentDashboard,
+                attachedPhotoUri = photoToSend.uriOrUrl,
+                attachedPhotoName = photoToSend.title.removePrefix("Photo: ")
+            )
+            selectedItems = selectedItems.filterNot { it.id == photoToSend.id }
+            inputText = TextFieldValue("")
+            return
+        }
 
         // Parse token and argument
         val spaceIdx = trimmed.indexOf(' ')
@@ -1227,6 +1285,187 @@ fun TerminalScreen(
                 )
             }
 
+            // 3.8 ATTACHED PHOTO & MEDIA PANEL (Send selected photo directly in terminal)
+            val attachedPhotos = selectedItems.filter { it.type == SelectedItemType.PHOTO }
+            val otherAttachedItems = selectedItems.filterNot { it.type == SelectedItemType.PHOTO }
+
+            if (attachedPhotos.isNotEmpty()) {
+                Surface(
+                    color = Color(0xFF0F172A),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                        .testTag("terminal_attached_photos_container")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.AddPhotoAlternate,
+                                    contentDescription = null,
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "ATTACHED PHOTO (${attachedPhotos.size})",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF38BDF8)
+                                )
+                            }
+                            Text(
+                                text = "Dismiss",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8),
+                                modifier = Modifier
+                                    .clickable {
+                                        selectedItems = otherAttachedItems
+                                    }
+                                    .padding(horizontal = 4.dp)
+                            )
+                        }
+
+                        attachedPhotos.forEach { photo ->
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF1E293B),
+                                border = BorderStroke(1.dp, Color(0xFF334155)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Thumbnail preview
+                                    if (photo.uriOrUrl != null) {
+                                        AsyncImage(
+                                            model = photo.uriOrUrl,
+                                            contentDescription = photo.title,
+                                            modifier = Modifier
+                                                .size(46.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f), RoundedCornerShape(4.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(46.dp)
+                                                .background(Color(0xFF0F172A), RoundedCornerShape(4.dp))
+                                                .border(1.dp, Color(0xFF334155), RoundedCornerShape(4.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Image,
+                                                contentDescription = null,
+                                                tint = Color(0xFF94A3B8),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Photo Info
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = photo.title.removePrefix("Photo: "),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFF1F5F9),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (inputText.text.isNotBlank()) "Sends with: \"${inputText.text.take(24)}...\"" else "Ready to send directly in terminal",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF34D399),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    // Direct Send Photo Button
+                                    Button(
+                                        onClick = {
+                                            executeCommand(
+                                                rawInput = inputText.text,
+                                                attachedPhoto = photo
+                                            )
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF238636),
+                                            contentColor = Color.White
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier
+                                            .height(32.dp)
+                                            .testTag("terminal_send_photo_direct_btn")
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Rounded.Send,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Text(
+                                                text = "Send",
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(4.dp))
+
+                                    // Remove button
+                                    IconButton(
+                                        onClick = {
+                                            selectedItems = selectedItems.filterNot { it.id == photo.id }
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = "Remove photo",
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // 4. ACTIVE COMMAND INPUT ROW (Prompt + Monospace Text Field + Cursor)
             Surface(
                 color = TermSurfaceColor,
@@ -1340,6 +1579,33 @@ fun TerminalScreen(
                             )
                         }
                     }
+
+                    // Direct Photo Picker button in terminal
+                    IconButton(
+                        onClick = {
+                            if (onOpenPhotos != null) {
+                                onOpenPhotos()
+                            } else {
+                                internalTerminalPhotoPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color(0xFF161B22), RoundedCornerShape(6.dp))
+                            .border(BorderStroke(1.dp, Color(0x33FFFFFF)), RoundedCornerShape(6.dp))
+                            .testTag("terminal_attach_photo_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AddPhotoAlternate,
+                            contentDescription = "Attach Photo Directly",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     // Action Menu bottom sheet trigger
                     IconButton(
@@ -1648,9 +1914,12 @@ fun TerminalScreen(
             ActionMenuBottomSheet(
                 onPhotosClick = {
                     showActionBottomSheet = false
-                    selectPhotoItem(null, null)
-                    onOpenPhotos?.invoke() ?: run {
-                        executeCommand("/photos")
+                    if (onOpenPhotos != null) {
+                        onOpenPhotos()
+                    } else {
+                        internalTerminalPhotoPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
                     }
                 },
                 onCameraClick = {
@@ -2228,16 +2497,53 @@ private fun TerminalLineItem(
         TerminalLineType.EXPANDABLE_TASK -> Color(0xFFA855F7) // Purple
     }
 
-    Text(
-        text = line.text,
-        color = color,
-        fontFamily = FontFamily.Monospace,
-        fontSize = 12.5.sp,
-        lineHeight = 17.sp,
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onCopy() }
-    )
+    ) {
+        Text(
+            text = line.text,
+            color = color,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.5.sp,
+            lineHeight = 17.sp,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        if (line.imageUri != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = Color(0xFF0F172A),
+                border = BorderStroke(1.dp, Color(0xFF334155)),
+                modifier = Modifier
+                    .widthIn(max = 240.dp)
+                    .clip(RoundedCornerShape(6.dp))
+            ) {
+                Column(modifier = Modifier.padding(6.dp)) {
+                    AsyncImage(
+                        model = line.imageUri,
+                        contentDescription = "Terminal Image Attachment",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 90.dp, max = 160.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "📷 ${android.net.Uri.parse(line.imageUri).lastPathSegment ?: "image.jpg"}",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        color = Color(0xFF94A3B8),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -2264,51 +2570,84 @@ private fun UserInputCommandItem(
             .clickable { if (actionCount > 0) onToggleExpand() else onCopy() }
             .testTag("user_input_${commandLine.id}")
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = commandLine.text,
-                color = TermPromptCyan,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 17.sp,
-                modifier = Modifier.weight(1f)
-            )
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = commandLine.text,
+                    color = TermPromptCyan,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 17.sp,
+                    modifier = Modifier.weight(1f)
+                )
 
-            // Right-direction expandable and collapsible icon next to user input
-            if (actionCount > 0) {
-                Surface(
-                    shape = RoundedCornerShape(3.dp),
-                    color = if (isExpanded) TermPromptCyan.copy(alpha = 0.15f) else Color(0xFF21262D),
-                    border = BorderStroke(0.5.dp, if (isExpanded) TermPromptCyan.copy(alpha = 0.5f) else Color(0xFF30363D)),
-                    modifier = Modifier
-                        .clickable { onToggleExpand() }
-                        .testTag("user_input_toggle_${commandLine.id}")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                // Right-direction expandable and collapsible icon next to user input
+                if (actionCount > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color = if (isExpanded) TermPromptCyan.copy(alpha = 0.15f) else Color(0xFF21262D),
+                        border = BorderStroke(0.5.dp, if (isExpanded) TermPromptCyan.copy(alpha = 0.5f) else Color(0xFF30363D)),
+                        modifier = Modifier
+                            .clickable { onToggleExpand() }
+                            .testTag("user_input_toggle_${commandLine.id}")
                     ) {
-                        Text(
-                            text = "$actionCount actions",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 8.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isExpanded) TermPromptCyan else Color(0xFF8B949E)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "$actionCount actions",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isExpanded) TermPromptCyan else Color(0xFF8B949E)
+                            )
+                            // Right direction chevron icon
+                            Icon(
+                                imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = if (isExpanded) "Collapse Action Logs" else "Expand Action Logs",
+                                tint = if (isExpanded) TermPromptCyan else Color(0xFF8B949E),
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (commandLine.imageUri != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF0F172A),
+                    border = BorderStroke(1.dp, Color(0xFF334155)),
+                    modifier = Modifier
+                        .widthIn(max = 240.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                ) {
+                    Column(modifier = Modifier.padding(6.dp)) {
+                        AsyncImage(
+                            model = commandLine.imageUri,
+                            contentDescription = "User Attached Image",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 90.dp, max = 160.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            contentScale = ContentScale.Crop
                         )
-                        // Right direction chevron icon
-                        Icon(
-                            imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = if (isExpanded) "Collapse Action Logs" else "Expand Action Logs",
-                            tint = if (isExpanded) TermPromptCyan else Color(0xFF8B949E),
-                            modifier = Modifier.size(15.dp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "📷 ${android.net.Uri.parse(commandLine.imageUri).lastPathSegment ?: "attached_image.jpg"}",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = Color(0xFF38BDF8),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

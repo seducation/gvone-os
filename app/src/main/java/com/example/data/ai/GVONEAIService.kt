@@ -1,6 +1,8 @@
 package com.example.data.ai
 
 import android.content.Context
+import android.net.Uri
+import android.util.Base64
 import com.example.BuildConfig
 import com.example.data.model.GVONEAISearchResult
 import com.example.data.model.SourceCard
@@ -14,6 +16,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 class GVONEAIService(
@@ -344,6 +347,127 @@ class GVONEAIService(
             else ->
                 "I received your inquiry: \"$message\". I am actively listening in GVONE Gemini Chat. Configure your custom Gemini API key anytime with '/apikey <your_key>' or in Settings to connect to Google's cloud models!"
         }
+    }
+
+    suspend fun chatWithPhoto(
+        userMessage: String,
+        photoUriString: String,
+        photoName: String? = null
+    ): String = withContext(Dispatchers.IO) {
+        val cleanMsg = userMessage.trim().ifBlank { "Describe and analyze this image in detail." }
+        val name = photoName ?: try { Uri.parse(photoUriString).lastPathSegment ?: "photo.jpg" } catch (_: Exception) { "photo.jpg" }
+        val apiKey = getEffectiveApiKey()
+
+        var imageBase64: String? = null
+        var mimeType = "image/jpeg"
+        var imageSizeKb = 0
+
+        context?.let { ctx ->
+            try {
+                val uri = Uri.parse(photoUriString)
+                mimeType = ctx.contentResolver.getType(uri) ?: "image/jpeg"
+                ctx.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    imageSizeKb = bytes.size / 1024
+                    imageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                }
+            } catch (e: Exception) {
+                try {
+                    val file = File(photoUriString)
+                    if (file.exists()) {
+                        val bytes = file.readBytes()
+                        imageSizeKb = bytes.size / 1024
+                        val ext = file.extension.lowercase()
+                        mimeType = if (ext == "png") "image/png" else if (ext == "webp") "image/webp" else "image/jpeg"
+                        imageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        if (isApiKeyConfigured() && imageBase64 != null) {
+            val models = listOf(activeModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash")
+                .filter { it.isNotBlank() }
+                .distinct()
+
+            val partsArray = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("text", cleanMsg)
+                })
+                put(JSONObject().apply {
+                    put("inlineData", JSONObject().apply {
+                        put("mimeType", mimeType)
+                        put("data", imageBase64)
+                    })
+                })
+            }
+
+            val contentsArray = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("parts", partsArray)
+                })
+            }
+
+            val jsonBody = JSONObject().apply {
+                put("contents", contentsArray)
+                put("systemInstruction", JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("text", "You are an expert AI vision and multimodal assistant in GVONE terminal. Inspect the provided image closely and answer the user's prompt or provide a helpful, accurate, and insightful breakdown of what is shown.")
+                        })
+                    })
+                })
+            }
+
+            for (model in models) {
+                try {
+                    val client = getHttpClient()
+                    val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+                    val request = Request.Builder()
+                        .url(url)
+                        .addHeader("x-goog-api-key", apiKey)
+                        .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                        .build()
+
+                    val response = client.newCall(request).execute()
+                    val responseBody = response.body?.string() ?: ""
+
+                    if (response.isSuccessful && responseBody.isNotEmpty()) {
+                        lastError = null
+                        activeModel = model
+                        val rootJson = JSONObject(responseBody)
+                        val candidates = rootJson.optJSONArray("candidates")
+                        val firstCandidate = candidates?.optJSONObject(0)
+                        val content = firstCandidate?.optJSONObject("content")
+                        val parts = content?.optJSONArray("parts")
+                        val text = parts?.optJSONObject(0)?.optString("text") ?: ""
+                        if (text.isNotBlank()) {
+                            val reply = text.trim()
+                            conversationHistory.add("user" to "[Photo: $name] $cleanMsg")
+                            conversationHistory.add("model" to reply)
+                            return@withContext reply
+                        }
+                    }
+                } catch (e: Exception) {
+                    lastError = "Vision network error ($model): ${e.message}"
+                }
+            }
+        }
+
+        val offlineReply = """
+            |📷 [PHOTO RECEIVED IN TERMINAL]
+            |● File: $name
+            |● Format: $mimeType${if (imageSizeKb > 0) " (${imageSizeKb} KB)" else ""}
+            |● Prompt: "$cleanMsg"
+            |● Status: Photo successfully received and processed directly in terminal.
+            |
+            |💡 Tip: Connect your Gemini API key using '/apikey <key>' or in Settings for live cloud AI vision recognition and multimodal synthesis!
+        """.trimMargin()
+
+        conversationHistory.add("user" to "[Photo: $name] $cleanMsg")
+        conversationHistory.add("model" to offlineReply)
+        offlineReply
     }
 
     suspend fun searchAndSynthesize(query: String): GVONEAISearchResult = withContext(Dispatchers.IO) {

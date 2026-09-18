@@ -23,7 +23,8 @@ data class TerminalLine(
     val type: TerminalLineType = TerminalLineType.OUTPUT,
     val id: String = UUID.randomUUID().toString(),
     val timestamp: Long = System.currentTimeMillis(),
-    val taskId: String? = null
+    val taskId: String? = null,
+    val imageUri: String? = null
 )
 
 data class TerminalSession(

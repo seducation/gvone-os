@@ -128,7 +128,9 @@ class TerminalCommandExecutor(
     fun executeCommand(
         rawInput: String,
         origin: CommandOrigin = CommandOrigin.TERMINAL,
-        onOpenAgentDashboard: (() -> Unit)? = null
+        onOpenAgentDashboard: (() -> Unit)? = null,
+        attachedPhotoUri: String? = null,
+        attachedPhotoName: String? = null
     ) {
         val trimmed = rawInput.trim()
         val currentCwd = shellEngine.promptPath
@@ -144,7 +146,7 @@ class TerminalCommandExecutor(
         // Always synchronize the address bar with the command being executed
         viewModel.setAddressBarInput(trimmed)
 
-        if (trimmed.isEmpty()) {
+        if (trimmed.isEmpty() && attachedPhotoUri == null) {
             val emptyCommandLine = TerminalLine(
                 text = promptPrefix,
                 type = TerminalLineType.COMMAND
@@ -154,20 +156,27 @@ class TerminalCommandExecutor(
         }
 
         // Record in persistent command history
-        viewModel.terminalRepository.addCommandToHistory(trimmed)
+        if (trimmed.isNotEmpty()) {
+            viewModel.terminalRepository.addCommandToHistory(trimmed)
+        }
+
+        val photoLabel = attachedPhotoName ?: if (attachedPhotoUri != null) {
+            try { android.net.Uri.parse(attachedPhotoUri).lastPathSegment ?: "photo.jpg" } catch (_: Exception) { "photo.jpg" }
+        } else null
+
+        val displayText = if (photoLabel != null) {
+            if (trimmed.isNotEmpty()) "$promptPrefix[Photo: $photoLabel] $trimmed" else "$promptPrefix[Photo: $photoLabel]"
+        } else {
+            "$promptPrefix$trimmed"
+        }
 
         val cmdLine = TerminalLine(
-            text = "$promptPrefix$trimmed",
-            type = TerminalLineType.COMMAND
+            text = displayText,
+            type = TerminalLineType.COMMAND,
+            imageUri = attachedPhotoUri
         )
         val outputLines = mutableListOf<TerminalLine>()
         outputLines.add(cmdLine)
-
-        // Parse token and argument
-        val spaceIdx = trimmed.indexOf(' ')
-        val token = if (spaceIdx != -1) trimmed.substring(0, spaceIdx).trim() else trimmed
-        val queryArg = if (spaceIdx != -1) trimmed.substring(spaceIdx + 1).trim() else ""
-        val normalizedToken = if (token.startsWith("/")) token.lowercase() else "/${token.lowercase()}"
 
         fun commitAndShowTerminalIfNeeded(lines: List<TerminalLine>, openTerminal: Boolean = true) {
             viewModel.appendTerminalLines(lines)
@@ -180,6 +189,51 @@ class TerminalCommandExecutor(
         val currentTab = viewModel.currentTab.value
         val tabs = viewModel.tabs.value
         val isTorActive = viewModel.torStatus.value.state == TorConnectionState.CONNECTED
+
+        // Handle direct selected photo execution if attachedPhotoUri is present
+        if (attachedPhotoUri != null) {
+            outputLines.add(TerminalLine("📷 Photo sent to terminal: $photoLabel", TerminalLineType.SUCCESS))
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+
+            // Web Bridge Mode
+            if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.WEB) {
+                viewModel.deliverToActiveWebPage("PHOTO:$attachedPhotoUri:${trimmed.ifBlank { photoLabel ?: "photo" }}")
+                viewModel.appendTerminalLine(TerminalLine("● [WEB BRIDGE] Photo '$photoLabel' delivered to web application.", TerminalLineType.SUCCESS))
+                return
+            }
+
+            // Agentic Mode
+            if (_isAgenticMode.value) {
+                val goal = trimmed.ifBlank { "Analyze and inspect photo: $photoLabel" }
+                viewModel.appendTerminalLine(TerminalLine("● [AGENT MULTIMODAL] Processing image with persona ${agentEngine.activePersona.name}...", TerminalLineType.AGENT_STEP))
+                scope.launch {
+                    agentEngine.runAgenticWorkflow("$goal (Attached image: $photoLabel, uri: $attachedPhotoUri)", shellEngine.currentDirectory) { line ->
+                        viewModel.appendTerminalLine(line)
+                    }
+                }
+                return
+            }
+
+            // Chat / Conversational AI Mode with Multimodal Vision
+            outputLines.clear()
+            viewModel.appendTerminalLine(TerminalLine("● [VISION AI] Analyzing image with ${viewModel.aiService.activeModel}...", TerminalLineType.INFO))
+            scope.launch {
+                try {
+                    val promptText = trimmed.ifBlank { "Describe this photo and analyze what is visible in detail." }
+                    val reply = viewModel.aiService.chatWithPhoto(promptText, attachedPhotoUri, photoLabel)
+                    viewModel.appendTerminalLine(TerminalLine(reply, TerminalLineType.AI_RESPONSE))
+                } catch (e: Exception) {
+                    viewModel.appendTerminalLine(TerminalLine("AI Photo Error: ${e.message}", TerminalLineType.ERROR))
+                }
+            }
+            return
+        }
+
+        // Parse token and argument
+        val spaceIdx = trimmed.indexOf(' ')
+        val token = if (spaceIdx != -1) trimmed.substring(0, spaceIdx).trim() else trimmed
+        val queryArg = if (spaceIdx != -1) trimmed.substring(spaceIdx + 1).trim() else ""
+        val normalizedToken = if (token.startsWith("/")) token.lowercase() else "/${token.lowercase()}"
 
         // 0. Deterministic Natural Language Task Switching: "Stop that and search news"
         if (trimmed.matches(Regex("(?i)^(stop|cancel|abort)\\s+(that|current\\s+task|this)\\s+and\\s+.*"))) {
@@ -209,6 +263,30 @@ class TerminalCommandExecutor(
                 viewModel.clearTerminalLines()
                 if (origin == CommandOrigin.ADDRESS_BAR && viewModel.activeSheet.value != ActiveSheet.Terminal) {
                     viewModel.openSheet(ActiveSheet.Terminal)
+                }
+                return
+            }
+
+            "/photo", "/photos" -> {
+                if (queryArg.isBlank()) {
+                    outputLines.add(TerminalLine("📷 Photo Terminal Direct Delivery:", TerminalLineType.INFO))
+                    outputLines.add(TerminalLine("● Use the [📷] photo attachment button directly in the terminal input bar to pick and send any photo.", TerminalLineType.OUTPUT))
+                    outputLines.add(TerminalLine("● Command syntax: /photo <file_path_or_uri> [optional prompt]", TerminalLineType.OUTPUT))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                } else {
+                    val parts = queryArg.split(" ", limit = 2)
+                    val photoTarget = parts[0]
+                    val customPrompt = if (parts.size > 1) parts[1] else ""
+                    val photoUriOrPath = shellEngine.resolvePath(photoTarget)
+                    val fileObj = viewModel.fileSystem.getFile(photoUriOrPath)
+                    val effectiveUri = if (fileObj.exists()) fileObj.absolutePath else photoTarget
+                    executeCommand(
+                        rawInput = customPrompt,
+                        origin = origin,
+                        onOpenAgentDashboard = onOpenAgentDashboard,
+                        attachedPhotoUri = effectiveUri,
+                        attachedPhotoName = fileObj.name.ifBlank { null }
+                    )
                 }
                 return
             }
