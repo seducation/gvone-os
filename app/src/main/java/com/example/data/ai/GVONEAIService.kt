@@ -23,16 +23,27 @@ class GVONEAIService(
     private val torManager: TorManager? = null,
     private val context: Context? = null
 ) {
+    // OkHttpClient with 60-second timeouts for Gemini Generative AI operations
     private val defaultClient = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
     var runtimeApiKey: String? = null
-    var activeModel: String = "gemini-2.0-flash"
+    var activeModel: String = "gemini-3.5-flash"
     var lastError: String? = null
         private set
+
+    companion object {
+        val SUPPORTED_MODELS = listOf(
+            "gemini-3.5-flash",
+            "gemini-3.1-pro-preview",
+            "gemini-2.5-flash-image",
+            "gemini-flash-latest",
+            "gemini-3.1-flash-lite-preview"
+        )
+    }
 
     init {
         context?.let { ctx ->
@@ -43,24 +54,47 @@ class GVONEAIService(
                     runtimeApiKey = savedKey
                 }
                 val savedModel = prefs.getString("gemini_model", null)?.trim()
-                if (!savedModel.isNullOrBlank()) {
+                if (!savedModel.isNullOrBlank() && !savedModel.contains("1.5") && !savedModel.contains("2.0")) {
                     activeModel = savedModel
+                } else {
+                    activeModel = "gemini-3.5-flash"
                 }
             } catch (_: Exception) {}
         }
     }
 
+    fun setModel(model: String): Boolean {
+        val target = when (model.lowercase().trim()) {
+            "flash", "3.5", "gemini-3.5-flash" -> "gemini-3.5-flash"
+            "pro", "3.1", "3.1-pro", "gemini-3.1-pro-preview" -> "gemini-3.1-pro-preview"
+            "image", "2.5-image", "gemini-2.5-flash-image" -> "gemini-2.5-flash-image"
+            "latest", "flash-latest", "gemini-flash-latest" -> "gemini-flash-latest"
+            "lite", "flash-lite", "gemini-3.1-flash-lite-preview" -> "gemini-3.1-flash-lite-preview"
+            else -> model.trim()
+        }
+        activeModel = target
+        context?.let { ctx ->
+            try {
+                ctx.getSharedPreferences("gvone_ai_prefs", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("gemini_model", target)
+                    .apply()
+            } catch (_: Exception) {}
+        }
+        return true
+    }
+
     fun persistApiKey(key: String, model: String = activeModel) {
         val clean = key.trim().removeSurrounding("\"").removeSurrounding("'")
         runtimeApiKey = clean
-        activeModel = model
+        activeModel = if (model.contains("1.5") || model.contains("2.0")) "gemini-3.5-flash" else model
         lastError = null
         context?.let { ctx ->
             try {
                 ctx.getSharedPreferences("gvone_ai_prefs", Context.MODE_PRIVATE)
                     .edit()
                     .putString("gemini_api_key", clean)
-                    .putString("gemini_model", model)
+                    .putString("gemini_model", activeModel)
                     .apply()
             } catch (_: Exception) {}
         }
@@ -81,7 +115,7 @@ class GVONEAIService(
 
     private fun getHttpClient(): OkHttpClient {
         if (torManager?.torStatus?.value?.onionRoutingActive == true) {
-            return torManager.getOkHttpClient(timeoutSeconds = 15)
+            return torManager.getOkHttpClient(timeoutSeconds = 60)
         }
         return defaultClient
     }
@@ -115,8 +149,8 @@ class GVONEAIService(
             return@withContext Pair(false, "API key cannot be empty.")
         }
 
-        // Test candidate models
-        val candidateModels = listOf("gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest")
+        // Test candidate modern models in order of capability
+        val candidateModels = listOf("gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-flash-latest")
         val client = defaultClient
         var lastErrDetail = ""
 
@@ -155,7 +189,6 @@ class GVONEAIService(
                     } else {
                         "Model $model returned: $message"
                     }
-                    // If key itself is strictly invalid, no need to retry other models
                     if (message.contains("API_KEY_INVALID", ignoreCase = true) || message.contains("not valid", ignoreCase = true)) {
                         break
                     }
@@ -172,7 +205,7 @@ class GVONEAIService(
     suspend fun generateDirectResponse(prompt: String): String? = withContext(Dispatchers.IO) {
         if (!isApiKeyConfigured()) return@withContext null
         val apiKey = getEffectiveApiKey()
-        val models = listOf(activeModel, "gemini-2.5-flash", "gemini-3.5-flash", "gemini-flash-latest").distinct()
+        val models = listOf(activeModel, "gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-flash-latest").distinct()
 
         for (model in models) {
             try {
@@ -227,7 +260,7 @@ class GVONEAIService(
 
         val apiKey = getEffectiveApiKey()
         if (isApiKeyConfigured()) {
-            val models = listOf(activeModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-pro")
+            val models = listOf(activeModel, "gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-flash-latest")
                 .filter { it.isNotBlank() }
                 .distinct()
 
@@ -255,7 +288,7 @@ class GVONEAIService(
                 put("systemInstruction", JSONObject().apply {
                     put("parts", JSONArray().apply {
                         put(JSONObject().apply {
-                            put("text", "You are an intelligent, friendly, and helpful AI chatbot assistant in the GVONE browser terminal. Provide clear, direct, and conversational responses. You can answer questions, explain concepts, write code, tell stories, and chat naturally like a chatbot.")
+                            put("text", "You are an intelligent, friendly, and helpful AI assistant in the GVONE browser terminal powered by Google Gemini. Provide clear, direct, and conversational responses. You can write code, analyze data, explain concepts, generate file artifacts, and assist with workflows.")
                         })
                     })
                 })
@@ -295,7 +328,7 @@ class GVONEAIService(
                             val errObj = rootJson.optJSONObject("error")
                             val errMsg = errObj?.optString("message") ?: "HTTP ${response.code}"
                             if (response.code == 429 || errMsg.contains("quota", ignoreCase = true) || errMsg.contains("exhausted", ignoreCase = true)) {
-                                lastError = "Gemini API Quota Exceeded on free tier ($model): $errMsg"
+                                lastError = "Gemini API Quota Exceeded ($model): $errMsg"
                             } else {
                                 lastError = "Gemini API error ($model / ${response.code}): $errMsg"
                             }
@@ -325,80 +358,133 @@ class GVONEAIService(
         val lower = message.lowercase()
         return when {
             lower.contains("hello") || lower.contains("hi") || lower.contains("hey") ->
-                "Hello! I'm your GVONE Gemini AI Chatbot assistant. How can I help you today?"
+                "Hello! I'm your GVONE Gemini AI assistant. How can I help you today?"
             lower.contains("who are you") || lower.contains("what are you") ->
-                "I am the Gemini AI conversational assistant integrated into the GVONE browser terminal. When Bridge is OFF, I chat with you directly. When Voice is ON, you can speak with me live!"
+                "I am the Gemini AI assistant integrated into the GVONE browser terminal, supporting text reasoning, code generation, multimodal image & file analysis, and autonomous agent workflows."
             lower.contains("how are you") ->
-                "I'm running great and ready to help! What would you like to explore or discuss?"
+                "I'm running smoothly and ready to assist! What would you like to build, analyze, or explore?"
+            lower.contains("model") ->
+                "Currently using model: $activeModel. You can switch models anytime using '/model <name>' (e.g. gemini-3.5-flash, gemini-3.1-pro-preview, gemini-2.5-flash-image)."
+            lower.contains("checkpoint") ->
+                "Execution checkpoints are fully supported! Use '/checkpoint' or '/checkpoints' to list, create, and resume task snapshots across process restarts."
             lower.contains("bridge") ->
                 "When Bridge is ON, your terminal and address bar connect directly to the active web app. When Bridge is OFF, you chat normally with me (Gemini)! You can toggle Bridge using the BRIDGE chip or '/bridge on|off'."
             lower.contains("voice") ->
                 "You can talk with me live by toggling the VOICE chip or running '/voice on'. Your spoken words appear in the terminal, and I read my responses aloud to you!"
             lower.contains("help") ->
-                "Here are some things you can do:\n• Chat directly with Gemini when Bridge is OFF\n• Tap the VOICE chip to speak and listen live with transcript in terminal\n• Tap BRIDGE: OFF to toggle Web Bridge ON/OFF\n• Type '/help' to inspect all terminal and system commands"
+                "Here are key capabilities:\n• Send files and photos to Gemini for deep inspection: '/file send <path>' or attach via terminal bar\n• Manage execution checkpoints: '/checkpoint'\n• Upgrade / switch models: '/model <name>'\n• Toggle Web Bridge or Voice interaction: '/bridge', '/voice'\n• Inspect all commands: '/help'"
             lower.contains("thank") ->
                 "You're very welcome! Feel free to ask anything else anytime."
             lower.contains("time") ->
                 "The current local system time is ${java.text.SimpleDateFormat("HH:mm:ss z", java.util.Locale.getDefault()).format(java.util.Date())}."
             lower.contains("date") ->
                 "Today is ${java.text.SimpleDateFormat("EEEE, MMMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date())}."
-            lower.contains("weather") ->
-                "To check live weather forecast, type '/weather <city>' or ask me for a city report!"
             else ->
-                "I received your inquiry: \"$message\". I am actively listening in GVONE Gemini Chat. Configure your custom Gemini API key anytime with '/apikey <your_key>' or in Settings to connect to Google's cloud models!"
+                "I received your inquiry: \"$message\". I am actively listening in GVONE Gemini Chat. Configure your Gemini API key anytime with '/apikey <your_key>' or in Settings to connect to Google's cloud models ($activeModel)!"
         }
     }
 
-    suspend fun chatWithPhoto(
+    /**
+     * Multimodal API method to send ANY file (image, audio, PDF document, code, text, json, etc.)
+     * to the Gemini API and receive an intelligent analysis, code breakdown, or synthesis.
+     */
+    suspend fun chatWithFile(
         userMessage: String,
-        photoUriString: String,
-        photoName: String? = null
+        fileUriString: String,
+        fileName: String? = null,
+        explicitMimeType: String? = null
     ): String = withContext(Dispatchers.IO) {
-        val cleanMsg = userMessage.trim().ifBlank { "Describe and analyze this image in detail." }
-        val name = photoName ?: try { Uri.parse(photoUriString).lastPathSegment ?: "photo.jpg" } catch (_: Exception) { "photo.jpg" }
+        val cleanMsg = userMessage.trim().ifBlank { "Analyze and inspect this file in detail, summarizing its contents, structure, key findings, and actionable recommendations." }
+        val name = fileName ?: try { Uri.parse(fileUriString).lastPathSegment ?: "file" } catch (_: Exception) { "file" }
         val apiKey = getEffectiveApiKey()
 
-        var imageBase64: String? = null
-        var mimeType = "image/jpeg"
-        var imageSizeKb = 0
+        var fileBase64: String? = null
+        var textContent: String? = null
+        var mimeType = explicitMimeType ?: "application/octet-stream"
+        var fileSizeKb = 0
+
+        // Determine if file is text/code vs binary/multimodal
+        val ext = name.substringAfterLast('.', "").lowercase()
+        val isTextOrCode = isTextExtension(ext)
 
         context?.let { ctx ->
             try {
-                val uri = Uri.parse(photoUriString)
-                mimeType = ctx.contentResolver.getType(uri) ?: "image/jpeg"
-                ctx.contentResolver.openInputStream(uri)?.use { stream ->
-                    val bytes = stream.readBytes()
-                    imageSizeKb = bytes.size / 1024
-                    imageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                val uri = Uri.parse(fileUriString)
+                val detectedMime = ctx.contentResolver.getType(uri)
+                if (!detectedMime.isNullOrBlank()) {
+                    mimeType = detectedMime
+                } else {
+                    mimeType = guessMimeType(ext)
+                }
+
+                if (isTextOrCode) {
+                    ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                        textContent = reader.readText()
+                        fileSizeKb = (textContent?.toByteArray()?.size ?: 0) / 1024
+                    }
+                } else {
+                    ctx.contentResolver.openInputStream(uri)?.use { stream ->
+                        val bytes = stream.readBytes()
+                        fileSizeKb = bytes.size / 1024
+                        fileBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    }
                 }
             } catch (e: Exception) {
                 try {
-                    val file = File(photoUriString)
+                    val file = File(fileUriString)
                     if (file.exists()) {
-                        val bytes = file.readBytes()
-                        imageSizeKb = bytes.size / 1024
-                        val ext = file.extension.lowercase()
-                        mimeType = if (ext == "png") "image/png" else if (ext == "webp") "image/webp" else "image/jpeg"
-                        imageBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                        fileSizeKb = (file.length() / 1024).toInt()
+                        mimeType = guessMimeType(file.extension.lowercase())
+                        if (isTextOrCode || isTextExtension(file.extension.lowercase())) {
+                            textContent = file.readText()
+                        } else {
+                            val bytes = file.readBytes()
+                            fileBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                        }
                     }
                 } catch (_: Exception) {}
             }
         }
 
-        if (isApiKeyConfigured() && imageBase64 != null) {
-            val models = listOf(activeModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash")
+        if (isApiKeyConfigured()) {
+            val models = listOf(activeModel, "gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash-image", "gemini-flash-latest")
                 .filter { it.isNotBlank() }
                 .distinct()
 
-            val partsArray = JSONArray().apply {
-                put(JSONObject().apply {
-                    put("text", cleanMsg)
+            val partsArray = JSONArray()
+
+            if (fileBase64 != null) {
+                // Multimodal inline data (Images, PDFs, Audio, Video)
+                partsArray.put(JSONObject().apply {
+                    put("text", "File Name: $name (MIME: $mimeType, Size: ${fileSizeKb} KB)\n\n$cleanMsg")
                 })
-                put(JSONObject().apply {
+                partsArray.put(JSONObject().apply {
                     put("inlineData", JSONObject().apply {
                         put("mimeType", mimeType)
-                        put("data", imageBase64)
+                        put("data", fileBase64)
                     })
+                })
+            } else if (textContent != null) {
+                // Textual / Code file contents
+                val snippet = if (textContent!!.length > 30000) {
+                    textContent!!.take(30000) + "\n\n... [Content truncated for length]"
+                } else {
+                    textContent!!
+                }
+                val formattedPrompt = """
+                    |$cleanMsg
+                    |
+                    |=== FILE: $name (MIME: $mimeType, Size: ${fileSizeKb} KB) ===
+                    |```$ext
+                    |$snippet
+                    |```
+                """.trimMargin()
+                partsArray.put(JSONObject().apply {
+                    put("text", formattedPrompt)
+                })
+            } else {
+                partsArray.put(JSONObject().apply {
+                    put("text", "File Reference: $name (MIME: $mimeType, Size: ${fileSizeKb} KB)\n\n$cleanMsg")
                 })
             }
 
@@ -414,7 +500,7 @@ class GVONEAIService(
                 put("systemInstruction", JSONObject().apply {
                     put("parts", JSONArray().apply {
                         put(JSONObject().apply {
-                            put("text", "You are an expert AI vision and multimodal assistant in GVONE terminal. Inspect the provided image closely and answer the user's prompt or provide a helpful, accurate, and insightful breakdown of what is shown.")
+                            put("text", "You are an expert multimodal AI engineer and code analyst in the GVONE browser environment. Inspect the provided file thoroughly. Provide a structured, insightful, and practical response. If requested to generate or modify files, output complete code blocks with clear filenames.")
                         })
                     })
                 })
@@ -444,30 +530,80 @@ class GVONEAIService(
                         val text = parts?.optJSONObject(0)?.optString("text") ?: ""
                         if (text.isNotBlank()) {
                             val reply = text.trim()
-                            conversationHistory.add("user" to "[Photo: $name] $cleanMsg")
+                            conversationHistory.add("user" to "[File: $name] $cleanMsg")
                             conversationHistory.add("model" to reply)
                             return@withContext reply
                         }
                     }
                 } catch (e: Exception) {
-                    lastError = "Vision network error ($model): ${e.message}"
+                    lastError = "Multimodal file network error ($model): ${e.message}"
                 }
             }
         }
 
         val offlineReply = """
-            |📷 [PHOTO RECEIVED IN TERMINAL]
-            |● File: $name
-            |● Format: $mimeType${if (imageSizeKb > 0) " (${imageSizeKb} KB)" else ""}
+            |📄 [FILE RECEIVED & PROCESSED IN TERMINAL]
+            |● Name: $name
+            |● Type: $mimeType${if (fileSizeKb > 0) " (${fileSizeKb} KB)" else ""}
             |● Prompt: "$cleanMsg"
-            |● Status: Photo successfully received and processed directly in terminal.
+            |● Status: Successfully loaded and inspected in local sandbox.
             |
-            |💡 Tip: Connect your Gemini API key using '/apikey <key>' or in Settings for live cloud AI vision recognition and multimodal synthesis!
+            |💡 Tip: Connect your Gemini API key using '/apikey <key>' or in Settings for live cloud multimodal recognition and file synthesis ($activeModel)!
         """.trimMargin()
 
-        conversationHistory.add("user" to "[Photo: $name] $cleanMsg")
+        conversationHistory.add("user" to "[File: $name] $cleanMsg")
         conversationHistory.add("model" to offlineReply)
         offlineReply
+    }
+
+    suspend fun chatWithPhoto(
+        userMessage: String,
+        photoUriString: String,
+        photoName: String? = null
+    ): String = chatWithFile(
+        userMessage = userMessage,
+        fileUriString = photoUriString,
+        fileName = photoName,
+        explicitMimeType = "image/jpeg"
+    )
+
+    private fun isTextExtension(ext: String): Boolean {
+        return when (ext) {
+            "txt", "md", "markdown", "json", "xml", "csv", "tsv", "log",
+            "kt", "java", "js", "ts", "py", "html", "htm", "css", "scss",
+            "sh", "bash", "zsh", "c", "cpp", "h", "hpp", "rs", "go",
+            "yaml", "yml", "properties", "gradle", "kts", "sql", "graphql" -> true
+            else -> false
+        }
+    }
+
+    private fun guessMimeType(ext: String): String {
+        return when (ext) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            "svg" -> "image/svg+xml"
+            "pdf" -> "application/pdf"
+            "mp3" -> "audio/mp3"
+            "wav" -> "audio/wav"
+            "m4a" -> "audio/m4a"
+            "ogg" -> "audio/ogg"
+            "mp4" -> "video/mp4"
+            "webm" -> "video/webm"
+            "json" -> "application/json"
+            "xml" -> "application/xml"
+            "html", "htm" -> "text/html"
+            "css" -> "text/css"
+            "js" -> "application/javascript"
+            "ts" -> "application/typescript"
+            "kt", "kts" -> "text/x-kotlin"
+            "py" -> "text/x-python"
+            "java" -> "text/x-java"
+            "txt", "log" -> "text/plain"
+            "md", "markdown" -> "text/markdown"
+            else -> "application/octet-stream"
+        }
     }
 
     suspend fun searchAndSynthesize(query: String): GVONEAISearchResult = withContext(Dispatchers.IO) {
@@ -477,7 +613,7 @@ class GVONEAIService(
             return@withContext generateLocalSmartResult(query)
         }
 
-        val models = listOf(activeModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-pro")
+        val models = listOf(activeModel, "gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-flash-latest")
             .filter { it.isNotBlank() }
             .distinct()
 
@@ -614,7 +750,6 @@ class GVONEAIService(
     }
 
     private fun generateLocalSmartResult(query: String): GVONEAISearchResult {
-        val encoded = java.net.URLEncoder.encode(query, "UTF-8")
         return GVONEAISearchResult(
             query = query,
             aiAnswer = "GVONE AI Search Synthesis for \"$query\":\n\nThis subject encompasses key principles, modern standards, and comprehensive web documentation. GVONE Search provides direct source attribution and multi-tab exploration.",

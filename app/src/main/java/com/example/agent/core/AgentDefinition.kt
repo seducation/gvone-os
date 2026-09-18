@@ -37,7 +37,7 @@ data class AgentDefinition(
     val description: String,
     val capabilities: List<AgentCapability> = emptyList(),
     val tools: List<String> = emptyList(),
-    val model: String = "gemini-2.5-flash",
+    val model: String = "gemini-3.5-flash",
     val systemInstructions: String = "",
     val permissions: List<String> = emptyList(),
     val contextPolicy: ContextPolicy = ContextPolicy.STRICT_ISOLATED,

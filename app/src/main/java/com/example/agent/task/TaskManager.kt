@@ -278,6 +278,36 @@ class TaskManager(
     }
 
     /**
+     * Retrieves all checkpoints across all tasks.
+     */
+    fun getAllCheckpoints(): List<TaskCheckpoint> {
+        val all = mutableListOf<TaskCheckpoint>()
+        for ((_, list) in _checkpoints) {
+            all.addAll(list)
+        }
+        return all.sortedByDescending { it.timestamp }
+    }
+
+    fun formatCheckpointsReport(): String = buildString {
+        appendLine("=== GVONE TASK CHECKPOINTS REGISTRY ===")
+        val all = getAllCheckpoints()
+        if (all.isEmpty()) {
+            appendLine("No checkpoints recorded. Create one with '/checkpoint create [label]' or during agent workflows.")
+        } else {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+            all.forEachIndexed { i, cp ->
+                val task = getTask(cp.taskId)
+                val taskGoal = task?.goal ?: "Task ${cp.taskId.take(8)}"
+                appendLine("${i + 1}. Checkpoint ID: ${cp.checkpointId.take(8)}... | ${sdf.format(java.util.Date(cp.timestamp))}")
+                appendLine("   Task: \"$taskGoal\" | Step: ${cp.stepIndex} | Progress: ${(cp.progress * 100).toInt()}%")
+                if (cp.snapshotData.isNotBlank()) {
+                    appendLine("   Snapshot: ${cp.snapshotData}")
+                }
+            }
+        }
+    }.trim()
+
+    /**
      * Resumes task execution from a previously recorded checkpoint.
      */
     fun resumeFromCheckpoint(checkpointId: String): ManagedTask? {
