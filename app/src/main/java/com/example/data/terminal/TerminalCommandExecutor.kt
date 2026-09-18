@@ -2379,29 +2379,14 @@ class TerminalCommandExecutor(
     private fun extractCodeArtifacts(text: String): List<Pair<String, String>> {
         val results = mutableListOf<Pair<String, String>>()
         if (text.isBlank()) return results
-
-        // Named file code blocks e.g. ```xml:sunset.svg ... ``` or ```python:script.py ... ```
-        val namedRegex = Regex("```(?:[a-zA-Z0-9_-]+:)?([a-zA-Z0-9_.-]+\\.[a-zA-Z0-9]+)\\s*\\n([\\s\\S]*?)```")
-        for (match in namedRegex.findAll(text)) {
+        val regex = Regex("```(?:[a-zA-Z0-9_-]+:)?([a-zA-Z0-9_.-]+\\.[a-zA-Z0-9]+)\\s*\\n([\\s\\S]*?)```")
+        for (match in regex.findAll(text)) {
             val fileName = match.groupValues[1].trim()
             val content = match.groupValues[2]
             if (fileName.contains(".") && content.isNotBlank()) {
                 results.add(fileName to content)
             }
         }
-
-        // SVG Vector Image code blocks e.g. ```xml <svg ...></svg> ``` or ```svg <svg ...></svg> ```
-        if (results.none { it.first.endsWith(".svg", ignoreCase = true) }) {
-            val svgRegex = Regex("```(?:xml|svg|html)?\\s*\\n([\\s\\S]*?<svg[\\s\\S]*?</svg>[\\s\\S]*?)```")
-            val svgMatch = svgRegex.find(text)
-            if (svgMatch != null) {
-                val svgContent = svgMatch.groupValues[1].trim()
-                if (svgContent.contains("<svg", ignoreCase = true)) {
-                    results.add("generated_image.svg" to svgContent)
-                }
-            }
-        }
-
         return results
     }
 }

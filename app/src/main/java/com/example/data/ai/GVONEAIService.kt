@@ -288,10 +288,7 @@ class GVONEAIService(
                 put("systemInstruction", JSONObject().apply {
                     put("parts", JSONArray().apply {
                         put(JSONObject().apply {
-                            put("text", "You are an intelligent, friendly, and helpful AI assistant in the GVONE Android workspace browser terminal powered by Google Gemini. " +
-                                "CRITICAL ANDROID ENVIRONMENT CONSTRAINTS: You operate inside an Android OS environment. NEVER instruct or ask the user to run desktop shell or Python commands like 'pip install pillow', 'python generate_png.py', 'apt-get', or 'sudo' because desktop Python/pip packages cannot be executed on Android mobile devices. " +
-                                "IMAGE & VISUAL CREATION RULE: When the user asks to generate, create, or draw an image, diagram, illustration, or graphic (e.g. mountain sunset, logo, vector landscape, chart): " +
-                                "ALWAYS directly output a complete, standalone, scalable SVG vector file or HTML5 Canvas code block with a filename extension (e.g. ```xml:sunset.svg ... ``` or ```html:sunset.html ... ```). Provide complete SVG elements (<svg viewBox='0 0 800 500' ...><defs><linearGradient id='sky' ...>...</linearGradient></defs><rect fill='url(#sky)' .../><circle .../><polygon .../></svg>) with vibrant gradients, glowing sun elements, mountain silhouettes, and pine trees. The GVONE terminal will automatically parse, save, and display the image directly!")
+                            put("text", "You are an intelligent, friendly, and helpful AI assistant in the GVONE browser terminal powered by Google Gemini. Provide clear, direct, and conversational responses. You can write code, analyze data, explain concepts, generate file artifacts, and assist with workflows.")
                         })
                     })
                 })
@@ -374,69 +371,6 @@ class GVONEAIService(
                 "When Bridge is ON, your terminal and address bar connect directly to the active web app. When Bridge is OFF, you chat normally with me (Gemini)! You can toggle Bridge using the BRIDGE chip or '/bridge on|off'."
             lower.contains("voice") ->
                 "You can talk with me live by toggling the VOICE chip or running '/voice on'. Your spoken words appear in the terminal, and I read my responses aloud to you!"
-            lower.contains("image") || lower.contains("png") || lower.contains("draw") || lower.contains("sunset") || lower.contains("picture") || lower.contains("art") || lower.contains("photo") ->
-                """
-                    |I have generated your requested **Mountain Sunset Vector Image** as an SVG image file artifact!
-                    |
-                    |```xml:sunset.svg
-                    |<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="100%" height="100%">
-                    |  <defs>
-                    |    <!-- Sky Gradient -->
-                    |    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                    |      <stop offset="0%" stop-color="#0d1b2a"/>
-                    |      <stop offset="45%" stop-color="#1b263b"/>
-                    |      <stop offset="70%" stop-color="#e05638"/>
-                    |      <stop offset="85%" stop-color="#f4a261"/>
-                    |      <stop offset="100%" stop-color="#e76f51"/>
-                    |    </linearGradient>
-                    |    <!-- Sun Glow Filter -->
-                    |    <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
-                    |      <stop offset="0%" stop-color="#fffdf0" stop-opacity="1"/>
-                    |      <stop offset="40%" stop-color="#ffdda1" stop-opacity="0.9"/>
-                    |      <stop offset="70%" stop-color="#f4a261" stop-opacity="0.4"/>
-                    |      <stop offset="100%" stop-color="#e05638" stop-opacity="0"/>
-                    |    </radialGradient>
-                    |    <!-- Back Mountains Gradient -->
-                    |    <linearGradient id="mountainsBack" x1="0%" y1="0%" x2="0%" y2="100%">
-                    |      <stop offset="0%" stop-color="#2c1e3d"/>
-                    |      <stop offset="100%" stop-color="#181124"/>
-                    |    </linearGradient>
-                    |    <!-- Front Mountains Gradient -->
-                    |    <linearGradient id="mountainsFront" x1="0%" y1="0%" x2="0%" y2="100%">
-                    |      <stop offset="0%" stop-color="#181124"/>
-                    |      <stop offset="100%" stop-color="#0f0a19"/>
-                    |    </linearGradient>
-                    |  </defs>
-                    |
-                    |  <!-- Background Sky -->
-                    |  <rect width="800" height="500" fill="url(#skyGrad)"/>
-                    |
-                    |  <!-- Sun and Glow -->
-                    |  <circle cx="400" cy="280" r="120" fill="url(#sunGlow)"/>
-                    |  <circle cx="400" cy="280" r="40" fill="#fffdf0"/>
-                    |
-                    |  <!-- Background Mountain Ridge -->
-                    |  <polygon points="-100,500 150,250 350,380 550,200 900,500" fill="url(#mountainsBack)" opacity="0.9"/>
-                    |
-                    |  <!-- Foreground Mountain Ridge -->
-                    |  <polygon points="-50,500 250,300 480,410 680,260 950,500" fill="url(#mountainsFront)"/>
-                    |
-                    |  <!-- Pine Tree Silhouettes -->
-                    |  <g fill="#0f0a19">
-                    |    <polygon points="100,440 90,500 110,500"/>
-                    |    <polygon points="100,420 85,460 115,460"/>
-                    |    <polygon points="140,410 125,500 155,500"/>
-                    |    <polygon points="140,380 120,440 160,440"/>
-                    |    <polygon points="680,425 668,500 692,500"/>
-                    |    <polygon points="680,400 660,450 700,450"/>
-                    |    <polygon points="720,440 710,500 730,500"/>
-                    |    <polygon points="720,420 705,460 735,460"/>
-                    |  </g>
-                    |</svg>
-                    |```
-                    |
-                    |✔ Saved vector image to `sunset.svg` in your active workspace folder.
-                """.trimMargin()
             lower.contains("help") ->
                 "Here are key capabilities:\n• Send files and photos to Gemini for deep inspection: '/file send <path>' or attach via terminal bar\n• Manage execution checkpoints: '/checkpoint'\n• Upgrade / switch models: '/model <name>'\n• Toggle Web Bridge or Voice interaction: '/bridge', '/voice'\n• Inspect all commands: '/help'"
             lower.contains("thank") ->
