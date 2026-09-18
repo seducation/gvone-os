@@ -128,6 +128,9 @@ fun TerminalScreen(
     onOpenFiles: (() -> Unit)? = null,
     selectedPhotoUri: android.net.Uri? = null,
     onClearSelectedPhotoUri: (() -> Unit)? = null,
+    selectedFileUri: android.net.Uri? = null,
+    selectedFileName: String? = null,
+    onClearSelectedFileUri: (() -> Unit)? = null,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -258,6 +261,27 @@ fun TerminalScreen(
                 selectedItems = selectedItems + photoItem
             }
             onClearSelectedPhotoUri?.invoke()
+        }
+    }
+
+    // Synchronize externally selected file URI into selectedItems
+    LaunchedEffect(selectedFileUri, selectedFileName) {
+        if (selectedFileUri != null || selectedFileName != null) {
+            val fname = selectedFileName ?: selectedFileUri?.lastPathSegment ?: "file_${System.currentTimeMillis()}"
+            val uriStr = selectedFileUri?.toString() ?: fname
+            val fileItem = QuickPrompt(
+                id = "file_${System.currentTimeMillis()}_${fname.hashCode()}",
+                title = "File: $fname",
+                promptText = "/files $uriStr",
+                icon = Icons.Rounded.Folder,
+                category = "File",
+                type = SelectedItemType.FILE,
+                uriOrUrl = uriStr
+            )
+            if (selectedItems.none { it.uriOrUrl == uriStr && it.type == SelectedItemType.FILE }) {
+                selectedItems = selectedItems + fileItem
+            }
+            onClearSelectedFileUri?.invoke()
         }
     }
 
