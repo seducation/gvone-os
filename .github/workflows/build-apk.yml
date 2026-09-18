@@ -18,24 +18,23 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: 'gradle'
 
-      - name: Grant execute permission for gradlew
+      - name: Make Gradlew Executable
         run: chmod +x gradlew
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          validate-wrappers: false
+      - name: Show Gradle & Java Environment
+        run: ./gradlew --version
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace --info
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --stacktrace --info
 
-      - name: Upload APKs
+      - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: android-apks
-          path: app/build/outputs/apk/**/*.apk
+          name: app-apks
+          path: app/build/outputs/apk/
           if-no-files-found: warn
