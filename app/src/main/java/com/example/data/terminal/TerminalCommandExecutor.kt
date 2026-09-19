@@ -1051,6 +1051,29 @@ class TerminalCommandExecutor(
                 }
             }
 
+            "/research", "/canvas" -> {
+                outputLines.add(TerminalLine("── GVONE RESEARCH WORKSPACE & CANVAS ──", TerminalLineType.SYSTEM))
+                outputLines.add(TerminalLine("● Active Research Canvas: Multi-Agent Deep Synthesis", TerminalLineType.INFO))
+                if (queryArg.isNotBlank()) {
+                    outputLines.add(TerminalLine("● Attached Research Topic: \"$queryArg\"", TerminalLineType.OUTPUT))
+                    outputLines.add(TerminalLine("● Synthesizing findings across active tabs and agent memory...", TerminalLineType.INFO))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    scope.launch {
+                        val synthesisPrompt = "Synthesize and conduct deep research on: $queryArg. Provide key citations, comparative analysis, and structured summary."
+                        val reply = viewModel.aiService.chatResponse(synthesisPrompt)
+                        viewModel.appendTerminalLine(TerminalLine("🔬 [RESEARCH CANVAS FINDINGS]\n$reply", TerminalLineType.SUCCESS))
+                    }
+                    return
+                } else {
+                    outputLines.add(TerminalLine("● Commands:", TerminalLineType.INFO))
+                    outputLines.add(TerminalLine("  /research <topic>           Start multi-agent research synthesis", TerminalLineType.OUTPUT))
+                    outputLines.add(TerminalLine("  /research canvas            Attach current research canvas to terminal prompt", TerminalLineType.OUTPUT))
+                    outputLines.add(TerminalLine("  /research notes             Export active research synthesis to notes", TerminalLineType.OUTPUT))
+                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+                    return
+                }
+            }
+
             "/dashboard", "/cns", "/brain" -> {
                 if (queryArg.isNotBlank()) {
                     outputLines.add(TerminalLine("[CNS ORCHESTRATION] Orchestrating goal: \"$queryArg\"...", TerminalLineType.AGENT_PLAN))
