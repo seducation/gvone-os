@@ -178,6 +178,7 @@ fun BrowserApp(
     val diagnosticReport by viewModel.diagnosticReport.collectAsStateWithLifecycle()
     val isDiagnosing by viewModel.isDiagnosing.collectAsStateWithLifecycle()
     val isCurrentTabShorts by viewModel.isCurrentTabShorts.collectAsStateWithLifecycle()
+    val isFileSelectionMode by viewModel.isFileSelectionMode.collectAsStateWithLifecycle()
     val isShortsMuted by viewModel.isShortsMuted.collectAsStateWithLifecycle()
     val mediaPlayerStatus by viewModel.mediaPlayerStatus.collectAsStateWithLifecycle()
     val contextMenuData by viewModel.contextMenuData.collectAsStateWithLifecycle()
@@ -472,7 +473,7 @@ fun BrowserApp(
                     } catch (_: Exception) {}
                 },
                 onOpenFiles = {
-                    viewModel.openSheet(ActiveSheet.Files)
+                    viewModel.openFiles(isSelectionMode = true)
                 },
                 selectedPhotoUri = selectedPhotoUri,
                 onClearSelectedPhotoUri = { selectedPhotoUri = null },
@@ -545,7 +546,7 @@ fun BrowserApp(
                     showAvatarDialog = true
                 },
                 onOpenFiles = {
-                    viewModel.openSheet(ActiveSheet.Files)
+                    viewModel.openFiles(isSelectionMode = false)
                 },
                 onOpenConnectorHub = {
                     viewModel.openConnectorHub()
@@ -667,7 +668,7 @@ fun BrowserApp(
                 onRetryTor = { viewModel.retryTorConnection() },
                 onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
                 onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
-                onOpenFiles = { viewModel.openSheet(ActiveSheet.Files) },
+                onOpenFiles = { viewModel.openFiles(isSelectionMode = false) },
                 onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
                 onOpenPermissions = { viewModel.openPermissions() },
                 onSettingsChanged = { viewModel.updateSettings(it) },
@@ -770,7 +771,7 @@ fun BrowserApp(
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                 onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
                 onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
-                onOpenFiles = { viewModel.openSheet(ActiveSheet.Files) },
+                onOpenFiles = { viewModel.openFiles(isSelectionMode = false) },
                 onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
                 onOpenConnectorHub = { viewModel.openConnectorHub() },
                 onOpenResearchWorkspace = { viewModel.openResearchWorkspace() },
@@ -937,11 +938,13 @@ fun BrowserApp(
                 onOpenFileInTab = { file, inNewTab ->
                     viewModel.openFileInTab(file, inNewTab)
                 },
-                onSelectFile = { file ->
-                    val fileUri = android.net.Uri.fromFile(java.io.File(file.absolutePath))
-                    viewModel.receiveFileDirectlyInTerminal(fileUri, file.name, file.size)
-                    viewModel.closeSheet()
-                },
+                onSelectFile = if (isFileSelectionMode) {
+                    { file ->
+                        val fileUri = android.net.Uri.fromFile(java.io.File(file.absolutePath))
+                        viewModel.receiveFileDirectlyInTerminal(fileUri, file.name, file.size)
+                        viewModel.closeSheet()
+                    }
+                } else null,
                 onDismiss = { viewModel.closeSheet() }
             )
         }

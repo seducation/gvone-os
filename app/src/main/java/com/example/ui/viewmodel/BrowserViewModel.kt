@@ -335,6 +335,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _activeSheet = MutableStateFlow<ActiveSheet>(ActiveSheet.None)
     val activeSheet: StateFlow<ActiveSheet> = _activeSheet.asStateFlow()
 
+    private val _isFileSelectionMode = MutableStateFlow(false)
+    val isFileSelectionMode: StateFlow<Boolean> = _isFileSelectionMode.asStateFlow()
+
     // Search & AI State
     private val _addressBarInput = MutableStateFlow("")
     val addressBarInput: StateFlow<String> = _addressBarInput.asStateFlow()
@@ -1020,6 +1023,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun openSheet(sheet: ActiveSheet) {
         _activeSheet.value = sheet
+    }
+
+    fun openFiles(isSelectionMode: Boolean) {
+        _isFileSelectionMode.value = isSelectionMode
+        openSheet(ActiveSheet.Files)
     }
 
     fun openConnectorHub() { openSheet(ActiveSheet.ConnectorHub) }
