@@ -131,11 +131,13 @@ class TerminalRepository(context: Context) {
                         lines.add(TerminalLine(text = text, type = type, timestamp = ts, taskId = taskId))
                     }
                 }
+                val tabGroupId = if (obj.has("tabGroupId") && !obj.isNull("tabGroupId")) obj.getString("tabGroupId") else null
                 list.add(
                     TerminalSession(
                         id = id,
                         title = title,
                         lines = lines,
+                        tabGroupId = tabGroupId,
                         createdAt = createdAt,
                         lastActiveAt = lastActiveAt
                     )
@@ -155,6 +157,9 @@ class TerminalRepository(context: Context) {
                 val sObj = JSONObject()
                 sObj.put("id", session.id)
                 sObj.put("title", session.title)
+                if (session.tabGroupId != null) {
+                    sObj.put("tabGroupId", session.tabGroupId)
+                }
                 sObj.put("createdAt", session.createdAt)
                 sObj.put("lastActiveAt", session.lastActiveAt)
 

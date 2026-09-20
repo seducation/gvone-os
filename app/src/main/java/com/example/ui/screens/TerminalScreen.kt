@@ -209,33 +209,10 @@ fun TerminalScreen(
         mutableFloatStateOf(settings.terminalHeightFraction)
     }
 
-    // Multi-session management
-    var sessions by remember {
-        val initialLines = viewModel.terminalLines.value.ifEmpty {
-            val isSuccess = viewModel.webAppBridge.connectionState.value == WebAppConnectionState.READY
-            createInitialBanner(viewModel.webAppBridge.connectionState.value.name, isSuccess, isLogMode = viewModel.isLogMode.value)
-        }
-        mutableStateOf(
-            listOf(
-                TerminalSession(
-                    id = "sess_1",
-                    title = "Session 1",
-                    lines = initialLines
-                )
-            )
-        )
-    }
-    var activeSessionId by remember { mutableStateOf("sess_1") }
-    val activeSession = sessions.find { it.id == activeSessionId } ?: sessions.first()
-
-    // Synchronize global terminal lines into active session in real-time
-    LaunchedEffect(globalTerminalLines) {
-        if (globalTerminalLines.isNotEmpty()) {
-            sessions = sessions.map {
-                if (it.id == activeSessionId) it.copy(lines = globalTerminalLines) else it
-            }
-        }
-    }
+    // Multi-session management from ViewModel
+    val sessions by viewModel.terminalSessions.collectAsStateWithLifecycle()
+    val activeSessionId by viewModel.activeTerminalSessionId.collectAsStateWithLifecycle()
+    val activeSession = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull() ?: TerminalSession(id = "sess_1", title = "Session 1")
 
     // Active input state
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
@@ -364,9 +341,6 @@ fun TerminalScreen(
         if (activeSession.lines.isEmpty()) {
             val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
             val bannerLines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
-            sessions = sessions.map {
-                if (it.id == activeSessionId) it.copy(lines = bannerLines) else it
-            }
             viewModel.appendTerminalLines(bannerLines)
         }
     }
@@ -445,11 +419,7 @@ fun TerminalScreen(
         } else {
             newLines.filterNot { viewModel.isVerboseLogLine(it) }
         }
-        val updated = activeSession.lines + linesToAdd
-        sessions = sessions.map {
-            if (it.id == activeSessionId) it.copy(lines = updated) else it
-        }
-        viewModel.appendTerminalLines(newLines)
+        viewModel.appendTerminalLines(linesToAdd)
     }
 
     fun appendLines(newLines: List<TerminalLine>, dummy: ((List<TerminalLine>) -> Unit)? = null) {
@@ -475,9 +445,7 @@ fun TerminalScreen(
                 type = TerminalLineType.COMMAND
             )
             appendLines(listOf(emptyCommandLine)) { newLines ->
-                sessions = sessions.map {
-                    if (it.id == activeSessionId) it.copy(lines = newLines) else it
-                }
+                viewModel.updateTerminalSessionLines(activeSessionId, newLines)
             }
             return
         }
@@ -571,9 +539,6 @@ fun TerminalScreen(
             }
 
             "/clear", "/cls" -> {
-                sessions = sessions.map {
-                    if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
-                }
                 viewModel.clearTerminalLines()
                 inputText = TextFieldValue("")
                 return
@@ -899,30 +864,16 @@ fun TerminalScreen(
                     onOpenConversationHistory = {
                         showConversationHistorySheet = true
                     },
-                    onSelectSession = { activeSessionId = it },
-                    onNewSession = {
-                        val newId = "sess_${sessions.size + 1}"
-                        val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
-                        val newSess = TerminalSession(
-                            id = newId,
-                            title = "Session ${sessions.size + 1}",
-                            lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
-                        )
-                        sessions = sessions + newSess
-                        activeSessionId = newId
-                    },
+                    onSelectSession = { viewModel.selectTerminalSession(it) },
+                    onNewSession = { viewModel.createNewTerminalSession() },
                     onCloseSession = { sessId ->
                         if (sessions.size > 1) {
-                            sessions = sessions.filterNot { it.id == sessId }
-                            activeSessionId = sessions.first().id
+                            viewModel.deleteTerminalSession(sessId)
                         } else {
                             onClose()
                         }
                     },
                     onClearScreen = {
-                        sessions = sessions.map {
-                            if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
-                        }
                         viewModel.clearTerminalLines()
                     },
                     onClose = onClose
@@ -973,9 +924,8 @@ fun TerminalScreen(
                             },
                             type = TerminalLineType.SUCCESS
                         )
-                        sessions = sessions.map {
-                            if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
-                        }
+                        val currentLines = sessions.find { it.id == activeSessionId }?.lines ?: emptyList()
+                        viewModel.updateTerminalSessionLines(activeSessionId, currentLines + bridgeLine)
                     },
                     onCnsClick = {
                         showCnsDashboard = true
@@ -1780,9 +1730,7 @@ fun TerminalScreen(
                             }
                         }
                         "clear" -> {
-                            sessions = sessions.map {
-                                if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
-                            }
+                            viewModel.updateTerminalSessionLines(activeSessionId, emptyList<TerminalLine>())
                             viewModel.terminalRepository.clearSavedSessionLines()
                         }
                         else -> {
@@ -2036,41 +1984,17 @@ fun TerminalScreen(
             sessions = sessions,
             activeSessionId = activeSessionId,
             onSelectSession = { sessId ->
-                activeSessionId = sessId
+                viewModel.selectTerminalSession(sessId)
             },
             onNewSession = {
-                val newId = "sess_${sessions.size + 1}"
-                val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
-                val newSess = TerminalSession(
-                    id = newId,
-                    title = "Session ${sessions.size + 1}",
-                    lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
-                )
-                sessions = sessions + newSess
-                activeSessionId = newId
+                val newSess = viewModel.createNewTerminalSession(tabGroupId = null)
+                viewModel.selectTerminalSession(newSess.id)
             },
             onRenameSession = { sessId, newTitle ->
-                sessions = sessions.map {
-                    if (it.id == sessId) it.copy(title = newTitle) else it
-                }
+                viewModel.renameTerminalSession(sessId, newTitle)
             },
             onDeleteSession = { sessId ->
-                if (sessions.size > 1) {
-                    val updated = sessions.filterNot { it.id == sessId }
-                    sessions = updated
-                    if (activeSessionId == sessId) {
-                        activeSessionId = updated.first().id
-                    }
-                } else {
-                    val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
-                    val resetSess = TerminalSession(
-                        id = "sess_${System.currentTimeMillis()}",
-                        title = "Session 1",
-                        lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
-                    )
-                    sessions = listOf(resetSess)
-                    activeSessionId = resetSess.id
-                }
+                viewModel.deleteTerminalSession(sessId)
             }
         )
     }

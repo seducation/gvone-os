@@ -19,6 +19,7 @@ import com.example.data.repository.BrowserRepository
 import com.example.data.sync.*
 import com.example.data.terminal.TerminalLine
 import com.example.data.terminal.TerminalLineType
+import com.example.data.terminal.TerminalSession
 import com.example.data.tor.*
 import com.example.ui.contextmenu.LinkContextMenuData
 import com.example.ui.contextmenu.PagePreviewData
@@ -92,6 +93,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     )
     private val _terminalLines = MutableStateFlow<List<TerminalLine>>(emptyList())
     val terminalLines: StateFlow<List<TerminalLine>> = _terminalLines.asStateFlow()
+
+    private val _terminalSessions = MutableStateFlow<List<TerminalSession>>(emptyList())
+    val terminalSessions: StateFlow<List<TerminalSession>> = _terminalSessions.asStateFlow()
+
+    private val _activeTerminalSessionId = MutableStateFlow<String>("sess_1")
+    val activeTerminalSessionId: StateFlow<String> = _activeTerminalSessionId.asStateFlow()
 
     private val _terminalBridgeMode = MutableStateFlow(com.example.data.terminal.TerminalBridgeMode.CHAT)
     val terminalBridgeMode: StateFlow<com.example.data.terminal.TerminalBridgeMode> = _terminalBridgeMode.asStateFlow()
@@ -197,11 +204,137 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
         _terminalLines.value = current
         terminalRepository.saveSessionLines(current)
+
+        // Also sync into current active terminal session
+        val curActiveId = _activeTerminalSessionId.value
+        val updatedSessions = _terminalSessions.value.map {
+            if (it.id == curActiveId) it.copy(lines = current, lastActiveAt = System.currentTimeMillis()) else it
+        }
+        _terminalSessions.value = updatedSessions
+        terminalRepository.saveSessions(updatedSessions)
     }
 
     fun clearTerminalLines() {
         _terminalLines.value = emptyList()
         terminalRepository.clearSavedSessionLines()
+        val curActiveId = _activeTerminalSessionId.value
+        val updatedSessions = _terminalSessions.value.map {
+            if (it.id == curActiveId) it.copy(lines = emptyList(), lastActiveAt = System.currentTimeMillis()) else it
+        }
+        _terminalSessions.value = updatedSessions
+        terminalRepository.saveSessions(updatedSessions)
+    }
+
+    fun createNewTerminalSession(title: String? = null, tabGroupId: String? = null): TerminalSession {
+        val newId = "sess_${System.currentTimeMillis()}"
+        val num = _terminalSessions.value.size + 1
+        val sessionTitle = title ?: "Terminal Chat $num"
+        val bannerLines = listOf(
+            TerminalLine("GVONE TERMINAL SESSION #$num", TerminalLineType.SYSTEM),
+            TerminalLine("Connected to Address Bar & Bidirectional Bridge Runtime.", TerminalLineType.INFO)
+        )
+        val session = TerminalSession(
+            id = newId,
+            title = sessionTitle,
+            lines = bannerLines,
+            tabGroupId = tabGroupId,
+            createdAt = System.currentTimeMillis(),
+            lastActiveAt = System.currentTimeMillis()
+        )
+        val updated = _terminalSessions.value + session
+        _terminalSessions.value = updated
+        _activeTerminalSessionId.value = newId
+        _terminalLines.value = bannerLines
+        terminalRepository.saveSessions(updated)
+        return session
+    }
+
+    fun selectTerminalSession(sessionId: String) {
+        val session = _terminalSessions.value.find { it.id == sessionId } ?: return
+        _activeTerminalSessionId.value = sessionId
+        _terminalLines.value = session.lines
+    }
+
+    fun openTerminalForSession(sessionId: String) {
+        selectTerminalSession(sessionId)
+        setChatMode(true)
+        openSheet(ActiveSheet.Terminal)
+    }
+
+    fun deleteTerminalSession(sessionId: String) {
+        val current = _terminalSessions.value
+        val updated = current.filterNot { it.id == sessionId }
+        val finalSessions = if (updated.isEmpty()) {
+            listOf(
+                TerminalSession(
+                    id = "sess_1",
+                    title = "Terminal Chat 1",
+                    lines = listOf(
+                        TerminalLine("GVONE TERMINAL SESSION", TerminalLineType.SYSTEM),
+                        TerminalLine("Ready for commands and AI queries.", TerminalLineType.INFO)
+                    )
+                )
+            )
+        } else {
+            updated
+        }
+        _terminalSessions.value = finalSessions
+        if (_activeTerminalSessionId.value == sessionId) {
+            _activeTerminalSessionId.value = finalSessions.first().id
+            _terminalLines.value = finalSessions.first().lines
+        }
+        terminalRepository.saveSessions(finalSessions)
+    }
+
+    fun renameTerminalSession(sessionId: String, newTitle: String) {
+        val updated = _terminalSessions.value.map {
+            if (it.id == sessionId) it.copy(title = newTitle) else it
+        }
+        _terminalSessions.value = updated
+        terminalRepository.saveSessions(updated)
+    }
+
+    fun moveTerminalSessionToGroup(sessionId: String, targetGroupId: String?) {
+        val updated = _terminalSessions.value.map {
+            if (it.id == sessionId) it.copy(tabGroupId = targetGroupId) else it
+        }
+        _terminalSessions.value = updated
+        terminalRepository.saveSessions(updated)
+    }
+
+    fun moveTerminalSessionsToGroup(sessionIds: List<String>, targetGroupId: String?) {
+        val set = sessionIds.toSet()
+        val updated = _terminalSessions.value.map {
+            if (set.contains(it.id)) it.copy(tabGroupId = targetGroupId) else it
+        }
+        _terminalSessions.value = updated
+        terminalRepository.saveSessions(updated)
+    }
+
+    fun closeTerminalSessionsInGroup(groupId: String) {
+        val updated = _terminalSessions.value.filterNot { it.tabGroupId == groupId }
+        val finalSessions = if (updated.isEmpty()) {
+            listOf(TerminalSession(id = "sess_1", title = "Terminal Chat 1"))
+        } else {
+            updated
+        }
+        _terminalSessions.value = finalSessions
+        if (finalSessions.none { it.id == _activeTerminalSessionId.value }) {
+            _activeTerminalSessionId.value = finalSessions.first().id
+            _terminalLines.value = finalSessions.first().lines
+        }
+        terminalRepository.saveSessions(finalSessions)
+    }
+
+    fun updateTerminalSessionLines(sessionId: String, lines: List<TerminalLine>) {
+        val updated = _terminalSessions.value.map {
+            if (it.id == sessionId) it.copy(lines = lines) else it
+        }
+        _terminalSessions.value = updated
+        if (_activeTerminalSessionId.value == sessionId) {
+            _terminalLines.value = lines
+        }
+        terminalRepository.saveSessions(updated)
     }
 
     // Bridge for Browser <-> GVONE Search/Chat Web App Communication
@@ -810,15 +943,31 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             environmentManager = environmentManager
         )
 
-        val savedTerminalLines = terminalRepository.getSavedSessionLines()
-        if (savedTerminalLines.isNotEmpty()) {
-            _terminalLines.value = if (_isLogMode.value) savedTerminalLines else savedTerminalLines.filterNot { isVerboseLogLine(it) }
+        val savedSessions = terminalRepository.getSavedSessions()
+        if (savedSessions.isNotEmpty()) {
+            _terminalSessions.value = savedSessions
+            _activeTerminalSessionId.value = savedSessions.first().id
+            _terminalLines.value = savedSessions.first().lines
         } else {
-            _terminalLines.value = listOf(
-                TerminalLine("GVONE COMMAND & BRIDGE ENGINE v2.4", TerminalLineType.SYSTEM),
-                TerminalLine("Connected to Address Bar & Bidirectional Bridge Runtime.", TerminalLineType.INFO),
-                TerminalLine("Commands and Bridge status events will appear here in real time.", TerminalLineType.OUTPUT)
+            val savedTerminalLines = terminalRepository.getSavedSessionLines()
+            val initialLines = if (savedTerminalLines.isNotEmpty()) {
+                if (_isLogMode.value) savedTerminalLines else savedTerminalLines.filterNot { isVerboseLogLine(it) }
+            } else {
+                listOf(
+                    TerminalLine("GVONE COMMAND & BRIDGE ENGINE v2.4", TerminalLineType.SYSTEM),
+                    TerminalLine("Connected to Address Bar & Bidirectional Bridge Runtime.", TerminalLineType.INFO),
+                    TerminalLine("Commands and Bridge status events will appear here in real time.", TerminalLineType.OUTPUT)
+                )
+            }
+            val initialSession = TerminalSession(
+                id = "sess_1",
+                title = "Terminal Chat 1",
+                lines = initialLines
             )
+            _terminalLines.value = initialLines
+            _terminalSessions.value = listOf(initialSession)
+            _activeTerminalSessionId.value = "sess_1"
+            terminalRepository.saveSessions(listOf(initialSession))
         }
 
         val initialPersonalTabs = listOf(
