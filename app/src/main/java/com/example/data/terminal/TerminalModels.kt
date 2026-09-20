@@ -40,3 +40,4 @@ data class TerminalSession(
     val createdAt: Long = System.currentTimeMillis(),
     val lastActiveAt: Long = System.currentTimeMillis()
 )
+

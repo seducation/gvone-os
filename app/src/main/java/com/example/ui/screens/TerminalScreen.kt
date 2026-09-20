@@ -3016,3 +3016,4 @@ private fun generateHelpOutput(commands: List<CustomCommandEntity>): List<Termin
 
     return lines
 }
+

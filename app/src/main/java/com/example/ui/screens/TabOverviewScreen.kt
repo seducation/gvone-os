@@ -47,6 +47,7 @@ import com.example.data.model.Environment
 import com.example.data.model.TabGroup
 import com.example.data.model.TabSortOption
 import com.example.data.model.isInternalHomeUrl
+import com.example.data.terminal.TerminalSession
 import com.example.ui.components.*
 import com.example.ui.screens.canvas.CreateEnvironmentDialog
 import com.example.ui.screens.canvas.EnvironmentSwitchSheet
@@ -58,8 +59,10 @@ import com.example.ui.theme.*
 fun TabOverviewScreen(
     tabs: List<BrowserTab>,
     tabGroups: List<TabGroup>,
+    terminalSessions: List<TerminalSession> = emptyList(),
     currentTabId: String,
     activeGroupId: String?,
+    activeTerminalSessionId: String? = null,
     isPrivateMode: Boolean,
     environments: List<Environment> = emptyList(),
     currentEnvironment: Environment? = null,
@@ -70,6 +73,13 @@ fun TabOverviewScreen(
     onTabSelected: (String) -> Unit,
     onTabClose: (String) -> Unit,
     onNewTab: (groupId: String?) -> Unit,
+    onSelectChat: (String) -> Unit = {},
+    onNewChat: (groupId: String?) -> Unit = {},
+    onDeleteChat: (String) -> Unit = {},
+    onRenameChat: (chatId: String, newName: String) -> Unit = { _, _ -> },
+    onMoveChatToGroup: (chatId: String, targetGroupId: String?) -> Unit = { _, _ -> },
+    onMoveChatsToGroup: (chatIds: List<String>, targetGroupId: String?) -> Unit = { _, _ -> },
+    onCloseChatsInGroup: (groupId: String) -> Unit = {},
     onTogglePrivate: (Boolean) -> Unit,
     onSortTabs: (TabSortOption) -> Unit,
     onCreateGroup: (name: String, colorHex: String?, tabIds: List<String>) -> Unit,
@@ -91,13 +101,16 @@ fun TabOverviewScreen(
     // Search and filter state
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
+    var selectedCategory by rememberSaveable { mutableStateOf(0) } // 0 = Tabs, 1 = Chats
 
     // Custom shortcuts added by the user in Tab Overview
     var customShortcuts by remember { mutableStateOf<List<MenuShortcut>>(emptyList()) }
 
-    // Selection mode state
+    // Selection mode state (both tabs and chats)
     var isSelectionMode by remember { mutableStateOf(false) }
     var selectedTabIds by remember { mutableStateOf(setOf<String>()) }
+    var selectedChatIds by remember { mutableStateOf(setOf<String>()) }
+    val totalSelectedCount = selectedTabIds.size + selectedChatIds.size
 
     // Dialogs & Context menus state
     var showCreateGroupDialog by remember { mutableStateOf(false) }
@@ -105,6 +118,8 @@ fun TabOverviewScreen(
     var groupToRename by remember { mutableStateOf<TabGroup?>(null) }
     var groupToDelete by remember { mutableStateOf<TabGroup?>(null) }
     var tabToMove by remember { mutableStateOf<BrowserTab?>(null) }
+    var chatToMove by remember { mutableStateOf<TerminalSession?>(null) }
+    var chatToRename by remember { mutableStateOf<TerminalSession?>(null) }
     var isMovingBatchToGroup by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showEnvironmentSheet by remember { mutableStateOf(false) }
@@ -124,6 +139,7 @@ fun TabOverviewScreen(
             isSelectionMode -> {
                 isSelectionMode = false
                 selectedTabIds = emptySet()
+                selectedChatIds = emptySet()
             }
             currentFolderId != null -> currentFolderId = null
         }
@@ -148,20 +164,47 @@ fun TabOverviewScreen(
         }
     }
 
+    // Filtered chats for active folder view
+    val folderChats = remember(terminalSessions, currentFolderId) {
+        if (currentFolderId != null) {
+            terminalSessions.filter { it.tabGroupId == currentFolderId }
+        } else {
+            emptyList()
+        }
+    }
+
     // Ungrouped tabs for root view
     val ungroupedTabs = remember(modeTabs) {
         modeTabs.filter { it.tabGroupId == null }
     }
 
-    // Search results across all tabs and folders
+    // Ungrouped chats for root view
+    val ungroupedChats = remember(terminalSessions) {
+        terminalSessions.filter { it.tabGroupId == null }
+    }
+
+    // Search results across all tabs, chats, and folders
     val isSearching = searchQuery.isNotBlank()
-    val searchResults = remember(modeTabs, tabGroups, searchQuery) {
+    val searchResultsTabs = remember(modeTabs, tabGroups, searchQuery) {
         if (isSearching) {
             val q = searchQuery.trim().lowercase()
             modeTabs.filter { tab ->
                 tab.title.lowercase().contains(q) ||
                 tab.url.lowercase().contains(q) ||
                 tabGroups.find { it.id == tab.tabGroupId }?.name?.lowercase()?.contains(q) == true
+            }
+        } else {
+            emptyList()
+        }
+    }
+
+    val searchResultsChats = remember(terminalSessions, tabGroups, searchQuery) {
+        if (isSearching) {
+            val q = searchQuery.trim().lowercase()
+            terminalSessions.filter { chat ->
+                chat.title.lowercase().contains(q) ||
+                chat.lines.any { it.text.lowercase().contains(q) } ||
+                tabGroups.find { it.id == chat.tabGroupId }?.name?.lowercase()?.contains(q) == true
             }
         } else {
             emptyList()
@@ -231,10 +274,13 @@ fun TabOverviewScreen(
                     FolderViewHeader(
                         folder = currentFolder,
                         tabCount = folderTabs.size,
+                        chatCount = folderChats.size,
                         onBack = { currentFolderId = null },
                         onAddTab = { onNewTab(currentFolder.id) },
+                        onAddChat = { onNewChat(currentFolder.id) },
                         onRename = { groupToRename = currentFolder },
                         onCloseAllInFolder = { onCloseTabsInGroup(currentFolder.id) },
+                        onCloseAllChatsInFolder = { onCloseChatsInGroup(currentFolder.id) },
                         onDeleteFolder = { groupToDelete = currentFolder }
                     )
                 }
@@ -266,10 +312,13 @@ fun TabOverviewScreen(
                             if (!isSearchActive) searchQuery = ""
                         },
                         isSelectionMode = isSelectionMode,
-                        selectedCount = selectedTabIds.size,
+                        selectedCount = totalSelectedCount,
                         onToggleSelectionMode = {
                             isSelectionMode = !isSelectionMode
-                            if (!isSelectionMode) selectedTabIds = emptySet()
+                            if (!isSelectionMode) {
+                                selectedTabIds = emptySet()
+                                selectedChatIds = emptySet()
+                            }
                         },
                         showSortMenu = showSortMenu,
                         onToggleSortMenu = { showSortMenu = !showSortMenu },
@@ -314,9 +363,98 @@ fun TabOverviewScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            if (!isSearching) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color(0xFF141923))
+                        .border(1.dp, Color(0xFF2C384D), RoundedCornerShape(24.dp))
+                        .padding(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Category 1: Tabs
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(
+                                if (selectedCategory == 0) {
+                                    Brush.horizontalGradient(
+                                        colors = listOf(Color(0xFF00E5FF), Color(0xFF0083B0))
+                                    )
+                                } else {
+                                    Brush.linearGradient(colors = listOf(Color.Transparent, Color.Transparent))
+                                }
+                            )
+                            .clickable { selectedCategory = 0 }
+                            .testTag("category_pill_tabs"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Public,
+                                contentDescription = null,
+                                tint = if (selectedCategory == 0) Color.White else GVONETextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Tabs (${modeTabs.size})",
+                                color = if (selectedCategory == 0) Color.White else GVONETextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Category 2: Chats
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(
+                                if (selectedCategory == 1) {
+                                    Brush.horizontalGradient(
+                                        colors = listOf(Color(0xFF38BDF8), Color(0xFF0284C7))
+                                    )
+                                } else {
+                                    Brush.linearGradient(colors = listOf(Color.Transparent, Color.Transparent))
+                                }
+                            )
+                            .clickable { selectedCategory = 1 }
+                            .testTag("category_pill_chats"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Terminal,
+                                contentDescription = null,
+                                tint = if (selectedCategory == 1) Color.White else GVONETextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Chats (${terminalSessions.size})",
+                                color = if (selectedCategory == 1) Color.White else GVONETextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
             // --- CONTENT AREA ---
             if (isSearching) {
-                // SEARCH RESULTS VIEW
+                // SEARCH RESULTS VIEW: Tabs & Chats
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier
@@ -326,9 +464,10 @@ fun TabOverviewScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    val totalMatches = searchResultsTabs.size + searchResultsChats.size
                     item(span = { GridItemSpan(2) }) {
                         Text(
-                            text = "Search Results (${searchResults.size})",
+                            text = "Search Results ($totalMatches)",
                             color = GVONETextSecondary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -336,45 +475,119 @@ fun TabOverviewScreen(
                         )
                     }
 
-                    items(searchResults, key = { it.id }) { tab ->
-                        val folder = tabGroups.find { it.id == tab.tabGroupId }
-                        TabCard(
-                            tab = tab,
-                            folderName = folder?.name,
-                            folderColorHex = folder?.colorHex,
-                            isSelected = tab.id == currentTabId,
-                            isSelectionMode = isSelectionMode,
-                            isChecked = selectedTabIds.contains(tab.id),
-                            onToggleCheck = {
-                                selectedTabIds = if (selectedTabIds.contains(tab.id)) {
-                                    selectedTabIds - tab.id
-                                } else {
-                                    selectedTabIds + tab.id
-                                }
-                            },
-                            onSelect = {
-                                if (isSelectionMode) {
+                    if (searchResultsTabs.isNotEmpty()) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                            ) {
+                                Icon(Icons.Rounded.Public, contentDescription = null, tint = GVONESecondary, modifier = Modifier.size(16.dp))
+                                Text("Tabs (${searchResultsTabs.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        items(searchResultsTabs, key = { "tab_${it.id}" }) { tab ->
+                            val folder = tabGroups.find { it.id == tab.tabGroupId }
+                            TabCard(
+                                tab = tab,
+                                folderName = folder?.name,
+                                folderColorHex = folder?.colorHex,
+                                isSelected = tab.id == currentTabId,
+                                isSelectionMode = isSelectionMode,
+                                isChecked = selectedTabIds.contains(tab.id),
+                                onToggleCheck = {
                                     selectedTabIds = if (selectedTabIds.contains(tab.id)) {
                                         selectedTabIds - tab.id
                                     } else {
                                         selectedTabIds + tab.id
                                     }
-                                } else {
-                                    onTabSelected(tab.id)
-                                }
-                            },
-                            onClose = { onTabClose(tab.id) },
-                            onMoveToGroup = { tabToMove = tab },
-                            onDuplicate = { onDuplicateTab(tab.id) },
-                            onCloseOthers = { onCloseOtherTabs(tab.id) },
-                            onCloseToRight = { onCloseTabsToRight(tab.id) },
-                            onRemoveFromGroup = if (tab.tabGroupId != null) { { onMoveTabToGroup(tab.id, null) } } else null
-                        )
+                                },
+                                onSelect = {
+                                    if (isSelectionMode) {
+                                        selectedTabIds = if (selectedTabIds.contains(tab.id)) {
+                                            selectedTabIds - tab.id
+                                        } else {
+                                            selectedTabIds + tab.id
+                                        }
+                                    } else {
+                                        onTabSelected(tab.id)
+                                    }
+                                },
+                                onClose = { onTabClose(tab.id) },
+                                onMoveToGroup = { tabToMove = tab },
+                                onDuplicate = { onDuplicateTab(tab.id) },
+                                onCloseOthers = { onCloseOtherTabs(tab.id) },
+                                onCloseToRight = { onCloseTabsToRight(tab.id) },
+                                onRemoveFromGroup = if (tab.tabGroupId != null) { { onMoveTabToGroup(tab.id, null) } } else null
+                            )
+                        }
+                    }
+
+                    if (searchResultsChats.isNotEmpty()) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
+                            ) {
+                                Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                Text("Terminal Chats (${searchResultsChats.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        items(searchResultsChats, key = { "chat_${it.id}" }) { chat ->
+                            val folder = tabGroups.find { it.id == chat.tabGroupId }
+                            ChatCard(
+                                session = chat,
+                                folderName = folder?.name,
+                                folderColorHex = folder?.colorHex,
+                                isActiveChat = chat.id == activeTerminalSessionId,
+                                isSelectionMode = isSelectionMode,
+                                isChecked = selectedChatIds.contains(chat.id),
+                                onToggleCheck = {
+                                    selectedChatIds = if (selectedChatIds.contains(chat.id)) {
+                                        selectedChatIds - chat.id
+                                    } else {
+                                        selectedChatIds + chat.id
+                                    }
+                                },
+                                onSelect = {
+                                    if (isSelectionMode) {
+                                        selectedChatIds = if (selectedChatIds.contains(chat.id)) {
+                                            selectedChatIds - chat.id
+                                        } else {
+                                            selectedChatIds + chat.id
+                                        }
+                                    } else {
+                                        onSelectChat(chat.id)
+                                    }
+                                },
+                                onClose = { onDeleteChat(chat.id) },
+                                onRename = { chatToRename = chat },
+                                onMoveToGroup = { chatToMove = chat },
+                                onRemoveFromGroup = if (chat.tabGroupId != null) { { onMoveChatToGroup(chat.id, null) } } else null
+                            )
+                        }
+                    }
+
+                    if (totalMatches == 0) {
+                        item(span = { GridItemSpan(2) }) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("No matching tabs or terminal chats found.", color = GVONETextSecondary, fontSize = 13.sp)
+                            }
+                        }
                     }
                 }
             } else if (currentFolderId != null && currentFolder != null) {
-                // INSIDE DEDICATED FOLDER VIEW
-                if (folderTabs.isEmpty()) {
+                // INSIDE DEDICATED FOLDER VIEW: Tabs and Chats in this folder
+                val hasItems = folderTabs.isNotEmpty() || folderChats.isNotEmpty()
+                if (!hasItems) {
                     // Empty folder state
                     Box(
                         modifier = Modifier
@@ -402,25 +615,36 @@ fun TabOverviewScreen(
                                 )
                             }
                             Text(
-                                text = "No tabs in this group",
+                                text = "No tabs or chats in this group",
                                 color = GVONETextPrimary,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Add tabs to \"${currentFolder.name}\" to keep your browsing organized.",
+                                text = "Add tabs or terminal chats to \"${currentFolder.name}\" to keep your work organized.",
                                 color = GVONETextSecondary,
                                 fontSize = 13.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            Button(
-                                onClick = { onNewTab(currentFolder.id) },
-                                colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add New Tab Here")
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Button(
+                                    onClick = { onNewTab(currentFolder.id) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Add Tab")
+                                }
+                                Button(
+                                    onClick = { onNewChat(currentFolder.id) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Add Chat")
+                                }
                             }
                         }
                     }
@@ -434,42 +658,179 @@ fun TabOverviewScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(folderTabs, key = { it.id }) { tab ->
-                            TabCard(
-                                tab = tab,
-                                isSelected = tab.id == currentTabId,
-                                isSelectionMode = isSelectionMode,
-                                isChecked = selectedTabIds.contains(tab.id),
-                                onToggleCheck = {
-                                    selectedTabIds = if (selectedTabIds.contains(tab.id)) {
-                                        selectedTabIds - tab.id
-                                    } else {
-                                        selectedTabIds + tab.id
-                                    }
-                                },
-                                onSelect = {
-                                    if (isSelectionMode) {
-                                        selectedTabIds = if (selectedTabIds.contains(tab.id)) {
-                                            selectedTabIds - tab.id
-                                        } else {
-                                            selectedTabIds + tab.id
+                        // SECTION: Tabs in this group
+                        if (selectedCategory == 0) {
+                            if (folderTabs.isNotEmpty()) {
+                                item(span = { GridItemSpan(2) }) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp, bottom = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Public, contentDescription = null, tint = GVONESecondary, modifier = Modifier.size(16.dp))
+                                            Text("Tabs (${folderTabs.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                         }
-                                    } else {
-                                        onTabSelected(tab.id)
+                                        TextButton(
+                                            onClick = { onNewTab(currentFolder.id) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = GVONESecondary)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("New Tab", color = GVONESecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        }
                                     }
-                                },
-                                onClose = { onTabClose(tab.id) },
-                                onMoveToGroup = { tabToMove = tab },
-                                onDuplicate = { onDuplicateTab(tab.id) },
-                                onCloseOthers = { onCloseOtherTabs(tab.id) },
-                                onCloseToRight = { onCloseTabsToRight(tab.id) },
-                                onRemoveFromGroup = { onMoveTabToGroup(tab.id, null) }
-                            )
+                                }
+
+                                items(folderTabs, key = { "tab_${it.id}" }) { tab ->
+                                    TabCard(
+                                        tab = tab,
+                                        isSelected = tab.id == currentTabId,
+                                        isSelectionMode = isSelectionMode,
+                                        isChecked = selectedTabIds.contains(tab.id),
+                                        onToggleCheck = {
+                                            selectedTabIds = if (selectedTabIds.contains(tab.id)) {
+                                                selectedTabIds - tab.id
+                                            } else {
+                                                selectedTabIds + tab.id
+                                            }
+                                        },
+                                        onSelect = {
+                                            if (isSelectionMode) {
+                                                selectedTabIds = if (selectedTabIds.contains(tab.id)) {
+                                                    selectedTabIds - tab.id
+                                                } else {
+                                                    selectedTabIds + tab.id
+                                                }
+                                            } else {
+                                                onTabSelected(tab.id)
+                                            }
+                                        },
+                                        onClose = { onTabClose(tab.id) },
+                                        onMoveToGroup = { tabToMove = tab },
+                                        onDuplicate = { onDuplicateTab(tab.id) },
+                                        onCloseOthers = { onCloseOtherTabs(tab.id) },
+                                        onCloseToRight = { onCloseTabsToRight(tab.id) },
+                                        onRemoveFromGroup = { onMoveTabToGroup(tab.id, null) }
+                                    )
+                                }
+                            } else {
+                                item(span = { GridItemSpan(2) }) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 32.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text("No tabs in this group.", color = GVONETextSecondary, fontSize = 13.sp)
+                                            Button(
+                                                onClick = { onNewTab(currentFolder.id) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ) {
+                                                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Add Tab", fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // SECTION: Chats in this group
+                        if (selectedCategory == 1) {
+                            if (folderChats.isNotEmpty()) {
+                                item(span = { GridItemSpan(2) }) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 10.dp, bottom = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                            Text("Terminal Chats (${folderChats.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        TextButton(
+                                            onClick = { onNewChat(currentFolder.id) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("New Chat", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+
+                                items(folderChats, key = { "chat_${it.id}" }) { chat ->
+                                    ChatCard(
+                                        session = chat,
+                                        isActiveChat = chat.id == activeTerminalSessionId,
+                                        isSelectionMode = isSelectionMode,
+                                        isChecked = selectedChatIds.contains(chat.id),
+                                        onToggleCheck = {
+                                            selectedChatIds = if (selectedChatIds.contains(chat.id)) {
+                                                selectedChatIds - chat.id
+                                            } else {
+                                                selectedChatIds + chat.id
+                                            }
+                                        },
+                                        onSelect = {
+                                            if (isSelectionMode) {
+                                                selectedChatIds = if (selectedChatIds.contains(chat.id)) {
+                                                    selectedChatIds - chat.id
+                                                } else {
+                                                    selectedChatIds + chat.id
+                                                }
+                                            } else {
+                                                onSelectChat(chat.id)
+                                            }
+                                        },
+                                        onClose = { onDeleteChat(chat.id) },
+                                        onRename = { chatToRename = chat },
+                                        onMoveToGroup = { chatToMove = chat },
+                                        onRemoveFromGroup = { onMoveChatToGroup(chat.id, null) }
+                                    )
+                                }
+                            } else {
+                                item(span = { GridItemSpan(2) }) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 32.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text("No terminal chats in this group.", color = GVONETextSecondary, fontSize = 13.sp)
+                                            Button(
+                                                onClick = { onNewChat(currentFolder.id) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ) {
+                                                Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Add Chat", fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             } else {
-                // ROOT "ALL TABS" FILE MANAGER VIEW: Tab Group Folders + Ungrouped Tabs
+                // ROOT "ALL TABS" FILE MANAGER VIEW: Tab Group Folders + Ungrouped Tabs + Ungrouped Chats
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier
@@ -479,7 +840,7 @@ fun TabOverviewScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // SECTION 1: TAB GROUP FOLDERS
+                    // SECTION 1: TAB GROUP FOLDERS (Mixed Tabs & Chats)
                     if (tabGroups.isNotEmpty()) {
                         item(span = { GridItemSpan(2) }) {
                             Row(
@@ -521,9 +882,10 @@ fun TabOverviewScreen(
                             }
                         }
 
-                        // Render each Tab Group folder card (Spans full width for rich modern preview)
-                        items(tabGroups, key = { it.id }, span = { GridItemSpan(2) }) { group ->
+                        // Render each Tab Group folder card
+                        items(tabGroups, key = { "group_${it.id}" }, span = { GridItemSpan(2) }) { group ->
                             val tabsInThisGroup = modeTabs.filter { it.tabGroupId == group.id }
+                            val chatsInThisGroup = terminalSessions.filter { it.tabGroupId == group.id }
                             val isDropTarget = hoveredFolderId == group.id
 
                             Box(
@@ -534,11 +896,13 @@ fun TabOverviewScreen(
                                 TabFolderCard(
                                     group = group,
                                     tabsInGroup = tabsInThisGroup,
+                                    chatsInGroup = chatsInThisGroup,
                                     isActiveGroup = activeGroupId == group.id,
                                     isDropTarget = isDropTarget,
                                     onClick = { currentFolderId = group.id },
                                     onRename = { groupToRename = group },
                                     onAddTab = { onNewTab(group.id) },
+                                    onAddChat = { onNewChat(group.id) },
                                     onDelete = { groupToDelete = group }
                                 )
                             }
@@ -546,106 +910,194 @@ fun TabOverviewScreen(
                     }
 
                     // SECTION 2: UNGROUPED TABS
-                    item(span = { GridItemSpan(2) }) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 12.dp, bottom = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Public,
-                                    contentDescription = null,
-                                    tint = GVONESecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = "Ungrouped Tabs (${ungroupedTabs.size})",
-                                    color = GVONETextPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            TextButton(
-                                onClick = { onNewTab(null) },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = GVONESecondary)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("New Tab", color = GVONESecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-
-                    if (ungroupedTabs.isEmpty()) {
+                    if (selectedCategory == 0) {
                         item(span = { GridItemSpan(2) }) {
-                            Box(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 16.dp),
-                                contentAlignment = Alignment.Center
+                                    .padding(top = 12.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(
-                                    text = "All tabs are neatly organized in groups.",
-                                    color = GVONETextSecondary,
-                                    fontSize = 13.sp
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Public,
+                                        contentDescription = null,
+                                        tint = GVONESecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Ungrouped Tabs (${ungroupedTabs.size})",
+                                        color = GVONETextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                TextButton(
+                                    onClick = { onNewTab(null) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = GVONESecondary)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("New Tab", color = GVONESecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
-                    } else {
-                        items(ungroupedTabs, key = { it.id }) { tab ->
-                            TabCard(
-                                tab = tab,
-                                isSelected = tab.id == currentTabId,
-                                isSelectionMode = isSelectionMode,
-                                isChecked = selectedTabIds.contains(tab.id),
-                                onToggleCheck = {
-                                    selectedTabIds = if (selectedTabIds.contains(tab.id)) {
-                                        selectedTabIds - tab.id
-                                    } else {
-                                        selectedTabIds + tab.id
-                                    }
-                                },
-                                onSelect = {
-                                    if (isSelectionMode) {
+
+                        if (ungroupedTabs.isEmpty()) {
+                            item(span = { GridItemSpan(2) }) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "All tabs are neatly organized in groups.",
+                                        color = GVONETextSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            items(ungroupedTabs, key = { "tab_${it.id}" }) { tab ->
+                                TabCard(
+                                    tab = tab,
+                                    isSelected = tab.id == currentTabId,
+                                    isSelectionMode = isSelectionMode,
+                                    isChecked = selectedTabIds.contains(tab.id),
+                                    onToggleCheck = {
                                         selectedTabIds = if (selectedTabIds.contains(tab.id)) {
                                             selectedTabIds - tab.id
                                         } else {
                                             selectedTabIds + tab.id
                                         }
-                                    } else {
-                                        onTabSelected(tab.id)
+                                    },
+                                    onSelect = {
+                                        if (isSelectionMode) {
+                                            selectedTabIds = if (selectedTabIds.contains(tab.id)) {
+                                                selectedTabIds - tab.id
+                                            } else {
+                                                selectedTabIds + tab.id
+                                            }
+                                        } else {
+                                            onTabSelected(tab.id)
+                                        }
+                                    },
+                                    onClose = { onTabClose(tab.id) },
+                                    onMoveToGroup = { tabToMove = tab },
+                                    onDuplicate = { onDuplicateTab(tab.id) },
+                                    onCloseOthers = { onCloseOtherTabs(tab.id) },
+                                    onCloseToRight = { onCloseTabsToRight(tab.id) },
+                                    onDragStart = { startPos ->
+                                        draggingTabId = tab.id
+                                        dragPosition = startPos
+                                    },
+                                    onDrag = { offsetDelta ->
+                                        dragPosition += offsetDelta
+                                        val matched = folderBounds.entries.find { it.value.contains(dragPosition) }
+                                        hoveredFolderId = matched?.key
+                                    },
+                                    onDragEnd = {
+                                        hoveredFolderId?.let { targetGId ->
+                                            onMoveTabToGroup(tab.id, targetGId)
+                                        }
+                                        draggingTabId = null
+                                        hoveredFolderId = null
                                     }
-                                },
-                                onClose = { onTabClose(tab.id) },
-                                onMoveToGroup = { tabToMove = tab },
-                                onDuplicate = { onDuplicateTab(tab.id) },
-                                onCloseOthers = { onCloseOtherTabs(tab.id) },
-                                onCloseToRight = { onCloseTabsToRight(tab.id) },
-                                onDragStart = { startPos ->
-                                    draggingTabId = tab.id
-                                    dragPosition = startPos
-                                },
-                                onDrag = { offsetDelta ->
-                                    dragPosition += offsetDelta
-                                    // Check if hovering over any folder
-                                    val matched = folderBounds.entries.find { it.value.contains(dragPosition) }
-                                    hoveredFolderId = matched?.key
-                                },
-                                onDragEnd = {
-                                    hoveredFolderId?.let { targetGId ->
-                                        onMoveTabToGroup(tab.id, targetGId)
-                                    }
-                                    draggingTabId = null
-                                    hoveredFolderId = null
+                                )
+                            }
+                        }
+                    }
+
+                    // SECTION 3: UNGROUPED CHATS (Terminal Sessions)
+                    if (selectedCategory == 1) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 16.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Terminal,
+                                        contentDescription = null,
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Ungrouped Chats (${ungroupedChats.size})",
+                                        color = GVONETextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
-                            )
+
+                                TextButton(
+                                    onClick = { onNewChat(null) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("New Chat", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+
+                        if (ungroupedChats.isEmpty()) {
+                            item(span = { GridItemSpan(2) }) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No ungrouped terminal chats. Tap '+ New Chat' to start one.",
+                                        color = GVONETextSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            items(ungroupedChats, key = { "chat_${it.id}" }) { chat ->
+                                ChatCard(
+                                    session = chat,
+                                    isActiveChat = chat.id == activeTerminalSessionId,
+                                    isSelectionMode = isSelectionMode,
+                                    isChecked = selectedChatIds.contains(chat.id),
+                                    onToggleCheck = {
+                                        selectedChatIds = if (selectedChatIds.contains(chat.id)) {
+                                            selectedChatIds - chat.id
+                                        } else {
+                                            selectedChatIds + chat.id
+                                        }
+                                    },
+                                    onSelect = {
+                                        if (isSelectionMode) {
+                                            selectedChatIds = if (selectedChatIds.contains(chat.id)) {
+                                                selectedChatIds - chat.id
+                                            } else {
+                                                selectedChatIds + chat.id
+                                            }
+                                        } else {
+                                            onSelectChat(chat.id)
+                                        }
+                                    },
+                                    onClose = { onDeleteChat(chat.id) },
+                                    onRename = { chatToRename = chat },
+                                    onMoveToGroup = { chatToMove = chat }
+                                )
+                            }
                         }
                     }
                 }
@@ -673,7 +1125,7 @@ fun TabOverviewScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "${selectedTabIds.size} Selected",
+                        text = "$totalSelectedCount Selected",
                         color = GVONETextPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -701,11 +1153,11 @@ fun TabOverviewScreen(
                         // Move Selection to Existing Group
                         OutlinedButton(
                             onClick = {
-                                if (selectedTabIds.isNotEmpty()) {
+                                if (totalSelectedCount > 0) {
                                     isMovingBatchToGroup = true
                                 }
                             },
-                            enabled = selectedTabIds.isNotEmpty(),
+                            enabled = totalSelectedCount > 0,
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = GVONETextPrimary),
                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333E52)),
                             shape = RoundedCornerShape(12.dp),
@@ -716,14 +1168,16 @@ fun TabOverviewScreen(
                             Text("Move", fontSize = 12.sp)
                         }
 
-                        // Close Selected Tabs
+                        // Close Selected Tabs & Chats
                         IconButton(
                             onClick = {
                                 selectedTabIds.forEach { onTabClose(it) }
+                                selectedChatIds.forEach { onDeleteChat(it) }
                                 selectedTabIds = emptySet()
+                                selectedChatIds = emptySet()
                                 isSelectionMode = false
                             },
-                            enabled = selectedTabIds.isNotEmpty(),
+                            enabled = totalSelectedCount > 0,
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(Icons.Rounded.Delete, contentDescription = "Delete Selected", tint = Color(0xFFEF4444))
@@ -943,14 +1397,47 @@ fun TabOverviewScreen(
         )
     }
 
+    chatToMove?.let { chat ->
+        MoveToGroupDialog(
+            tabGroups = tabGroups,
+            currentGroupId = chat.tabGroupId,
+            onDismiss = { chatToMove = null },
+            onSelectGroup = { targetGroupId ->
+                onMoveChatToGroup(chat.id, targetGroupId)
+                chatToMove = null
+            },
+            onCreateNewGroup = {
+                chatToMove = null
+                showCreateGroupDialog = true
+            }
+        )
+    }
+
+    chatToRename?.let { chat ->
+        RenameChatDialog(
+            session = chat,
+            onDismiss = { chatToRename = null },
+            onConfirm = { newTitle ->
+                onRenameChat(chat.id, newTitle)
+                chatToRename = null
+            }
+        )
+    }
+
     if (isMovingBatchToGroup) {
         MoveToGroupDialog(
             tabGroups = tabGroups,
             currentGroupId = null,
             onDismiss = { isMovingBatchToGroup = false },
             onSelectGroup = { targetGroupId ->
-                onMoveTabsToGroup(selectedTabIds.toList(), targetGroupId)
+                if (selectedTabIds.isNotEmpty()) {
+                    onMoveTabsToGroup(selectedTabIds.toList(), targetGroupId)
+                }
+                if (selectedChatIds.isNotEmpty()) {
+                    onMoveChatsToGroup(selectedChatIds.toList(), targetGroupId)
+                }
                 selectedTabIds = emptySet()
+                selectedChatIds = emptySet()
                 isSelectionMode = false
                 isMovingBatchToGroup = false
             },
@@ -958,34 +1445,6 @@ fun TabOverviewScreen(
                 isMovingBatchToGroup = false
                 initialTabsForNewGroup = selectedTabIds.toList()
                 showCreateGroupDialog = true
-            }
-        )
-    }
-
-    if (showEnvironmentSheet) {
-        EnvironmentSwitchSheet(
-            environments = environments,
-            activeEnvironmentId = currentEnvironment?.id ?: (environments.firstOrNull()?.id ?: "personal"),
-            onSelectEnvironment = { envId ->
-                onSelectEnvironment(envId)
-                showEnvironmentSheet = false
-            },
-            onCreateEnvironment = { name, icon, theme, preset, linkUrl, linkTitle ->
-                onCreateEnvironment(name, icon, theme, preset, linkUrl, linkTitle)
-                showEnvironmentSheet = false
-            },
-            onDuplicateEnvironment = onDuplicateEnvironment,
-            onDeleteEnvironment = onDeleteEnvironment,
-            onDismiss = { showEnvironmentSheet = false }
-        )
-    }
-
-    if (showCreateEnvironmentDialog) {
-        CreateEnvironmentDialog(
-            onDismiss = { showCreateEnvironmentDialog = false },
-            onConfirm = { name, icon, theme, preset, linkUrl, linkTitle ->
-                onCreateEnvironment(name, icon, theme, preset, linkUrl, linkTitle)
-                showCreateEnvironmentDialog = false
             }
         )
     }
@@ -1285,14 +1744,24 @@ private fun RootAllTabsHeader(
 private fun FolderViewHeader(
     folder: TabGroup,
     tabCount: Int,
+    chatCount: Int = 0,
     onBack: () -> Unit,
     onAddTab: () -> Unit,
+    onAddChat: () -> Unit = {},
     onRename: () -> Unit,
     onCloseAllInFolder: () -> Unit,
+    onCloseAllChatsInFolder: () -> Unit = {},
     onDeleteFolder: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val accentColor = parseHexColor(folder.colorHex)
+
+    val countSummary = buildString {
+        append("$tabCount tabs")
+        if (chatCount > 0) {
+            append(", $chatCount chats")
+        }
+    }
 
     Row(
         modifier = Modifier
@@ -1348,13 +1817,13 @@ private fun FolderViewHeader(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "($tabCount)",
+                text = "($countSummary)",
                 color = GVONETextSecondary,
-                fontSize = 13.sp
+                fontSize = 12.sp
             )
         }
 
-        // Action Buttons: [+] Add Tab, [⋮] Folder Options
+        // Action Buttons: [+] Add Tab, [Terminal] Add Chat, [⋮] Folder Options
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1368,6 +1837,17 @@ private fun FolderViewHeader(
                     .border(1.dp, Color(0xFF333E52), CircleShape)
             ) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add Tab to Group", tint = GVONEPrimary, modifier = Modifier.size(20.dp))
+            }
+
+            IconButton(
+                onClick = onAddChat,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF1E2430))
+                    .border(1.dp, Color(0xFF0284C7).copy(alpha = 0.5f), CircleShape)
+            ) {
+                Icon(Icons.Rounded.Terminal, contentDescription = "Add Chat to Group", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
             }
 
             Box {
@@ -1403,6 +1883,14 @@ private fun FolderViewHeader(
                         onClick = {
                             showMenu = false
                             onCloseAllInFolder()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Close All Chats in Group", color = GVONETextPrimary, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            showMenu = false
+                            onCloseAllChatsInFolder()
                         }
                     )
                     Divider(color = Color(0xFF263042), thickness = 0.5.dp)
@@ -1706,3 +2194,4 @@ private fun parseSafeColor(hex: String?, defaultColor: Color = Color(0xFF38BDF8)
         defaultColor
     }
 }
+
