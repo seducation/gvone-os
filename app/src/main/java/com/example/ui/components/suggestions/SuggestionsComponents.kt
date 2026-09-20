@@ -538,12 +538,11 @@ fun SuggestionChip(
 
 /**
  * Types of items that can be selected in the terminal chips bar.
- * Supports Photos, Files, Researches, Websites, as well as Prompts and Commands.
+ * Supports Photos, Files, Websites, as well as Prompts and Commands.
  */
 enum class SelectedItemType {
     PHOTO,
     FILE,
-    RESEARCH,
     WEBSITE,
     PROMPT,
     COMMAND
@@ -551,7 +550,7 @@ enum class SelectedItemType {
 
 /**
  * QuickPrompt data model for horizontal suggestion chips above the address bar.
- * Also represents selected items (Photos, Files, Researches, Websites, Prompts, Commands).
+ * Also represents selected items (Photos, Files, Websites, Prompts, Commands).
  */
 data class QuickPrompt(
     val id: String,
@@ -561,45 +560,18 @@ data class QuickPrompt(
     val category: String = "Prompt",
     val type: SelectedItemType = when (category.lowercase()) {
         "photo", "photos", "image", "gallery" -> SelectedItemType.PHOTO
-        "file", "files", "document", "pdf" -> SelectedItemType.FILE
-        "research", "canvas", "notes", "synthesis", "paper" -> SelectedItemType.RESEARCH
+        "file", "files", "document" -> SelectedItemType.FILE
         "website", "web", "webpage", "url", "tab" -> SelectedItemType.WEBSITE
         "command", "terminal" -> SelectedItemType.COMMAND
         else -> SelectedItemType.PROMPT
     },
-    val uriOrUrl: String? = null
+    val uriOrUrl: String? = null,
+    val fileSize: Long? = null,
+    val mimeType: String? = null
 )
 
 object DefaultQuickPrompts {
     val items = listOf(
-        QuickPrompt(
-            id = "attach_photo",
-            title = "Attach Photo",
-            promptText = "/photos",
-            icon = Icons.Rounded.AddPhotoAlternate,
-            category = "Photo"
-        ),
-        QuickPrompt(
-            id = "attach_file",
-            title = "Attach File",
-            promptText = "/files",
-            icon = Icons.Rounded.Folder,
-            category = "File"
-        ),
-        QuickPrompt(
-            id = "attach_research",
-            title = "Attach Research",
-            promptText = "/research",
-            icon = Icons.Rounded.Science,
-            category = "Research"
-        ),
-        QuickPrompt(
-            id = "attach_web",
-            title = "Attach Web Context",
-            promptText = "/web",
-            icon = Icons.Rounded.Language,
-            category = "Website"
-        ),
         QuickPrompt(
             id = "pin_terminal",
             title = "Pin Terminal",
@@ -692,10 +664,6 @@ fun SuggestionChipsBar(
     onToggleBulb: () -> Unit = {},
     onSelectPrompt: (String) -> Unit,
     onSelectQuickPrompt: ((QuickPrompt) -> Unit)? = null,
-    onAttachPhoto: (() -> Unit)? = null,
-    onAttachFile: (() -> Unit)? = null,
-    onAttachResearch: (() -> Unit)? = null,
-    onAttachWebsite: (() -> Unit)? = null,
     onClose: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -718,7 +686,7 @@ fun SuggestionChipsBar(
             .testTag("suggestion_chips_ui"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Bulb icon on the LEFT of persistence chips - opens the Attachments panel
+        // Bulb icon on the LEFT of persistence chips
         Surface(
             modifier = Modifier
                 .size(36.dp)
@@ -727,8 +695,7 @@ fun SuggestionChipsBar(
                 .clickable { onToggleBulb() }
                 .testTag("bulb_button_left")
                 .testTag("lightbulb_icon")
-                .testTag("bulb_button")
-                .testTag("attachments_button"),
+                .testTag("bulb_button"),
             shape = CircleShape,
             color = if (isSuggestivePopupOpen) Color(0xFF2D2312) else Color(0xEB131A24),
             border = BorderStroke(
@@ -739,7 +706,7 @@ fun SuggestionChipsBar(
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Rounded.Lightbulb,
-                    contentDescription = "Attachments",
+                    contentDescription = "Suggestions & Commands",
                     tint = if (isSuggestivePopupOpen) Color(0xFFFBBF24) else Color(0xFFE2E8F0),
                     modifier = Modifier.size(18.dp)
                 )
@@ -791,8 +758,7 @@ fun SuggestionChipsBar(
 
         // Horizontal scrollable floating chips containing:
         // 1. Selected items (right near the bulb icon, with close button)
-        // 2. Quick attachment chips (Photos, Files, Research, Web)
-        // 3. Regular suggestion chips
+        // 2. Regular suggestion chips
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -800,49 +766,11 @@ fun SuggestionChipsBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Selected item(s) chosen by user - shown right near the bulb icon like photos
+            // Selected item(s) chosen by user - shown right near the bulb icon
             selectedItems.forEach { item ->
                 SelectedItemChip(
                     item = item,
                     onClose = { onRemoveSelectedItem(item) }
-                )
-            }
-
-            // Quick Attachment action chips directly in horizontal suggestion chips
-            if (onAttachPhoto != null && selectedItems.none { it.type == SelectedItemType.PHOTO }) {
-                QuickAttachmentActionChip(
-                    label = "+ Photo",
-                    icon = Icons.Rounded.AddPhotoAlternate,
-                    accentColor = Color(0xFF34D399),
-                    onClick = onAttachPhoto,
-                    testTag = "suggestion_chip_attach_photo"
-                )
-            }
-            if (onAttachFile != null && selectedItems.none { it.type == SelectedItemType.FILE }) {
-                QuickAttachmentActionChip(
-                    label = "+ File",
-                    icon = Icons.Rounded.Folder,
-                    accentColor = Color(0xFFA78BFA),
-                    onClick = onAttachFile,
-                    testTag = "suggestion_chip_attach_file"
-                )
-            }
-            if (onAttachResearch != null && selectedItems.none { it.type == SelectedItemType.RESEARCH }) {
-                QuickAttachmentActionChip(
-                    label = "+ Research",
-                    icon = Icons.Rounded.Science,
-                    accentColor = Color(0xFFFBBF24),
-                    onClick = onAttachResearch,
-                    testTag = "suggestion_chip_attach_research"
-                )
-            }
-            if (onAttachWebsite != null && selectedItems.none { it.type == SelectedItemType.WEBSITE }) {
-                QuickAttachmentActionChip(
-                    label = "+ Web",
-                    icon = Icons.Rounded.Language,
-                    accentColor = Color(0xFF38BDF8),
-                    onClick = onAttachWebsite,
-                    testTag = "suggestion_chip_attach_web"
                 )
             }
 
@@ -858,52 +786,6 @@ fun SuggestionChipsBar(
                     }
                 )
             }
-        }
-    }
-}
-
-/**
- * QuickAttachmentActionChip:
- * Compact button in the horizontal suggestion bar allowing users to quickly attach items like photos, files, research, or web.
- */
-@Composable
-fun QuickAttachmentActionChip(
-    label: String,
-    icon: ImageVector,
-    accentColor: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    testTag: String = ""
-) {
-    Surface(
-        modifier = modifier
-            .height(34.dp)
-            .shadow(elevation = 6.dp, shape = RoundedCornerShape(17.dp), spotColor = accentColor.copy(alpha = 0.25f))
-            .clip(RoundedCornerShape(17.dp))
-            .clickable { onClick() }
-            .testTag(testTag)
-            .testTag("quick_attach_chip_${label.filter { it.isLetterOrDigit() }.lowercase()}"),
-        shape = RoundedCornerShape(17.dp),
-        color = Color(0xEB131A24),
-        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.45f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = accentColor,
-                modifier = Modifier.size(14.dp)
-            )
-            Text(
-                text = label,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFF1F5F9)
-            )
         }
     }
 }
@@ -938,15 +820,6 @@ fun SelectedItemChip(
             Color(0xFFEDE9FE),
             Color(0x33818CF8),
             Color(0xFFC4B5FD)
-        )
-        SelectedItemType.RESEARCH -> Tuple7(
-            listOf(Color(0xFFF59E0B), Color(0xFFFBBF24), Color(0xFFD97706)),
-            listOf(Color(0xEE2A1C08), Color(0xF01C1305)),
-            Icons.Rounded.Science,
-            Color(0xFFFBBF24),
-            Color(0xFFFEF3C7),
-            Color(0x33F59E0B),
-            Color(0xFFFDE68A)
         )
         SelectedItemType.WEBSITE -> Tuple7(
             listOf(Color(0xFF0EA5E9), Color(0xFF38BDF8), Color(0xFF0284C7)),

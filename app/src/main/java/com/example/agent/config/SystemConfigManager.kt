@@ -31,8 +31,8 @@ class SystemConfigManager {
     }
 
     private fun registerDefaultConfigs() {
-        register("model.default", "gemini-2.5-flash", "Model", "Default reasoning and planning AI model")
-        register("model.coding", "gemini-2.5-pro", "Model", "Specialized model for code analysis & compilation")
+        register("model.default", "gemini-3.5-flash", "Model", "Default reasoning and planning AI model")
+        register("model.coding", "gemini-3.1-pro-preview", "Model", "Specialized model for code analysis & compilation")
         register("voice.auto_speak", "true", "Voice", "Speak agent telemetry and boundary announcements")
         register("voice.continuous", "false", "Voice", "Persistent voice listening loop")
         register("voice.stt_engine", "android_speech", "Voice", "Speech recognition provider")

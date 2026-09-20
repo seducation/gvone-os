@@ -61,6 +61,7 @@ sealed interface ActiveSheet {
 }
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
+    val context: Context get() = getApplication()
     private val prefs = application.getSharedPreferences("gvone_settings_prefs", Context.MODE_PRIVATE)
     val repository = BrowserRepository(application)
     val torManager = TorManager()
@@ -203,26 +204,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         terminalRepository.clearSavedSessionLines()
     }
 
-    private val _pendingTerminalFile = MutableStateFlow<Triple<android.net.Uri, String?, Long?>?>(null)
-    val pendingTerminalFile: StateFlow<Triple<android.net.Uri, String?, Long?>?> = _pendingTerminalFile.asStateFlow()
-
-    fun receiveFileDirectlyInTerminal(uri: android.net.Uri, name: String? = null, size: Long? = null) {
-        val fileName = name ?: uri.lastPathSegment ?: "file"
-        _pendingTerminalFile.value = Triple(uri, fileName, size)
-        openSheet(ActiveSheet.Terminal)
-    }
-
-    fun receiveFilesDirectlyInTerminal(files: List<Triple<android.net.Uri, String?, Long?>>) {
-        if (files.isNotEmpty()) {
-            val first = files.first()
-            receiveFileDirectlyInTerminal(first.first, first.second, first.third)
-        }
-    }
-
-    fun clearPendingTerminalFile() {
-        _pendingTerminalFile.value = null
-    }
-
     // Bridge for Browser <-> GVONE Search/Chat Web App Communication
     val webAppBridge = GVONEWebAppBridge(
         onStateChanged = { state ->
@@ -334,6 +315,84 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     // Navigation and Active Sheet State
     private val _activeSheet = MutableStateFlow<ActiveSheet>(ActiveSheet.None)
     val activeSheet: StateFlow<ActiveSheet> = _activeSheet.asStateFlow()
+
+    // Pending file attachment to receive into Terminal
+    private val _pendingTerminalFile = MutableStateFlow<Triple<android.net.Uri, String?, Long?>?>(null)
+    val pendingTerminalFile: StateFlow<Triple<android.net.Uri, String?, Long?>?> = _pendingTerminalFile.asStateFlow()
+
+    private val _pendingTerminalFiles = MutableStateFlow<List<Triple<android.net.Uri, String?, Long?>>>(emptyList())
+    val pendingTerminalFiles: StateFlow<List<Triple<android.net.Uri, String?, Long?>>> = _pendingTerminalFiles.asStateFlow()
+
+    fun attachFileToTerminal(uri: android.net.Uri, name: String? = null, size: Long? = null) {
+        _pendingTerminalFile.value = Triple(uri, name, size)
+        _pendingTerminalFiles.value = _pendingTerminalFiles.value + Triple(uri, name, size)
+        openSheet(ActiveSheet.Terminal)
+    }
+
+    fun attachFilesToTerminal(files: List<Triple<android.net.Uri, String?, Long?>>) {
+        if (files.isEmpty()) return
+        _pendingTerminalFile.value = files.first()
+        _pendingTerminalFiles.value = _pendingTerminalFiles.value + files
+        openSheet(ActiveSheet.Terminal)
+    }
+
+    fun receiveFileDirectlyInTerminal(uri: android.net.Uri, name: String? = null, size: Long? = null, mimeType: String? = null) {
+        val fileName = name ?: uri.lastPathSegment ?: "file"
+        val formattedSize = size?.let { bytes ->
+            when {
+                bytes < 1024 -> "$bytes B"
+                bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+                else -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
+            }
+        } ?: ""
+        val sizeStr = if (formattedSize.isNotBlank()) " ($formattedSize)" else ""
+        appendTerminalLine(
+            TerminalLine(
+                text = "📥 File received in terminal: $fileName$sizeStr",
+                type = TerminalLineType.SUCCESS,
+                fileUri = uri.toString(),
+                fileName = fileName,
+                fileSize = size,
+                fileMimeType = mimeType
+            )
+        )
+        attachFileToTerminal(uri, fileName, size)
+    }
+
+    fun receiveFilesDirectlyInTerminal(files: List<Triple<android.net.Uri, String?, Long?>>) {
+        if (files.isEmpty()) return
+        files.forEach { (uri, name, size) ->
+            val fileName = name ?: uri.lastPathSegment ?: "file"
+            val formattedSize = size?.let { bytes ->
+                when {
+                    bytes < 1024 -> "$bytes B"
+                    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+                    else -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
+                }
+            } ?: ""
+            val sizeStr = if (formattedSize.isNotBlank()) " ($formattedSize)" else ""
+            appendTerminalLine(
+                TerminalLine(
+                    text = "📥 File received in terminal: $fileName$sizeStr",
+                    type = TerminalLineType.SUCCESS,
+                    fileUri = uri.toString(),
+                    fileName = fileName,
+                    fileSize = size
+                )
+            )
+        }
+        attachFilesToTerminal(files)
+    }
+
+    fun clearPendingTerminalFile() {
+        _pendingTerminalFile.value = null
+        _pendingTerminalFiles.value = emptyList()
+    }
+
+    fun clearPendingTerminalFiles() {
+        _pendingTerminalFiles.value = emptyList()
+        _pendingTerminalFile.value = null
+    }
 
     // Search & AI State
     private val _addressBarInput = MutableStateFlow("")
