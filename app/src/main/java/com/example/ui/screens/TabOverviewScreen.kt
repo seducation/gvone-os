@@ -165,12 +165,8 @@ fun TabOverviewScreen(
     }
 
     // Filtered chats for active folder view
-    val folderChats = remember(terminalSessions, currentFolderId) {
-        if (currentFolderId != null) {
-            terminalSessions.filter { it.tabGroupId == currentFolderId }
-        } else {
-            emptyList()
-        }
+    val folderChats = remember {
+        emptyList<TerminalSession>()
     }
 
     // Ungrouped tabs for root view
@@ -179,8 +175,8 @@ fun TabOverviewScreen(
     }
 
     // Ungrouped chats for root view
-    val ungroupedChats = remember(terminalSessions) {
-        terminalSessions.filter { it.tabGroupId == null }
+    val ungroupedChats = remember {
+        emptyList<TerminalSession>()
     }
 
     // Search results across all tabs, chats, and folders
@@ -198,13 +194,12 @@ fun TabOverviewScreen(
         }
     }
 
-    val searchResultsChats = remember(terminalSessions, tabGroups, searchQuery) {
+    val searchResultsChats = remember(terminalSessions, searchQuery) {
         if (isSearching) {
             val q = searchQuery.trim().lowercase()
             terminalSessions.filter { chat ->
                 chat.title.lowercase().contains(q) ||
-                chat.lines.any { it.text.lowercase().contains(q) } ||
-                tabGroups.find { it.id == chat.tabGroupId }?.name?.lowercase()?.contains(q) == true
+                chat.lines.any { it.text.lowercase().contains(q) }
             }
         } else {
             emptyList()
@@ -277,10 +272,8 @@ fun TabOverviewScreen(
                         chatCount = folderChats.size,
                         onBack = { currentFolderId = null },
                         onAddTab = { onNewTab(currentFolder.id) },
-                        onAddChat = { onNewChat(currentFolder.id) },
                         onRename = { groupToRename = currentFolder },
                         onCloseAllInFolder = { onCloseTabsInGroup(currentFolder.id) },
-                        onCloseAllChatsInFolder = { onCloseChatsInGroup(currentFolder.id) },
                         onDeleteFolder = { groupToDelete = currentFolder }
                     )
                 }
@@ -524,53 +517,6 @@ fun TabOverviewScreen(
                         }
                     }
 
-                    if (searchResultsChats.isNotEmpty()) {
-                        item(span = { GridItemSpan(2) }) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
-                            ) {
-                                Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
-                                Text("Terminal Chats (${searchResultsChats.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        items(searchResultsChats, key = { "chat_${it.id}" }) { chat ->
-                            val folder = tabGroups.find { it.id == chat.tabGroupId }
-                            ChatCard(
-                                session = chat,
-                                folderName = folder?.name,
-                                folderColorHex = folder?.colorHex,
-                                isActiveChat = chat.id == activeTerminalSessionId,
-                                isSelectionMode = isSelectionMode,
-                                isChecked = selectedChatIds.contains(chat.id),
-                                onToggleCheck = {
-                                    selectedChatIds = if (selectedChatIds.contains(chat.id)) {
-                                        selectedChatIds - chat.id
-                                    } else {
-                                        selectedChatIds + chat.id
-                                    }
-                                },
-                                onSelect = {
-                                    if (isSelectionMode) {
-                                        selectedChatIds = if (selectedChatIds.contains(chat.id)) {
-                                            selectedChatIds - chat.id
-                                        } else {
-                                            selectedChatIds + chat.id
-                                        }
-                                    } else {
-                                        onSelectChat(chat.id)
-                                    }
-                                },
-                                onClose = { onDeleteChat(chat.id) },
-                                onRename = { chatToRename = chat },
-                                onMoveToGroup = { chatToMove = chat },
-                                onRemoveFromGroup = if (chat.tabGroupId != null) { { onMoveChatToGroup(chat.id, null) } } else null
-                            )
-                        }
-                    }
-
                     if (totalMatches == 0) {
                         item(span = { GridItemSpan(2) }) {
                             Box(
@@ -579,7 +525,7 @@ fun TabOverviewScreen(
                                     .padding(vertical = 32.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("No matching tabs or terminal chats found.", color = GVONETextSecondary, fontSize = 13.sp)
+                                Text("No matching tabs found.", color = GVONETextSecondary, fontSize = 13.sp)
                             }
                         }
                     }
@@ -615,13 +561,13 @@ fun TabOverviewScreen(
                                 )
                             }
                             Text(
-                                text = "No tabs or chats in this group",
+                                text = "No tabs in this group",
                                 color = GVONETextPrimary,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Add tabs or terminal chats to \"${currentFolder.name}\" to keep your work organized.",
+                                text = "Add tabs to \"${currentFolder.name}\" to keep your work organized.",
                                 color = GVONETextSecondary,
                                 fontSize = 13.sp
                             )
@@ -635,15 +581,6 @@ fun TabOverviewScreen(
                                     Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("Add Tab")
-                                }
-                                Button(
-                                    onClick = { onNewChat(currentFolder.id) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Add Chat")
                                 }
                             }
                         }
@@ -746,83 +683,36 @@ fun TabOverviewScreen(
 
                         // SECTION: Chats in this group
                         if (selectedCategory == 1) {
-                            if (folderChats.isNotEmpty()) {
-                                item(span = { GridItemSpan(2) }) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 10.dp, bottom = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                            item(span = { GridItemSpan(2) }) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 48.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.padding(24.dp)
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
-                                            Text("Terminal Chats (${folderChats.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                        TextButton(
-                                            onClick = { onNewChat(currentFolder.id) },
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                        ) {
-                                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("New Chat", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                        }
-                                    }
-                                }
-
-                                items(folderChats, key = { "chat_${it.id}" }) { chat ->
-                                    ChatCard(
-                                        session = chat,
-                                        isActiveChat = chat.id == activeTerminalSessionId,
-                                        isSelectionMode = isSelectionMode,
-                                        isChecked = selectedChatIds.contains(chat.id),
-                                        onToggleCheck = {
-                                            selectedChatIds = if (selectedChatIds.contains(chat.id)) {
-                                                selectedChatIds - chat.id
-                                            } else {
-                                                selectedChatIds + chat.id
-                                            }
-                                        },
-                                        onSelect = {
-                                            if (isSelectionMode) {
-                                                selectedChatIds = if (selectedChatIds.contains(chat.id)) {
-                                                    selectedChatIds - chat.id
-                                                } else {
-                                                    selectedChatIds + chat.id
-                                                }
-                                            } else {
-                                                onSelectChat(chat.id)
-                                            }
-                                        },
-                                        onClose = { onDeleteChat(chat.id) },
-                                        onRename = { chatToRename = chat },
-                                        onMoveToGroup = { chatToMove = chat },
-                                        onRemoveFromGroup = { onMoveChatToGroup(chat.id, null) }
-                                    )
-                                }
-                            } else {
-                                item(span = { GridItemSpan(2) }) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 32.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Text("No terminal chats in this group.", color = GVONETextSecondary, fontSize = 13.sp)
-                                            Button(
-                                                onClick = { onNewChat(currentFolder.id) },
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                                                shape = RoundedCornerShape(12.dp)
-                                            ) {
-                                                Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text("Add Chat", fontSize = 12.sp)
-                                            }
-                                        }
+                                        Icon(
+                                            imageVector = Icons.Rounded.Terminal,
+                                            contentDescription = null,
+                                            tint = Color(0xFF38BDF8),
+                                            modifier = Modifier.size(48.dp)
+                                        )
+                                        Text(
+                                            text = "Terminal Chats",
+                                            color = GVONETextPrimary,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = "Terminal sessions are now managed locally within the Terminal Screen.",
+                                            color = GVONETextSecondary,
+                                            fontSize = 13.sp,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
                                     }
                                 }
                             }
@@ -885,7 +775,6 @@ fun TabOverviewScreen(
                         // Render each Tab Group folder card
                         items(tabGroups, key = { "group_${it.id}" }, span = { GridItemSpan(2) }) { group ->
                             val tabsInThisGroup = modeTabs.filter { it.tabGroupId == group.id }
-                            val chatsInThisGroup = terminalSessions.filter { it.tabGroupId == group.id }
                             val isDropTarget = hoveredFolderId == group.id
 
                             Box(
@@ -896,13 +785,11 @@ fun TabOverviewScreen(
                                 TabFolderCard(
                                     group = group,
                                     tabsInGroup = tabsInThisGroup,
-                                    chatsInGroup = chatsInThisGroup,
                                     isActiveGroup = activeGroupId == group.id,
                                     isDropTarget = isDropTarget,
                                     onClick = { currentFolderId = group.id },
                                     onRename = { groupToRename = group },
                                     onAddTab = { onNewTab(group.id) },
-                                    onAddChat = { onNewChat(group.id) },
                                     onDelete = { groupToDelete = group }
                                 )
                             }
@@ -1017,86 +904,36 @@ fun TabOverviewScreen(
                     // SECTION 3: UNGROUPED CHATS (Terminal Sessions)
                     if (selectedCategory == 1) {
                         item(span = { GridItemSpan(2) }) {
-                            Row(
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 16.dp, bottom = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                    .padding(vertical = 48.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.padding(24.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.Terminal,
                                         contentDescription = null,
                                         tint = Color(0xFF38BDF8),
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(48.dp)
                                     )
                                     Text(
-                                        text = "Ungrouped Chats (${ungroupedChats.size})",
+                                        text = "Terminal Chats",
                                         color = GVONETextPrimary,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.SemiBold
                                     )
-                                }
-
-                                TextButton(
-                                    onClick = { onNewChat(null) },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                ) {
-                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("New Chat", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                }
-                            }
-                        }
-
-                        if (ungroupedChats.isEmpty()) {
-                            item(span = { GridItemSpan(2) }) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 12.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
                                     Text(
-                                        text = "No ungrouped terminal chats. Tap '+ New Chat' to start one.",
+                                        text = "Terminal sessions are now managed locally within the Terminal Screen.",
                                         color = GVONETextSecondary,
-                                        fontSize = 12.sp
+                                        fontSize = 13.sp,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )
                                 }
-                            }
-                        } else {
-                            items(ungroupedChats, key = { "chat_${it.id}" }) { chat ->
-                                ChatCard(
-                                    session = chat,
-                                    isActiveChat = chat.id == activeTerminalSessionId,
-                                    isSelectionMode = isSelectionMode,
-                                    isChecked = selectedChatIds.contains(chat.id),
-                                    onToggleCheck = {
-                                        selectedChatIds = if (selectedChatIds.contains(chat.id)) {
-                                            selectedChatIds - chat.id
-                                        } else {
-                                            selectedChatIds + chat.id
-                                        }
-                                    },
-                                    onSelect = {
-                                        if (isSelectionMode) {
-                                            selectedChatIds = if (selectedChatIds.contains(chat.id)) {
-                                                selectedChatIds - chat.id
-                                            } else {
-                                                selectedChatIds + chat.id
-                                            }
-                                        } else {
-                                            onSelectChat(chat.id)
-                                        }
-                                    },
-                                    onClose = { onDeleteChat(chat.id) },
-                                    onRename = { chatToRename = chat },
-                                    onMoveToGroup = { chatToMove = chat }
-                                )
                             }
                         }
                     }
@@ -1397,33 +1234,6 @@ fun TabOverviewScreen(
         )
     }
 
-    chatToMove?.let { chat ->
-        MoveToGroupDialog(
-            tabGroups = tabGroups,
-            currentGroupId = chat.tabGroupId,
-            onDismiss = { chatToMove = null },
-            onSelectGroup = { targetGroupId ->
-                onMoveChatToGroup(chat.id, targetGroupId)
-                chatToMove = null
-            },
-            onCreateNewGroup = {
-                chatToMove = null
-                showCreateGroupDialog = true
-            }
-        )
-    }
-
-    chatToRename?.let { chat ->
-        RenameChatDialog(
-            session = chat,
-            onDismiss = { chatToRename = null },
-            onConfirm = { newTitle ->
-                onRenameChat(chat.id, newTitle)
-                chatToRename = null
-            }
-        )
-    }
-
     if (isMovingBatchToGroup) {
         MoveToGroupDialog(
             tabGroups = tabGroups,
@@ -1432,9 +1242,6 @@ fun TabOverviewScreen(
             onSelectGroup = { targetGroupId ->
                 if (selectedTabIds.isNotEmpty()) {
                     onMoveTabsToGroup(selectedTabIds.toList(), targetGroupId)
-                }
-                if (selectedChatIds.isNotEmpty()) {
-                    onMoveChatsToGroup(selectedChatIds.toList(), targetGroupId)
                 }
                 selectedTabIds = emptySet()
                 selectedChatIds = emptySet()
