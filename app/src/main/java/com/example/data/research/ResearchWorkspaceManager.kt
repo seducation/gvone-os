@@ -388,4 +388,36 @@ class ResearchWorkspaceManager(
     fun clearStatusMessage() {
         _statusMessage.value = null
     }
+
+    /**
+     * Imports a local file from the GVONE File System as a research source.
+     */
+    suspend fun importFileAsSource(fileItem: com.example.data.files.GVONEFileItem) = withContext(Dispatchers.IO) {
+        val today = SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date())
+        val content = try {
+            fileSystem.readFileContent(fileItem.path)
+        } catch (_: Exception) {
+            "Content not accessible or empty."
+        }
+        val words = content.split("\\s+".toRegex()).size
+        val readingTime = (words / 200).coerceAtLeast(1)
+
+        val newSource = ResearchSource(
+            id = "src_${System.currentTimeMillis()}",
+            title = fileItem.name,
+            url = "file://${fileItem.path}",
+            domain = "local-file",
+            author = "Local Document",
+            publicationDate = SimpleDateFormat("yyyy", Locale.US).format(Date()),
+            accessDate = today,
+            excerpt = "Local file document (${fileItem.formattedSize}, $words words)",
+            fullText = content,
+            wordCount = words,
+            readingTimeMinutes = readingTime,
+            tags = listOf("Local", fileItem.extension.ifBlank { "file" })
+        )
+
+        _sources.value = listOf(newSource) + _sources.value
+        _statusMessage.value = "Imported file as research source: ${fileItem.name}"
+    }
 }

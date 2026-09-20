@@ -60,6 +60,12 @@ sealed interface ActiveSheet {
     object Permissions : ActiveSheet
 }
 
+enum class FileSelectionPurpose {
+    NONE,
+    TERMINAL,
+    RESEARCH_WORKSPACE
+}
+
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("gvone_settings_prefs", Context.MODE_PRIVATE)
     val repository = BrowserRepository(application)
@@ -337,6 +343,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val _isFileSelectionMode = MutableStateFlow(false)
     val isFileSelectionMode: StateFlow<Boolean> = _isFileSelectionMode.asStateFlow()
+
+    private val _fileSelectionPurpose = MutableStateFlow(FileSelectionPurpose.NONE)
+    val fileSelectionPurpose: StateFlow<FileSelectionPurpose> = _fileSelectionPurpose.asStateFlow()
 
     // Search & AI State
     private val _addressBarInput = MutableStateFlow("")
@@ -1025,8 +1034,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _activeSheet.value = sheet
     }
 
-    fun openFiles(isSelectionMode: Boolean) {
+    fun openFiles(isSelectionMode: Boolean, purpose: FileSelectionPurpose = FileSelectionPurpose.NONE) {
         _isFileSelectionMode.value = isSelectionMode
+        _fileSelectionPurpose.value = purpose
         openSheet(ActiveSheet.Files)
     }
 
@@ -1047,6 +1057,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             excerpt = "Captured from active browser session.",
             fullText = "Article captured from $url"
         )
+    }
+
+    fun importFileIntoResearch(file: com.example.data.files.GVONEFileItem) {
+        viewModelScope.launch {
+            researchWorkspaceManager.importFileAsSource(file)
+            openSheet(ActiveSheet.ResearchWorkspace)
+        }
     }
 
     fun closeSheet() {

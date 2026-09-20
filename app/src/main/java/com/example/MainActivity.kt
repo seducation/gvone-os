@@ -57,6 +57,7 @@ import com.example.ui.screens.webwidget.WebWidgetSelectionOverlay
 import com.example.ui.theme.GVONEBrowserTheme
 import com.example.ui.viewmodel.ActiveSheet
 import com.example.ui.viewmodel.BrowserViewModel
+import com.example.ui.viewmodel.FileSelectionPurpose
 
 class MainActivity : ComponentActivity() {
     private val browserViewModel: BrowserViewModel by viewModels()
@@ -179,6 +180,7 @@ fun BrowserApp(
     val isDiagnosing by viewModel.isDiagnosing.collectAsStateWithLifecycle()
     val isCurrentTabShorts by viewModel.isCurrentTabShorts.collectAsStateWithLifecycle()
     val isFileSelectionMode by viewModel.isFileSelectionMode.collectAsStateWithLifecycle()
+    val fileSelectionPurpose by viewModel.fileSelectionPurpose.collectAsStateWithLifecycle()
     val isShortsMuted by viewModel.isShortsMuted.collectAsStateWithLifecycle()
     val mediaPlayerStatus by viewModel.mediaPlayerStatus.collectAsStateWithLifecycle()
     val contextMenuData by viewModel.contextMenuData.collectAsStateWithLifecycle()
@@ -473,7 +475,7 @@ fun BrowserApp(
                     } catch (_: Exception) {}
                 },
                 onOpenFiles = {
-                    viewModel.openFiles(isSelectionMode = true)
+                    viewModel.openFiles(isSelectionMode = true, purpose = FileSelectionPurpose.TERMINAL)
                 },
                 selectedPhotoUri = selectedPhotoUri,
                 onClearSelectedPhotoUri = { selectedPhotoUri = null },
@@ -940,10 +942,17 @@ fun BrowserApp(
                 },
                 onSelectFile = if (isFileSelectionMode) {
                     { file ->
-                        val fileUri = android.net.Uri.fromFile(java.io.File(file.absolutePath))
-                        viewModel.receiveFileDirectlyInTerminal(fileUri, file.name, file.size)
-                        viewModel.closeSheet()
+                        if (fileSelectionPurpose == FileSelectionPurpose.RESEARCH_WORKSPACE) {
+                            viewModel.importFileIntoResearch(file)
+                        } else {
+                            val fileUri = android.net.Uri.fromFile(java.io.File(file.absolutePath))
+                            viewModel.receiveFileDirectlyInTerminal(fileUri, file.name, file.size)
+                            viewModel.closeSheet()
+                        }
                     }
+                } else null,
+                selectionModeLabel = if (isFileSelectionMode) {
+                    if (fileSelectionPurpose == FileSelectionPurpose.RESEARCH_WORKSPACE) "RESEARCH SOURCE" else "ATTACHMENT"
                 } else null,
                 onDismiss = { viewModel.closeSheet() }
             )
@@ -979,6 +988,9 @@ fun BrowserApp(
                 currentTabTitle = currentTab?.title.orEmpty(),
                 onOpenUrlInTab = { url ->
                     viewModel.loadUrlInCurrentTab(url)
+                },
+                onImportFile = {
+                    viewModel.openFiles(isSelectionMode = true, purpose = FileSelectionPurpose.RESEARCH_WORKSPACE)
                 },
                 onClose = { viewModel.closeSheet() }
             )

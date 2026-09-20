@@ -47,7 +47,8 @@ fun GVONEFileBrowserSheet(
     onOpenFileInTab: (GVONEFileItem, inNewTab: Boolean) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    onSelectFile: ((GVONEFileItem) -> Unit)? = null
+    onSelectFile: ((GVONEFileItem) -> Unit)? = null,
+    selectionModeLabel: String? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -158,7 +159,7 @@ fun GVONEFileBrowserSheet(
                                     border = BorderStroke(1.dp, Color(0xFF38BDF8))
                                 ) {
                                     Text(
-                                        text = "ATTACH",
+                                        text = selectionModeLabel ?: "ATTACH",
                                         color = Color(0xFF38BDF8),
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
@@ -168,7 +169,7 @@ fun GVONEFileBrowserSheet(
                             }
                         }
                         Text(
-                            text = if (onSelectFile != null) "Tap any file to select as attachment" else "GVONE Universal File Manager",
+                            text = if (onSelectFile != null) "Tap any file to select as ${selectionModeLabel?.lowercase() ?: "attachment"}" else "GVONE Universal File Manager",
                             color = if (onSelectFile != null) Color(0xFF38BDF8) else Color(0xFF64748B),
                             fontSize = 11.sp
                         )
@@ -421,7 +422,7 @@ fun GVONEFileBrowserSheet(
                                             onSelectFile(target)
                                             onDismiss()
                                         } else {
-                                            Toast.makeText(context, "Select at least one file to attach", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Select at least one file to ${selectionModeLabel?.lowercase() ?: "attach"}", Toast.LENGTH_SHORT).show()
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
@@ -429,9 +430,17 @@ fun GVONEFileBrowserSheet(
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                     modifier = Modifier.height(28.dp).testTag("files_attach_selected_btn")
                                 ) {
-                                    Icon(Icons.Rounded.AttachFile, contentDescription = null, modifier = Modifier.size(12.dp))
+                                    Icon(
+                                        imageVector = if (selectionModeLabel != null) Icons.Rounded.CheckCircle else Icons.Rounded.AttachFile,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(12.dp)
+                                    )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Attach", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = if (selectionModeLabel == "RESEARCH SOURCE") "Import" else "Attach",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
 
@@ -527,7 +536,8 @@ fun GVONEFileBrowserSheet(
                                     selectFn(item)
                                     onDismiss()
                                 }
-                            }
+                            },
+                            selectionModeLabel = selectionModeLabel
                         )
                     }
                 }
@@ -631,8 +641,8 @@ fun GVONEFileBrowserSheet(
                     // Attach as File to Terminal / Prompts
                     if (!item.isDirectory) {
                         ActionSheetButton(
-                            icon = Icons.Rounded.AttachFile,
-                            label = "Attach to Terminal & Suggestions"
+                            icon = if (selectionModeLabel != null) Icons.Rounded.CheckCircle else Icons.Rounded.AttachFile,
+                            label = if (selectionModeLabel == "RESEARCH SOURCE") "Import as Research Source" else "Attach to Terminal & Suggestions"
                         ) {
                             showContextMenu = false
                             if (onSelectFile != null) {
@@ -922,7 +932,8 @@ private fun FileItemRow(
     onToggleSelect: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onSelectFile: (() -> Unit)? = null
+    onSelectFile: (() -> Unit)? = null,
+    selectionModeLabel: String? = null
 ) {
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -1029,8 +1040,18 @@ private fun FileItemRow(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Rounded.AttachFile, contentDescription = "Attach", tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
-                            Text("Select", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(
+                                imageVector = if (selectionModeLabel != null) Icons.Rounded.CheckCircle else Icons.Rounded.AttachFile,
+                                contentDescription = if (selectionModeLabel != null) "Select" else "Attach",
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = if (selectionModeLabel == "RESEARCH SOURCE") "Import" else "Select",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                     Spacer(modifier = Modifier.width(4.dp))

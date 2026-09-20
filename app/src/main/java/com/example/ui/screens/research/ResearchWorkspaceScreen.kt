@@ -48,6 +48,7 @@ fun ResearchWorkspaceScreen(
     currentTabUrl: String = "",
     currentTabTitle: String = "",
     onOpenUrlInTab: (String) -> Unit = {},
+    onImportFile: () -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -180,6 +181,31 @@ fun ResearchWorkspaceScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Academic & Web Sources (${sources.size})",
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Button(
+                                    onClick = onImportFile,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Rounded.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Import File", fontSize = 12.sp)
+                                }
+                            }
+                        }
+
                         // Quick Action: Save Current Page
                         if (currentTabUrl.isNotBlank() && currentTabUrl != "about:blank") {
                             item {
