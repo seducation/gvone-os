@@ -937,6 +937,11 @@ fun BrowserApp(
                 onOpenFileInTab = { file, inNewTab ->
                     viewModel.openFileInTab(file, inNewTab)
                 },
+                onSelectFile = { file ->
+                    val fileUri = android.net.Uri.fromFile(java.io.File(file.absolutePath))
+                    viewModel.receiveFileDirectlyInTerminal(fileUri, file.name, file.size)
+                    viewModel.closeSheet()
+                },
                 onDismiss = { viewModel.closeSheet() }
             )
         }

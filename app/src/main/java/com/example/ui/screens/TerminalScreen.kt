@@ -243,6 +243,13 @@ fun TerminalScreen(
     // Selected items (Photos, Files, Websites, Prompts) displayed near the terminal prompt
     var selectedItems by remember { mutableStateOf<List<QuickPrompt>>(emptyList()) }
 
+    // Research sources and local files for attachments
+    val researchSources by viewModel.researchWorkspaceManager.sources.collectAsStateWithLifecycle()
+    var localFiles by remember { mutableStateOf<List<com.example.data.files.GVONEFileItem>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        localFiles = viewModel.fileSystem.listFiles(com.example.data.files.StorageLocation.MY_FILES)
+    }
+
     // Synchronize externally selected photo URI into selectedItems
     LaunchedEffect(selectedPhotoUri) {
         if (selectedPhotoUri != null) {
@@ -789,11 +796,17 @@ fun TerminalScreen(
                                 onOpenPhotos?.invoke()
                             },
                             onAttachFile = {
-                                selectFileItem(null, null)
-                                onOpenFiles?.invoke()
+                                onOpenFiles?.invoke() ?: run {
+                                    localFiles.firstOrNull()?.let { selectFileItem(it.name, it.path) } ?: executeCommand("/files")
+                                }
                             },
                             onAttachResearch = {
-                                selectResearchItem(null, null)
+                                val topResearch = researchSources.firstOrNull()
+                                if (topResearch != null) {
+                                    selectResearchItem(topResearch.title, topResearch.url)
+                                } else {
+                                    selectResearchItem("Research Workspace Canvas", "research://workspace")
+                                }
                             },
                             onAttachWebsite = {
                                 selectWebsiteItem()
@@ -1365,15 +1378,19 @@ fun TerminalScreen(
                     onAttachFiles = {
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
-                        selectFileItem(null, null)
                         onOpenFiles?.invoke() ?: run {
-                            executeCommand("/files")
+                            localFiles.firstOrNull()?.let { selectFileItem(it.name, it.path) } ?: executeCommand("/files")
                         }
                     },
                     onAttachResearch = {
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
-                        selectResearchItem(null, null)
+                        val topResearch = researchSources.firstOrNull()
+                        if (topResearch != null) {
+                            selectResearchItem(topResearch.title, topResearch.url)
+                        } else {
+                            selectResearchItem("Research Workspace Canvas", "research://workspace")
+                        }
                     },
                     onWebsiteClick = {
                         showActionAndCommandPopup = false
@@ -1395,6 +1412,14 @@ fun TerminalScreen(
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
                         selectResearchItem(null, null)
+                    },
+                    availableFiles = localFiles,
+                    availableResearch = researchSources,
+                    onSelectFileItem = { filename, uriString ->
+                        selectFileItem(filename, uriString)
+                    },
+                    onSelectResearchItem = { title, notes ->
+                        selectResearchItem(title, notes)
                     },
                     onDismiss = {
                         showActionAndCommandPopup = false
@@ -1936,11 +1961,17 @@ fun TerminalScreen(
                             onOpenPhotos?.invoke()
                         },
                         onAttachFile = {
-                            selectFileItem(null, null)
-                            onOpenFiles?.invoke()
+                            onOpenFiles?.invoke() ?: run {
+                                localFiles.firstOrNull()?.let { selectFileItem(it.name, it.path) } ?: executeCommand("/files")
+                            }
                         },
                         onAttachResearch = {
-                            selectResearchItem(null, null)
+                            val topResearch = researchSources.firstOrNull()
+                            if (topResearch != null) {
+                                selectResearchItem(topResearch.title, topResearch.url)
+                            } else {
+                                selectResearchItem("Research Workspace Canvas", "research://workspace")
+                            }
                         },
                         onAttachWebsite = {
                             selectWebsiteItem()
@@ -2097,9 +2128,8 @@ fun TerminalScreen(
                 },
                 onFilesClick = {
                     showActionBottomSheet = false
-                    selectFileItem(null, null)
                     onOpenFiles?.invoke() ?: run {
-                        executeCommand("/files")
+                        localFiles.firstOrNull()?.let { selectFileItem(it.name, it.path) } ?: executeCommand("/files")
                     }
                 },
                 onWebsiteClick = {
@@ -2112,7 +2142,12 @@ fun TerminalScreen(
                 },
                 onResearchClick = {
                     showActionBottomSheet = false
-                    selectResearchItem(null, null)
+                    val topResearch = researchSources.firstOrNull()
+                    if (topResearch != null) {
+                        selectResearchItem(topResearch.title, topResearch.url)
+                    } else {
+                        selectResearchItem("Research Workspace Canvas", "research://workspace")
+                    }
                 },
                 onPinTerminalClick = {
                     showActionBottomSheet = false

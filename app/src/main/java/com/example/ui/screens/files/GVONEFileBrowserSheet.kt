@@ -46,7 +46,8 @@ fun GVONEFileBrowserSheet(
     fileSystem: GVONEFileSystem,
     onOpenFileInTab: (GVONEFileItem, inNewTab: Boolean) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSelectFile: ((GVONEFileItem) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -142,15 +143,33 @@ fun GVONEFileBrowserSheet(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (onSelectFile != null) "Select File" else "Files",
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (onSelectFile != null) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0x3338BDF8),
+                                    border = BorderStroke(1.dp, Color(0xFF38BDF8))
+                                ) {
+                                    Text(
+                                        text = "ATTACH",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
                         Text(
-                            text = "Files",
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "GVONE Universal File Manager",
-                            color = Color(0xFF64748B),
+                            text = if (onSelectFile != null) "Tap any file to select as attachment" else "GVONE Universal File Manager",
+                            color = if (onSelectFile != null) Color(0xFF38BDF8) else Color(0xFF64748B),
                             fontSize = 11.sp
                         )
                     }
@@ -392,6 +411,30 @@ fun GVONEFileBrowserSheet(
                         )
 
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Attach Selected (if selection callback provided)
+                            if (onSelectFile != null) {
+                                Button(
+                                    onClick = {
+                                        val selectedFiles = fileItems.filter { selectedItemIds.contains(it.path) }
+                                        val target = selectedFiles.firstOrNull { !it.isDirectory }
+                                        if (target != null) {
+                                            onSelectFile(target)
+                                            onDismiss()
+                                        } else {
+                                            Toast.makeText(context, "Select at least one file to attach", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                    shape = RoundedCornerShape(6.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(28.dp).testTag("files_attach_selected_btn")
+                                ) {
+                                    Icon(Icons.Rounded.AttachFile, contentDescription = null, modifier = Modifier.size(12.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Attach", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
                             // Batch Delete
                             Button(
                                 onClick = {
@@ -467,6 +510,9 @@ fun GVONEFileBrowserSheet(
                                     if (isSelected) selectedItemIds.remove(item.path) else selectedItemIds.add(item.path)
                                 } else if (item.isDirectory) {
                                     currentFolder = item.path
+                                } else if (onSelectFile != null) {
+                                    onSelectFile(item)
+                                    onDismiss()
                                 } else {
                                     onOpenFileInTab(item, false)
                                     onDismiss()
@@ -475,6 +521,12 @@ fun GVONEFileBrowserSheet(
                             onLongClick = {
                                 contextMenuItem = item
                                 showContextMenu = true
+                            },
+                            onSelectFile = onSelectFile?.let { selectFn ->
+                                {
+                                    selectFn(item)
+                                    onDismiss()
+                                }
                             }
                         )
                     }
@@ -573,6 +625,22 @@ fun GVONEFileBrowserSheet(
                             } catch (_: Exception) {
                                 Toast.makeText(context, "Sharing unavailable", Toast.LENGTH_SHORT).show()
                             }
+                        }
+                    }
+
+                    // Attach as File to Terminal / Prompts
+                    if (!item.isDirectory) {
+                        ActionSheetButton(
+                            icon = Icons.Rounded.AttachFile,
+                            label = "Attach to Terminal & Suggestions"
+                        ) {
+                            showContextMenu = false
+                            if (onSelectFile != null) {
+                                onSelectFile(item)
+                            } else {
+                                onOpenFileInTab(item, false)
+                            }
+                            onDismiss()
                         }
                     }
 
@@ -853,7 +921,8 @@ private fun FileItemRow(
     isSelected: Boolean,
     onToggleSelect: () -> Unit,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    onSelectFile: (() -> Unit)? = null
 ) {
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -944,12 +1013,36 @@ private fun FileItemRow(
                 }
             }
 
-            // More options button (for accessibility and touch convenience)
-            IconButton(
-                onClick = onLongClick,
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(Icons.Rounded.MoreVert, contentDescription = "Options", tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
+            // Actions: Attach chip + More options
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onSelectFile != null && !item.isDirectory) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0x2A38BDF8),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8)),
+                        modifier = Modifier
+                            .clickable { onSelectFile() }
+                            .testTag("file_select_attach_${item.name}")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Rounded.AttachFile, contentDescription = "Attach", tint = Color(0xFF38BDF8), modifier = Modifier.size(13.dp))
+                            Text("Select", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+
+                // More options button (for accessibility and touch convenience)
+                IconButton(
+                    onClick = onLongClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Rounded.MoreVert, contentDescription = "Options", tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
+                }
             }
         }
     }

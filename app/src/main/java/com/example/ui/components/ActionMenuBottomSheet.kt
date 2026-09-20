@@ -81,6 +81,15 @@ fun HorizontalActionCardsRow(
                 testTag = "action_card_files",
                 onClick = onFilesClick
             ),
+            if (onResearchClick != null) {
+                ActionMenuItem(
+                    id = "research",
+                    label = "Research",
+                    icon = Icons.Rounded.Science,
+                    testTag = "action_card_research",
+                    onClick = onResearchClick
+                )
+            } else null,
             if (onWebsiteClick != null) {
                 ActionMenuItem(
                     id = "website",
@@ -98,15 +107,6 @@ fun HorizontalActionCardsRow(
                 testTag = "action_card_connectors",
                 onClick = { onConnectorsClick?.invoke() }
             ),
-            if (onResearchClick != null) {
-                ActionMenuItem(
-                    id = "research",
-                    label = "Research",
-                    icon = Icons.Rounded.Science,
-                    testTag = "action_card_research",
-                    onClick = onResearchClick
-                )
-            } else null,
             if (onPinTerminalClick != null) {
                 ActionMenuItem(
                     id = "terminal",

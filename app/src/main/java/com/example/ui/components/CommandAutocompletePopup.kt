@@ -32,7 +32,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.command.CommandEngine
+import com.example.data.files.FileType
+import com.example.data.files.GVONEFileItem
 import com.example.data.model.*
+import com.example.data.research.ResearchSource
 import com.example.ui.components.suggestions.DefaultQuickPrompts
 import com.example.ui.components.suggestions.QuickPrompt
 import com.example.ui.theme.*
@@ -77,10 +80,14 @@ fun CommandAutocompletePopup(
     onPinConnector: (() -> Unit)? = null,
     onPinResearchCanvas: (() -> Unit)? = null,
     onAttachResearch: (() -> Unit)? = null,
+    availableFiles: List<GVONEFileItem> = emptyList(),
+    availableResearch: List<ResearchSource> = emptyList(),
+    onSelectFileItem: ((fileName: String, filePath: String) -> Unit)? = null,
+    onSelectResearchItem: ((title: String, notes: String?) -> Unit)? = null,
     onDismiss: (() -> Unit)? = null
 ) {
-    // If no suggestions, no prompts, and no pin options are available, return
-    if (suggestions.isEmpty() && prompts.isEmpty() && onTogglePinTerminal == null) return
+    // If no suggestions, no prompts, no attachments, and no pin options are available, return
+    if (suggestions.isEmpty() && prompts.isEmpty() && onTogglePinTerminal == null && availableFiles.isEmpty() && availableResearch.isEmpty()) return
 
     var selectedTab by remember { mutableStateOf(CommandPopupTab.ALL) }
 
@@ -435,16 +442,210 @@ fun CommandAutocompletePopup(
                     .heightIn(max = 360.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                // 1. ATTACHMENTS & COMMANDS SECTION
+                // 1. ATTACHMENTS SECTION (Files, Research, and Commands)
                 if (selectedTab == CommandPopupTab.ALL || selectedTab == CommandPopupTab.ATTACHMENTS) {
-                    if (selectedTab == CommandPopupTab.ALL) {
-                        SectionHeader(
-                            icon = Icons.Rounded.AttachFile,
-                            title = "ATTACHMENTS",
-                            accentColor = GVONEPrimary,
-                            count = suggestions.size
-                        )
+                    // --- FILES SECTION ---
+                    SectionHeader(
+                        icon = Icons.Rounded.Folder,
+                        title = "FILES",
+                        accentColor = Color(0xFFA78BFA),
+                        count = availableFiles.size
+                    )
+
+                    if (availableFiles.isNotEmpty()) {
+                        val displayFiles = if (selectedTab == CommandPopupTab.ALL) availableFiles.take(3) else availableFiles.take(6)
+                        displayFiles.forEach { file ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onSelectFileItem?.invoke(file.name, file.path) ?: onAttachFiles?.invoke()
+                                        onDismiss?.invoke()
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                                    .testTag("popup_file_item_${file.name}"),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    color = file.fileType.color.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, file.fileType.color.copy(alpha = 0.35f)),
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = when (file.fileType) {
+                                                FileType.FOLDER -> Icons.Rounded.Folder
+                                                FileType.PDF -> Icons.Rounded.PictureAsPdf
+                                                FileType.CODE -> Icons.Rounded.Code
+                                                FileType.MARKDOWN, FileType.TEXT -> Icons.Rounded.Description
+                                                FileType.IMAGE -> Icons.Rounded.Image
+                                                else -> Icons.Rounded.InsertDriveFile
+                                            },
+                                            contentDescription = null,
+                                            tint = file.fileType.color,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = file.name,
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${file.formattedSize} • ${file.formattedDate}",
+                                        color = Color(0xFF64748B),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0x22818CF8),
+                                    border = BorderStroke(0.5.dp, Color(0xFFA78BFA)),
+                                    modifier = Modifier.clickable {
+                                        onSelectFileItem?.invoke(file.name, file.path) ?: onAttachFiles?.invoke()
+                                        onDismiss?.invoke()
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.AttachFile, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(12.dp))
+                                        Text("Select", color = Color(0xFFA78BFA), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
                     }
+
+                    // Browse all files link
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onAttachFiles?.invoke()
+                                onDismiss?.invoke()
+                            }
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                            .testTag("popup_browse_files_link"),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Browse all files in GVONE Storage...", color = Color(0xFFA78BFA), fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // --- RESEARCH SECTION ---
+                    SectionHeader(
+                        icon = Icons.Rounded.Science,
+                        title = "RESEARCH",
+                        accentColor = Color(0xFFFBBF24),
+                        count = availableResearch.size
+                    )
+
+                    if (availableResearch.isNotEmpty()) {
+                        val displayResearch = if (selectedTab == CommandPopupTab.ALL) availableResearch.take(2) else availableResearch.take(4)
+                        displayResearch.forEach { research ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onSelectResearchItem?.invoke(research.title, research.url) ?: onAttachResearch?.invoke()
+                                        onDismiss?.invoke()
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                                    .testTag("popup_research_item_${research.id}"),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    color = Color(0x22FBBF24),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, Color(0x55FBBF24)),
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Science,
+                                            contentDescription = null,
+                                            tint = Color(0xFFFBBF24),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = research.title,
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = research.author?.ifBlank { null } ?: research.domain?.ifBlank { null } ?: "Research Canvas Source",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0x22FBBF24),
+                                    border = BorderStroke(0.5.dp, Color(0xFFFBBF24)),
+                                    modifier = Modifier.clickable {
+                                        onSelectResearchItem?.invoke(research.title, research.url) ?: onAttachResearch?.invoke()
+                                        onDismiss?.invoke()
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.AttachFile, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(12.dp))
+                                        Text("Select", color = Color(0xFFFBBF24), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Attach Research Canvas button
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelectResearchItem?.invoke("Research Workspace Canvas", "research://workspace") ?: (onAttachResearch ?: onPinResearchCanvas)?.invoke()
+                                onDismiss?.invoke()
+                            }
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                            .testTag("popup_attach_research_canvas_link"),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Attach Research Workspace Canvas", color = Color(0xFFFBBF24), fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // --- COMMAND SUGGESTIONS SECTION ---
+                    SectionHeader(
+                        icon = Icons.Rounded.Terminal,
+                        title = "TERMINAL COMMANDS",
+                        accentColor = GVONEPrimary,
+                        count = suggestions.size
+                    )
 
                     if (suggestions.isEmpty()) {
                         Box(
