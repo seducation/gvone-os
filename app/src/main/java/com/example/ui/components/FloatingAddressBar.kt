@@ -193,17 +193,6 @@ fun FloatingAddressBar(
         }
     }
 
-    LaunchedEffect(isFocused) {
-        if (isFocused) {
-            delay(50)
-            try {
-                focusRequester.requestFocus()
-            } catch (_: Exception) {
-                // Focus requester safe handling
-            }
-        }
-    }
-
     val displayHost = remember(currentTab?.url, isGeneralBridgeActive) {
         val url = currentTab?.url ?: ""
         if (isGeneralBridgeActive) {
@@ -242,6 +231,17 @@ fun FloatingAddressBar(
     )
 
     val effectivelyCompact = isCompact && !isFocused
+
+    LaunchedEffect(isFocused, effectivelyCompact) {
+        if (isFocused && !effectivelyCompact) {
+            delay(120)
+            try {
+                focusRequester.requestFocus()
+            } catch (_: Throwable) {
+                // Focus requester safe handling
+            }
+        }
+    }
 
     val sideButtonsAlpha by animateFloatAsState(
         targetValue = if (effectivelyCompact) 0f else 1f,
@@ -634,9 +634,6 @@ fun FloatingAddressBar(
                                 } else {
                                     inputText = currentUrl
                                 }
-                                try {
-                                    focusRequester.requestFocus()
-                                } catch (_: Exception) {}
                             },
                             onDoubleClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -872,9 +869,6 @@ fun FloatingAddressBar(
                                                         } else {
                                                             inputText = currentUrl
                                                         }
-                                                        try {
-                                                            focusRequester.requestFocus()
-                                                        } catch (_: Exception) {}
                                                     },
                                                     onDoubleClick = {
                                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)

@@ -23,13 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.ui.text.font.FontFamily
 import com.example.data.model.BrowserTab
 import com.example.data.model.TabGroup
-import com.example.data.terminal.TerminalLineType
-import com.example.data.terminal.TerminalSession
 import com.example.ui.theme.*
 
 val GROUP_PALETTE_COLORS = listOf(
@@ -54,13 +49,11 @@ fun parseHexColor(hex: String?, fallback: Color = Color(0xFF3B82F6)): Color {
 fun TabFolderCard(
     group: TabGroup,
     tabsInGroup: List<BrowserTab>,
-    chatsInGroup: List<TerminalSession> = emptyList(),
     isActiveGroup: Boolean,
     isDropTarget: Boolean,
     onClick: () -> Unit,
     onRename: () -> Unit,
     onAddTab: () -> Unit,
-    onAddChat: (() -> Unit)? = null,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -70,14 +63,6 @@ fun TabFolderCard(
         isDropTarget -> GVONEPrimary
         isActiveGroup -> accentColor
         else -> Color(0xFF263042)
-    }
-
-    val totalItems = tabsInGroup.size + chatsInGroup.size
-    val summaryText = buildString {
-        append("${tabsInGroup.size} ${if (tabsInGroup.size == 1) "tab" else "tabs"}")
-        if (chatsInGroup.isNotEmpty()) {
-            append(" • ${chatsInGroup.size} ${if (chatsInGroup.size == 1) "chat" else "chats"}")
-        }
     }
 
     Surface(
@@ -158,7 +143,7 @@ fun TabFolderCard(
                         }
 
                         Text(
-                            text = summaryText,
+                            text = "${tabsInGroup.size} ${if (tabsInGroup.size == 1) "tab" else "tabs"}",
                             color = GVONETextSecondary,
                             fontSize = 12.sp
                         )
@@ -187,7 +172,7 @@ fun TabFolderCard(
                             .border(1.dp, Color(0xFF303A4E), RoundedCornerShape(12.dp))
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Open Group", color = GVONETextPrimary, fontSize = 13.sp) },
+                            text = { Text("Open Folder", color = GVONETextPrimary, fontSize = 13.sp) },
                             leadingIcon = {
                                 Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = GVONEPrimary, modifier = Modifier.size(18.dp))
                             },
@@ -206,18 +191,6 @@ fun TabFolderCard(
                                 onAddTab()
                             }
                         )
-                        if (onAddChat != null) {
-                            DropdownMenuItem(
-                                text = { Text("Add Chat Here", color = GVONETextPrimary, fontSize = 13.sp) },
-                                leadingIcon = {
-                                    Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onAddChat()
-                                }
-                            )
-                        }
                         DropdownMenuItem(
                             text = { Text("Rename", color = GVONETextPrimary, fontSize = 13.sp) },
                             leadingIcon = {
@@ -246,7 +219,7 @@ fun TabFolderCard(
             Spacer(modifier = Modifier.height(10.dp))
 
             // Preview Chips / Summary Row
-            if (totalItems == 0) {
+            if (tabsInGroup.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -255,7 +228,7 @@ fun TabFolderCard(
                         .padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
                     Text(
-                        text = if (isDropTarget) "Drop to add here" else "Empty group — tap to open or add tabs and chats",
+                        text = if (isDropTarget) "Drop to add here" else "Empty folder — tap to open or add tabs",
                         color = if (isDropTarget) GVONEPrimary else GVONETextSecondary,
                         fontSize = 11.sp,
                         maxLines = 1,
@@ -268,8 +241,8 @@ fun TabFolderCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val previewTabs = tabsInGroup.take(2)
-                    previewTabs.forEach { tab ->
+                    val previewList = tabsInGroup.take(3)
+                    previewList.forEach { tab ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = Color(0xFF1B2230),
@@ -298,45 +271,14 @@ fun TabFolderCard(
                         }
                     }
 
-                    val previewChats = chatsInGroup.take(2)
-                    previewChats.forEach { chat ->
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF101B2B),
-                            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
-                            modifier = Modifier.weight(1f, fill = false)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Terminal,
-                                    contentDescription = null,
-                                    tint = Color(0xFF38BDF8),
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Text(
-                                    text = chat.title.ifBlank { "Chat" },
-                                    color = Color(0xFFE0F2FE),
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-
-                    val extraCount = (tabsInGroup.size - previewTabs.size) + (chatsInGroup.size - previewChats.size)
-                    if (extraCount > 0) {
+                    if (tabsInGroup.size > 3) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = Color(0xFF1B2230),
                             border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF2C384D))
                         ) {
                             Text(
-                                text = "+$extraCount",
+                                text = "+${tabsInGroup.size - 3}",
                                 color = GVONETextSecondary,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
@@ -348,352 +290,6 @@ fun TabFolderCard(
             }
         }
     }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun ChatCard(
-    session: TerminalSession,
-    folderName: String? = null,
-    folderColorHex: String? = null,
-    isActiveChat: Boolean = false,
-    isSelectionMode: Boolean = false,
-    isChecked: Boolean = false,
-    onToggleCheck: () -> Unit = {},
-    onSelect: () -> Unit,
-    onClose: () -> Unit,
-    onRename: (() -> Unit)? = null,
-    onMoveToGroup: (() -> Unit)? = null,
-    onRemoveFromGroup: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
-) {
-    var showContextMenu by remember { mutableStateOf(false) }
-    val borderColor = if (isChecked) GVONESecondary else if (isActiveChat) Color(0xFF38BDF8) else Color(0xFF1E293B)
-
-    // Snippet preview of last non-empty line
-    val lastLine = remember(session.lines) {
-        session.lines.lastOrNull { it.text.isNotBlank() }?.text?.trim()
-            ?: "Empty Terminal Session"
-    }
-
-    val commandCount = remember(session.lines) {
-        session.lines.count { it.type == TerminalLineType.COMMAND }
-    }
-
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(210.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .border(if (isActiveChat || isChecked) 2.dp else 1.dp, borderColor, RoundedCornerShape(16.dp))
-            .combinedClickable(
-                onClick = {
-                    if (isSelectionMode) onToggleCheck() else onSelect()
-                },
-                onLongClick = {
-                    showContextMenu = true
-                }
-            )
-            .testTag("chat_card_${session.id}"),
-        color = Color(0xFF0F172A),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Card Header: Terminal Icon + Title + Close Button
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF1E293B))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (isSelectionMode) {
-                            Checkbox(
-                                checked = isChecked,
-                                onCheckedChange = { onToggleCheck() },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF38BDF8),
-                                    uncheckedColor = Color(0xFF4B5563)
-                               ),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(2.dp))
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .clip(RoundedCornerShape(5.dp))
-                                .background(Color(0xFF0284C7).copy(alpha = 0.25f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Terminal,
-                                contentDescription = null,
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(13.dp)
-                            )
-                        }
-
-                        Text(
-                            text = session.title.ifBlank { "Terminal Chat" },
-                            color = Color(0xFFF1F5F9),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    if (!isSelectionMode) {
-                        Box(
-                            modifier = Modifier
-                                .size(22.dp)
-                                .clip(CircleShape)
-                                .clickable { onClose() }
-                                .testTag("close_chat_${session.id}"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Close Chat",
-                                tint = GVONETextSecondary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Card Body: Monospace Terminal Shell Preview
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(8.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF050811))
-                        .border(0.5.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
-                        .padding(8.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(
-                                    text = "gvone@terminal:~",
-                                    color = Color(0xFF10B981),
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "$",
-                                    color = Color(0xFF38BDF8),
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-
-                            Text(
-                                text = lastLine,
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 4,
-                                overflow = TextOverflow.Ellipsis,
-                                lineHeight = 14.sp
-                            )
-                        }
-
-                        // Bottom Meta Badges: Folder + Command/Lines Count
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            if (!folderName.isNullOrBlank()) {
-                                val fColor = parseHexColor(folderColorHex, Color(0xFF38BDF8))
-                                Surface(
-                                    shape = RoundedCornerShape(5.dp),
-                                    color = fColor.copy(alpha = 0.2f),
-                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, fColor)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                    ) {
-                                        Icon(Icons.Rounded.Folder, contentDescription = null, tint = fColor, modifier = Modifier.size(9.dp))
-                                        Text(
-                                            text = folderName,
-                                            color = fColor,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
-                                }
-                            } else {
-                                Surface(
-                                    shape = RoundedCornerShape(5.dp),
-                                    color = Color(0xFF1E293B),
-                                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF334155))
-                                ) {
-                                    Text(
-                                        text = "${session.lines.size} lines",
-                                        color = Color(0xFF94A3B8),
-                                        fontSize = 9.sp,
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-
-                            Surface(
-                                shape = RoundedCornerShape(5.dp),
-                                color = Color(0xFF0369A1).copy(alpha = 0.25f),
-                                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF0284C7).copy(alpha = 0.5f))
-                            ) {
-                                Text(
-                                    text = "$commandCount cmds",
-                                    color = Color(0xFF7DD3FC),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Context Menu Dropdown
-            DropdownMenu(
-                expanded = showContextMenu,
-                onDismissRequest = { showContextMenu = false },
-                modifier = Modifier
-                    .background(Color(0xFF1B2230))
-                    .border(1.dp, Color(0xFF303A4E), RoundedCornerShape(12.dp))
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Open Chat", color = GVONETextPrimary, fontSize = 13.sp) },
-                    leadingIcon = { Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp)) },
-                    onClick = {
-                        showContextMenu = false
-                        onSelect()
-                    }
-                )
-
-                onRename?.let {
-                    DropdownMenuItem(
-                        text = { Text("Rename Chat", color = GVONETextPrimary, fontSize = 13.sp) },
-                        leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null, tint = GVONETertiary, modifier = Modifier.size(18.dp)) },
-                        onClick = {
-                            showContextMenu = false
-                            it()
-                        }
-                    )
-                }
-
-                onMoveToGroup?.let {
-                    DropdownMenuItem(
-                        text = { Text("Move to Group...", color = GVONETextPrimary, fontSize = 13.sp) },
-                        leadingIcon = { Icon(Icons.Rounded.DriveFileMove, contentDescription = null, tint = GVONESecondary, modifier = Modifier.size(18.dp)) },
-                        onClick = {
-                            showContextMenu = false
-                            it()
-                        }
-                    )
-                }
-
-                onRemoveFromGroup?.let {
-                    DropdownMenuItem(
-                        text = { Text("Remove from Group", color = GVONETextPrimary, fontSize = 13.sp) },
-                        leadingIcon = { Icon(Icons.Rounded.FolderOff, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp)) },
-                        onClick = {
-                            showContextMenu = false
-                            it()
-                        }
-                    )
-                }
-
-                Divider(color = Color(0xFF263042), thickness = 0.5.dp)
-
-                DropdownMenuItem(
-                    text = { Text("Delete Chat Session", color = Color(0xFFEF4444), fontSize = 13.sp) },
-                    leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp)) },
-                    onClick = {
-                        showContextMenu = false
-                        onClose()
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun RenameChatDialog(
-    session: TerminalSession,
-    onDismiss: () -> Unit,
-    onConfirm: (newName: String) -> Unit
-) {
-    var newName by remember { mutableStateOf(session.title) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Rename Terminal Chat",
-                color = GVONETextPrimary,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
-        },
-        text = {
-            OutlinedTextField(
-                value = newName,
-                onValueChange = { newName = it },
-                placeholder = { Text("Chat Session Title", color = GVONETextSecondary) },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = GVONETextPrimary,
-                    unfocusedTextColor = GVONETextPrimary,
-                    focusedBorderColor = Color(0xFF38BDF8),
-                    unfocusedBorderColor = Color(0xFF333E52)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (newName.isNotBlank()) {
-                        onConfirm(newName.trim())
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
-            ) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = GVONETextSecondary)
-            }
-        },
-        containerColor = Color(0xFF161F2E),
-        shape = RoundedCornerShape(18.dp)
-    )
 }
 
 @Composable

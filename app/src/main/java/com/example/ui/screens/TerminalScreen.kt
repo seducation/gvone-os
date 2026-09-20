@@ -209,10 +209,33 @@ fun TerminalScreen(
         mutableFloatStateOf(settings.terminalHeightFraction)
     }
 
-    // Multi-session management from ViewModel
-    val sessions by viewModel.terminalSessions.collectAsStateWithLifecycle()
-    val activeSessionId by viewModel.activeTerminalSessionId.collectAsStateWithLifecycle()
-    val activeSession = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull() ?: TerminalSession(id = "sess_1", title = "Session 1")
+    // Multi-session management
+    var sessions by remember {
+        val initialLines = viewModel.terminalLines.value.ifEmpty {
+            val isSuccess = viewModel.webAppBridge.connectionState.value == WebAppConnectionState.READY
+            createInitialBanner(viewModel.webAppBridge.connectionState.value.name, isSuccess, isLogMode = viewModel.isLogMode.value)
+        }
+        mutableStateOf(
+            listOf(
+                TerminalSession(
+                    id = "sess_1",
+                    title = "Session 1",
+                    lines = initialLines
+                )
+            )
+        )
+    }
+    var activeSessionId by remember { mutableStateOf("sess_1") }
+    val activeSession = sessions.find { it.id == activeSessionId } ?: sessions.first()
+
+    // Synchronize global terminal lines into active session in real-time
+    LaunchedEffect(globalTerminalLines) {
+        if (globalTerminalLines.isNotEmpty()) {
+            sessions = sessions.map {
+                if (it.id == activeSessionId) it.copy(lines = globalTerminalLines) else it
+            }
+        }
+    }
 
     // Active input state
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
@@ -262,7 +285,7 @@ fun TerminalScreen(
         }
     }
 
-    // Helper functions for selecting photo, file, and website items
+    // Helper functions for selecting photo, file, research, and website items
     val selectPhotoItem: (String?, String?) -> Unit = { name, uriString ->
         val photoName = name ?: "photo_${selectedItems.count { it.type == SelectedItemType.PHOTO } + 1}.jpg"
         val item = QuickPrompt(
@@ -290,7 +313,7 @@ fun TerminalScreen(
         }
     }
 
-    val selectFileItem: (String?) -> Unit = { filename ->
+    val selectFileItem: (String?, String?) -> Unit = { filename, uriString ->
         val fname = filename ?: "file_${selectedItems.count { it.type == SelectedItemType.FILE } + 1}.pdf"
         val item = QuickPrompt(
             id = "file_${System.currentTimeMillis()}_${fname.hashCode()}",
@@ -298,9 +321,27 @@ fun TerminalScreen(
             promptText = "/files $fname",
             icon = Icons.Rounded.Folder,
             category = "File",
-            type = SelectedItemType.FILE
+            type = SelectedItemType.FILE,
+            uriOrUrl = uriString ?: "file://$fname"
         )
-        if (selectedItems.none { it.title == item.title }) {
+        if (selectedItems.none { it.id == item.id || (it.type == SelectedItemType.FILE && it.title == item.title) }) {
+            selectedItems = selectedItems + item
+        }
+    }
+
+    val selectResearchItem: (String?, String?) -> Unit = { title, notes ->
+        val resTitle = title ?: "Research Canvas (${selectedItems.count { it.type == SelectedItemType.RESEARCH } + 1})"
+        val item = QuickPrompt(
+            id = "research_${System.currentTimeMillis()}_${resTitle.hashCode()}",
+            title = "Research: $resTitle",
+            promptText = "/research $resTitle",
+            icon = Icons.Rounded.Science,
+            category = "Research",
+            type = SelectedItemType.RESEARCH,
+            uriOrUrl = notes ?: "research://workspace"
+        )
+        // Strictly avoid conflicts with file items: unique by ID and distinct type
+        if (selectedItems.none { it.id == item.id || (it.type == SelectedItemType.RESEARCH && it.title == item.title) }) {
             selectedItems = selectedItems + item
         }
     }
@@ -341,6 +382,9 @@ fun TerminalScreen(
         if (activeSession.lines.isEmpty()) {
             val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
             val bannerLines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
+            sessions = sessions.map {
+                if (it.id == activeSessionId) it.copy(lines = bannerLines) else it
+            }
             viewModel.appendTerminalLines(bannerLines)
         }
     }
@@ -419,7 +463,11 @@ fun TerminalScreen(
         } else {
             newLines.filterNot { viewModel.isVerboseLogLine(it) }
         }
-        viewModel.appendTerminalLines(linesToAdd)
+        val updated = activeSession.lines + linesToAdd
+        sessions = sessions.map {
+            if (it.id == activeSessionId) it.copy(lines = updated) else it
+        }
+        viewModel.appendTerminalLines(newLines)
     }
 
     fun appendLines(newLines: List<TerminalLine>, dummy: ((List<TerminalLine>) -> Unit)? = null) {
@@ -427,9 +475,13 @@ fun TerminalScreen(
     }
 
     // Command execution handler delegating directly to centralized TerminalCommandExecutor
-    fun executeCommand(rawInput: String, attachedPhoto: QuickPrompt? = null) {
+    fun executeCommand(
+        rawInput: String,
+        attachedPhoto: QuickPrompt? = null,
+        attachedItem: QuickPrompt? = null
+    ) {
         val trimmed = rawInput.trim()
-        val photoToSend = attachedPhoto ?: selectedItems.firstOrNull { it.type == SelectedItemType.PHOTO }
+        val itemToSend = attachedItem ?: attachedPhoto ?: selectedItems.firstOrNull()
 
         val promptPrefix = if (isAgenticMode) {
             "gvone[agentic:${activePersona.badge.lowercase()}]:$currentCwd$ "
@@ -439,13 +491,15 @@ fun TerminalScreen(
             "bridge@browser:$currentCwd$ "
         }
 
-        if (trimmed.isEmpty() && photoToSend == null) {
+        if (trimmed.isEmpty() && itemToSend == null) {
             val emptyCommandLine = TerminalLine(
                 text = promptPrefix,
                 type = TerminalLineType.COMMAND
             )
             appendLines(listOf(emptyCommandLine)) { newLines ->
-                viewModel.updateTerminalSessionLines(activeSessionId, newLines)
+                sessions = sessions.map {
+                    if (it.id == activeSessionId) it.copy(lines = newLines) else it
+                }
             }
             return
         }
@@ -459,16 +513,55 @@ fun TerminalScreen(
             historyIndex = -1
         }
 
-        // If a photo is attached, dispatch directly to terminal command executor with photo payload
-        if (photoToSend != null) {
-            viewModel.terminalCommandExecutor.executeCommand(
-                rawInput = trimmed,
-                origin = CommandOrigin.TERMINAL,
-                onOpenAgentDashboard = onOpenAgentDashboard,
-                attachedPhotoUri = photoToSend.uriOrUrl,
-                attachedPhotoName = photoToSend.title.removePrefix("Photo: ")
-            )
-            selectedItems = selectedItems.filterNot { it.id == photoToSend.id }
+        // If any item is attached, dispatch in form of an attachment (photo, file, research, website)
+        if (itemToSend != null) {
+            when (itemToSend.type) {
+                SelectedItemType.PHOTO -> {
+                    viewModel.terminalCommandExecutor.executeCommand(
+                        rawInput = trimmed,
+                        origin = CommandOrigin.TERMINAL,
+                        onOpenAgentDashboard = onOpenAgentDashboard,
+                        attachedPhotoUri = itemToSend.uriOrUrl,
+                        attachedPhotoName = itemToSend.title.removePrefix("Photo: ")
+                    )
+                }
+                SelectedItemType.FILE -> {
+                    viewModel.terminalCommandExecutor.executeCommand(
+                        rawInput = trimmed,
+                        origin = CommandOrigin.TERMINAL,
+                        onOpenAgentDashboard = onOpenAgentDashboard,
+                        attachedFileUri = itemToSend.uriOrUrl,
+                        attachedFileName = itemToSend.title.removePrefix("File: ")
+                    )
+                }
+                SelectedItemType.RESEARCH -> {
+                    val resTitle = itemToSend.title.removePrefix("Research: ")
+                    val effectiveInput = if (trimmed.isNotBlank()) "$trimmed [Research: $resTitle]" else "/research $resTitle"
+                    viewModel.terminalCommandExecutor.executeCommand(
+                        rawInput = effectiveInput,
+                        origin = CommandOrigin.TERMINAL,
+                        onOpenAgentDashboard = onOpenAgentDashboard
+                    )
+                }
+                SelectedItemType.WEBSITE -> {
+                    val webUrl = itemToSend.uriOrUrl ?: "https://gvone.app"
+                    val effectiveInput = if (trimmed.isNotBlank()) "$trimmed [Web: $webUrl]" else "Analyze webpage context: $webUrl"
+                    viewModel.terminalCommandExecutor.executeCommand(
+                        rawInput = effectiveInput,
+                        origin = CommandOrigin.TERMINAL,
+                        onOpenAgentDashboard = onOpenAgentDashboard
+                    )
+                }
+                else -> {
+                    val effectiveInput = if (trimmed.isNotBlank()) "$trimmed (${itemToSend.promptText})" else itemToSend.promptText
+                    viewModel.terminalCommandExecutor.executeCommand(
+                        rawInput = effectiveInput,
+                        origin = CommandOrigin.TERMINAL,
+                        onOpenAgentDashboard = onOpenAgentDashboard
+                    )
+                }
+            }
+            selectedItems = selectedItems.filterNot { it.id == itemToSend.id }
             inputText = TextFieldValue("")
             return
         }
@@ -539,6 +632,9 @@ fun TerminalScreen(
             }
 
             "/clear", "/cls" -> {
+                sessions = sessions.map {
+                    if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
+                }
                 viewModel.clearTerminalLines()
                 inputText = TextFieldValue("")
                 return
@@ -687,6 +783,20 @@ fun TerminalScreen(
                                 val next = !(showActionAndCommandPopup || viewModel.showTerminalCommands.value)
                                 showActionAndCommandPopup = next
                                 viewModel.setShowTerminalCommands(next)
+                            },
+                            onAttachPhoto = {
+                                selectPhotoItem(null, null)
+                                onOpenPhotos?.invoke()
+                            },
+                            onAttachFile = {
+                                selectFileItem(null, null)
+                                onOpenFiles?.invoke()
+                            },
+                            onAttachResearch = {
+                                selectResearchItem(null, null)
+                            },
+                            onAttachWebsite = {
+                                selectWebsiteItem()
                             },
                             onSelectPrompt = { promptText ->
                                 val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
@@ -864,16 +974,30 @@ fun TerminalScreen(
                     onOpenConversationHistory = {
                         showConversationHistorySheet = true
                     },
-                    onSelectSession = { viewModel.selectTerminalSession(it) },
-                    onNewSession = { viewModel.createNewTerminalSession() },
+                    onSelectSession = { activeSessionId = it },
+                    onNewSession = {
+                        val newId = "sess_${sessions.size + 1}"
+                        val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
+                        val newSess = TerminalSession(
+                            id = newId,
+                            title = "Session ${sessions.size + 1}",
+                            lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
+                        )
+                        sessions = sessions + newSess
+                        activeSessionId = newId
+                    },
                     onCloseSession = { sessId ->
                         if (sessions.size > 1) {
-                            viewModel.deleteTerminalSession(sessId)
+                            sessions = sessions.filterNot { it.id == sessId }
+                            activeSessionId = sessions.first().id
                         } else {
                             onClose()
                         }
                     },
                     onClearScreen = {
+                        sessions = sessions.map {
+                            if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
+                        }
                         viewModel.clearTerminalLines()
                     },
                     onClose = onClose
@@ -924,8 +1048,9 @@ fun TerminalScreen(
                             },
                             type = TerminalLineType.SUCCESS
                         )
-                        val currentLines = sessions.find { it.id == activeSessionId }?.lines ?: emptyList()
-                        viewModel.updateTerminalSessionLines(activeSessionId, currentLines + bridgeLine)
+                        sessions = sessions.map {
+                            if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
+                        }
                     },
                     onCnsClick = {
                         showCnsDashboard = true
@@ -1240,10 +1365,15 @@ fun TerminalScreen(
                     onAttachFiles = {
                         showActionAndCommandPopup = false
                         viewModel.setShowTerminalCommands(false)
-                        selectFileItem(null)
+                        selectFileItem(null, null)
                         onOpenFiles?.invoke() ?: run {
                             executeCommand("/files")
                         }
+                    },
+                    onAttachResearch = {
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        selectResearchItem(null, null)
                     },
                     onWebsiteClick = {
                         showActionAndCommandPopup = false
@@ -1262,7 +1392,9 @@ fun TerminalScreen(
                         executeCommand("/connector")
                     },
                     onPinResearchCanvas = {
-                        executeCommand("/canvas")
+                        showActionAndCommandPopup = false
+                        viewModel.setShowTerminalCommands(false)
+                        selectResearchItem(null, null)
                     },
                     onDismiss = {
                         showActionAndCommandPopup = false
@@ -1274,11 +1406,8 @@ fun TerminalScreen(
                 )
             }
 
-            // 3.8 ATTACHED PHOTO & MEDIA PANEL (Send selected photo directly in terminal)
-            val attachedPhotos = selectedItems.filter { it.type == SelectedItemType.PHOTO }
-            val otherAttachedItems = selectedItems.filterNot { it.type == SelectedItemType.PHOTO }
-
-            if (attachedPhotos.isNotEmpty()) {
+            // 3.8 ATTACHMENTS PANEL (Send any selected item - photo, file, research, web - directly in terminal)
+            if (selectedItems.isNotEmpty()) {
                 Surface(
                     color = Color(0xFF0F172A),
                     border = BorderStroke(1.dp, Color(0xFF1E293B)),
@@ -1286,6 +1415,7 @@ fun TerminalScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 2.dp)
+                        .testTag("terminal_attached_items_container")
                         .testTag("terminal_attached_photos_container")
                 ) {
                     Column(
@@ -1304,13 +1434,13 @@ fun TerminalScreen(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.AddPhotoAlternate,
+                                    imageVector = Icons.Rounded.AttachFile,
                                     contentDescription = null,
                                     tint = Color(0xFF38BDF8),
                                     modifier = Modifier.size(15.dp)
                                 )
                                 Text(
-                                    text = "ATTACHED PHOTO (${attachedPhotos.size})",
+                                    text = "ATTACHMENTS (${selectedItems.size})",
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
@@ -1318,24 +1448,34 @@ fun TerminalScreen(
                                 )
                             }
                             Text(
-                                text = "Dismiss",
+                                text = "Dismiss All",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 color = Color(0xFF94A3B8),
                                 modifier = Modifier
                                     .clickable {
-                                        selectedItems = otherAttachedItems
+                                        selectedItems = emptyList()
                                     }
                                     .padding(horizontal = 4.dp)
                             )
                         }
 
-                        attachedPhotos.forEach { photo ->
+                        selectedItems.forEach { item ->
+                            val (accentColor, typeLabel, defaultIcon) = when (item.type) {
+                                SelectedItemType.PHOTO -> Triple(Color(0xFF34D399), "PHOTO", Icons.Rounded.Image)
+                                SelectedItemType.FILE -> Triple(Color(0xFFA78BFA), "FILE", Icons.Rounded.Folder)
+                                SelectedItemType.RESEARCH -> Triple(Color(0xFFFBBF24), "RESEARCH", Icons.Rounded.Science)
+                                SelectedItemType.WEBSITE -> Triple(Color(0xFF38BDF8), "WEB", Icons.Rounded.Language)
+                                SelectedItemType.PROMPT, SelectedItemType.COMMAND -> Triple(Color(0xFFF472B6), "COMMAND", Icons.Rounded.Terminal)
+                            }
+
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
                                 color = Color(0xFF1E293B),
-                                border = BorderStroke(1.dp, Color(0xFF334155)),
-                                modifier = Modifier.fillMaxWidth()
+                                border = BorderStroke(1.dp, accentColor.copy(alpha = 0.4f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("attached_item_${item.type.name.lowercase()}")
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -1343,52 +1483,70 @@ fun TerminalScreen(
                                         .padding(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Thumbnail preview
-                                    if (photo.uriOrUrl != null) {
+                                    // Visual preview / Icon
+                                    if (item.type == SelectedItemType.PHOTO && item.uriOrUrl != null) {
                                         AsyncImage(
-                                            model = photo.uriOrUrl,
-                                            contentDescription = photo.title,
+                                            model = item.uriOrUrl,
+                                            contentDescription = item.title,
                                             modifier = Modifier
-                                                .size(46.dp)
+                                                .size(44.dp)
                                                 .clip(RoundedCornerShape(4.dp))
-                                                .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f), RoundedCornerShape(4.dp)),
+                                                .border(1.dp, accentColor.copy(alpha = 0.6f), RoundedCornerShape(4.dp)),
                                             contentScale = ContentScale.Crop
                                         )
                                     } else {
                                         Box(
                                             modifier = Modifier
-                                                .size(46.dp)
-                                                .background(Color(0xFF0F172A), RoundedCornerShape(4.dp))
-                                                .border(1.dp, Color(0xFF334155), RoundedCornerShape(4.dp)),
+                                                .size(44.dp)
+                                                .background(accentColor.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+                                                .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(4.dp)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Rounded.Image,
+                                                imageVector = item.icon ?: defaultIcon,
                                                 contentDescription = null,
-                                                tint = Color(0xFF94A3B8),
-                                                modifier = Modifier.size(24.dp)
+                                                tint = accentColor,
+                                                modifier = Modifier.size(22.dp)
                                             )
                                         }
                                     }
 
                                     Spacer(modifier = Modifier.width(8.dp))
 
-                                    // Photo Info
+                                    // Item Info
                                     Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(3.dp),
+                                                color = accentColor.copy(alpha = 0.18f)
+                                            ) {
+                                                Text(
+                                                    text = typeLabel,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = accentColor,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = item.title,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFFF1F5F9),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                         Text(
-                                            text = photo.title.removePrefix("Photo: "),
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFFF1F5F9),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = if (inputText.text.isNotBlank()) "Sends with: \"${inputText.text.take(24)}...\"" else "Ready to send directly in terminal",
+                                            text = if (inputText.text.isNotBlank()) "Sends with: \"${inputText.text.take(22)}...\"" else "Ready to send as attachment in terminal",
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 10.sp,
-                                            color = Color(0xFF34D399),
+                                            color = accentColor,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -1396,22 +1554,23 @@ fun TerminalScreen(
 
                                     Spacer(modifier = Modifier.width(6.dp))
 
-                                    // Direct Send Photo Button
+                                    // Direct Send Attachment Button
                                     Button(
                                         onClick = {
                                             executeCommand(
                                                 rawInput = inputText.text,
-                                                attachedPhoto = photo
+                                                attachedItem = item
                                             )
                                         },
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = Color(0xFF238636),
                                             contentColor = Color.White
                                         ),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 4.dp),
                                         shape = RoundedCornerShape(6.dp),
                                         modifier = Modifier
                                             .height(32.dp)
+                                            .testTag("terminal_send_attachment_direct_btn")
                                             .testTag("terminal_send_photo_direct_btn")
                                     ) {
                                         Row(
@@ -1437,13 +1596,13 @@ fun TerminalScreen(
                                     // Remove button
                                     IconButton(
                                         onClick = {
-                                            selectedItems = selectedItems.filterNot { it.id == photo.id }
+                                            selectedItems = selectedItems.filterNot { it.id == item.id }
                                         },
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Close,
-                                            contentDescription = "Remove photo",
+                                            contentDescription = "Remove attachment",
                                             tint = Color(0xFF94A3B8),
                                             modifier = Modifier.size(16.dp)
                                         )
@@ -1730,7 +1889,9 @@ fun TerminalScreen(
                             }
                         }
                         "clear" -> {
-                            viewModel.updateTerminalSessionLines(activeSessionId, emptyList<TerminalLine>())
+                            sessions = sessions.map {
+                                if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
+                            }
                             viewModel.terminalRepository.clearSavedSessionLines()
                         }
                         else -> {
@@ -1769,6 +1930,20 @@ fun TerminalScreen(
                             val next = !(showActionAndCommandPopup || viewModel.showTerminalCommands.value)
                             showActionAndCommandPopup = next
                             viewModel.setShowTerminalCommands(next)
+                        },
+                        onAttachPhoto = {
+                            selectPhotoItem(null, null)
+                            onOpenPhotos?.invoke()
+                        },
+                        onAttachFile = {
+                            selectFileItem(null, null)
+                            onOpenFiles?.invoke()
+                        },
+                        onAttachResearch = {
+                            selectResearchItem(null, null)
+                        },
+                        onAttachWebsite = {
+                            selectWebsiteItem()
                         },
                         onSelectPrompt = { promptText ->
                             val matchingPrompt = DefaultQuickPrompts.items.find { it.promptText == promptText }
@@ -1922,7 +2097,7 @@ fun TerminalScreen(
                 },
                 onFilesClick = {
                     showActionBottomSheet = false
-                    selectFileItem(null)
+                    selectFileItem(null, null)
                     onOpenFiles?.invoke() ?: run {
                         executeCommand("/files")
                     }
@@ -1937,7 +2112,7 @@ fun TerminalScreen(
                 },
                 onResearchClick = {
                     showActionBottomSheet = false
-                    executeCommand("/canvas")
+                    selectResearchItem(null, null)
                 },
                 onPinTerminalClick = {
                     showActionBottomSheet = false
@@ -1984,17 +2159,41 @@ fun TerminalScreen(
             sessions = sessions,
             activeSessionId = activeSessionId,
             onSelectSession = { sessId ->
-                viewModel.selectTerminalSession(sessId)
+                activeSessionId = sessId
             },
             onNewSession = {
-                val newSess = viewModel.createNewTerminalSession(tabGroupId = null)
-                viewModel.selectTerminalSession(newSess.id)
+                val newId = "sess_${sessions.size + 1}"
+                val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
+                val newSess = TerminalSession(
+                    id = newId,
+                    title = "Session ${sessions.size + 1}",
+                    lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
+                )
+                sessions = sessions + newSess
+                activeSessionId = newId
             },
             onRenameSession = { sessId, newTitle ->
-                viewModel.renameTerminalSession(sessId, newTitle)
+                sessions = sessions.map {
+                    if (it.id == sessId) it.copy(title = newTitle) else it
+                }
             },
             onDeleteSession = { sessId ->
-                viewModel.deleteTerminalSession(sessId)
+                if (sessions.size > 1) {
+                    val updated = sessions.filterNot { it.id == sessId }
+                    sessions = updated
+                    if (activeSessionId == sessId) {
+                        activeSessionId = updated.first().id
+                    }
+                } else {
+                    val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
+                    val resetSess = TerminalSession(
+                        id = "sess_${System.currentTimeMillis()}",
+                        title = "Session 1",
+                        lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
+                    )
+                    sessions = listOf(resetSess)
+                    activeSessionId = resetSess.id
+                }
             }
         )
     }

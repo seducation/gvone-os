@@ -243,10 +243,10 @@ class SuggestionsInteractionUnitTest {
 
     @Test
     fun commandPopup_supportsTerminalCommandsSuggestionsAndPinAttachments() {
-        // 1. Verify CommandPopupTab has all required tabs
+        // 1. Verify CommandPopupTab has all required tabs with Attachments rebrand
         val tabs = com.example.ui.components.CommandPopupTab.values()
         val tabLabels = tabs.map { it.label }
-        assertTrue("Must have Action & Command tab", tabLabels.contains("Action & Command"))
+        assertTrue("Must have Attachments tab", tabLabels.contains("Attachments"))
         assertTrue("Must have Suggestions tab", tabLabels.contains("Suggestions"))
         assertTrue("Must have Pin Tabs tab", tabLabels.contains("Pin Tabs"))
         assertTrue("Must have All tab", tabLabels.contains("All"))
@@ -267,6 +267,62 @@ class SuggestionsInteractionUnitTest {
         val togglePin = { isTerminalPinned = !isTerminalPinned }
         togglePin()
         assertTrue("Pin terminal action toggles state", isTerminalPinned)
+    }
+
+    @Test
+    fun fileAndResearchSelection_noConflictAndSendAsAttachments() {
+        var selectedItems = listOf<com.example.ui.components.suggestions.QuickPrompt>()
+
+        // 1. Add file item
+        val fileItem = com.example.ui.components.suggestions.QuickPrompt(
+            id = "file_1",
+            title = "File: spec.pdf",
+            promptText = "/files spec.pdf",
+            type = com.example.ui.components.suggestions.SelectedItemType.FILE
+        )
+        selectedItems = selectedItems + fileItem
+
+        // 2. Add research item without conflict
+        val researchItem = com.example.ui.components.suggestions.QuickPrompt(
+            id = "research_1",
+            title = "Research: Deep Synthesis",
+            promptText = "/research Deep Synthesis",
+            type = com.example.ui.components.suggestions.SelectedItemType.RESEARCH
+        )
+        selectedItems = selectedItems + researchItem
+
+        // 3. Add photo item
+        val photoItem = com.example.ui.components.suggestions.QuickPrompt(
+            id = "photo_1",
+            title = "Photo: capture.jpg",
+            promptText = "/photos capture.jpg",
+            type = com.example.ui.components.suggestions.SelectedItemType.PHOTO
+        )
+        selectedItems = selectedItems + photoItem
+
+        assertEquals(3, selectedItems.size)
+        assertEquals(com.example.ui.components.suggestions.SelectedItemType.FILE, selectedItems[0].type)
+        assertEquals(com.example.ui.components.suggestions.SelectedItemType.RESEARCH, selectedItems[1].type)
+        assertEquals(com.example.ui.components.suggestions.SelectedItemType.PHOTO, selectedItems[2].type)
+
+        // Verify distinct types and no collision
+        val files = selectedItems.filter { it.type == com.example.ui.components.suggestions.SelectedItemType.FILE }
+        val researches = selectedItems.filter { it.type == com.example.ui.components.suggestions.SelectedItemType.RESEARCH }
+        assertEquals(1, files.size)
+        assertEquals(1, researches.size)
+        assertTrue("File and Research must have different types", files.first().type != researches.first().type)
+
+        // Verify sending as attachment pops/consumes the item
+        var sentItem: com.example.ui.components.suggestions.QuickPrompt? = null
+        val sendAttachment = { item: com.example.ui.components.suggestions.QuickPrompt ->
+            sentItem = item
+            selectedItems = selectedItems.filterNot { it.id == item.id }
+        }
+
+        sendAttachment(researchItem)
+        assertEquals("research_1", sentItem?.id)
+        assertEquals(2, selectedItems.size)
+        assertTrue("Research removed after send, file remains", selectedItems.any { it.type == com.example.ui.components.suggestions.SelectedItemType.FILE })
     }
 
     @Test

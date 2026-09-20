@@ -39,9 +39,13 @@ import com.example.ui.theme.*
 
 enum class CommandPopupTab(val label: String, val testTag: String) {
     ALL("All", "tab_all"),
-    TERMINAL("Action & Command", "tab_terminal_commands"),
+    ATTACHMENTS("Attachments", "tab_attachments"),
     SUGGESTIONS("Suggestions", "tab_suggestions"),
-    PIN_ATTACHMENTS("Pin Tabs", "tab_pin_attachments")
+    PIN_ATTACHMENTS("Pin Tabs", "tab_pin_attachments");
+
+    companion object {
+        val TERMINAL = ATTACHMENTS
+    }
 }
 
 data class PinAttachmentOption(
@@ -72,6 +76,7 @@ fun CommandAutocompletePopup(
     onWebsiteClick: (() -> Unit)? = null,
     onPinConnector: (() -> Unit)? = null,
     onPinResearchCanvas: (() -> Unit)? = null,
+    onAttachResearch: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null
 ) {
     // If no suggestions, no prompts, and no pin options are available, return
@@ -89,7 +94,8 @@ fun CommandAutocompletePopup(
         onAttachFiles,
         onPinCurrentTab,
         onPinConnector,
-        onPinResearchCanvas
+        onPinResearchCanvas,
+        onAttachResearch
     ) {
         val list = mutableListOf<PinAttachmentOption>()
 
@@ -179,17 +185,17 @@ fun CommandAutocompletePopup(
             )
         }
 
-        // 7. Pin Research Canvas
-        if (onPinResearchCanvas != null) {
+        // 7. Attach Research Canvas
+        if (onAttachResearch != null || onPinResearchCanvas != null) {
             list.add(
                 PinAttachmentOption(
                     id = "pin_research",
-                    title = "Pin Research Canvas",
+                    title = "Attach Research Canvas",
                     subtitle = "Attach multi-agent research notes & canvas",
                     icon = Icons.Rounded.Science,
                     badge = "RESEARCH",
                     isPinned = false,
-                    onClick = onPinResearchCanvas
+                    onClick = { (onAttachResearch ?: onPinResearchCanvas)?.invoke() }
                 )
             )
         }
@@ -222,7 +228,8 @@ fun CommandAutocompletePopup(
                 ),
                 shape = RoundedCornerShape(20.dp)
             )
-            .testTag("command_autocomplete_popup"),
+            .testTag("command_autocomplete_popup")
+            .testTag("attachments_panel_popup"),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(
@@ -242,7 +249,7 @@ fun CommandAutocompletePopup(
                     .testTag("popup_drag_handle")
             )
 
-            // Header: Action & Command + Manage button
+            // Header: Attachments + Manage button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -252,7 +259,9 @@ fun CommandAutocompletePopup(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.testTag("popup_header_title")
+                    modifier = Modifier
+                        .testTag("popup_header_title")
+                        .testTag("attachments_panel_title")
                 ) {
                     // Triple-icon cluster
                     Row(
@@ -264,21 +273,21 @@ fun CommandAutocompletePopup(
                             .padding(horizontal = 4.dp, vertical = 2.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Terminal,
+                            imageVector = Icons.Rounded.AttachFile,
                             contentDescription = null,
                             tint = GVONEPrimary,
                             modifier = Modifier.size(13.dp)
                         )
                         Icon(
-                            imageVector = Icons.Rounded.AutoAwesome,
+                            imageVector = Icons.Rounded.AddPhotoAlternate,
                             contentDescription = null,
-                            tint = Color(0xFFFBBF24),
+                            tint = Color(0xFF34D399),
                             modifier = Modifier.size(13.dp)
                         )
                         Icon(
-                            imageVector = Icons.Rounded.PushPin,
+                            imageVector = Icons.Rounded.Science,
                             contentDescription = null,
-                            tint = Color(0xFF38BDF8),
+                            tint = Color(0xFFFBBF24),
                             modifier = Modifier.size(13.dp)
                         )
                     }
@@ -287,7 +296,7 @@ fun CommandAutocompletePopup(
 
                     Column {
                         Text(
-                            text = "ACTION & COMMAND",
+                            text = "ATTACHMENTS",
                             color = Color(0xFFF1F5F9),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
@@ -296,7 +305,7 @@ fun CommandAutocompletePopup(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Actions • Suggestions • Pin Tabs",
+                            text = "Attachments • Actions • Quick Select",
                             color = Color(0xFF94A3B8),
                             fontSize = 9.5.sp
                         )
@@ -346,21 +355,21 @@ fun CommandAutocompletePopup(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Horizontal scrollable dark gray squircle cards: Photos, Camera, Files, Website, and partially visible item
+            // Horizontal scrollable dark gray squircle cards: Photos, Camera, Files, Website, Connectors, Research, Pin
             HorizontalActionCardsRow(
                 onPhotosClick = { onAttachPhotos?.invoke() },
                 onCameraClick = { onAttachCamera?.invoke() },
                 onFilesClick = { onAttachFiles?.invoke() },
                 onWebsiteClick = { onWebsiteClick?.invoke() ?: onPinCurrentTab?.invoke() },
                 onConnectorsClick = onPinConnector,
-                onResearchClick = onPinResearchCanvas,
+                onResearchClick = { (onAttachResearch ?: onPinResearchCanvas)?.invoke() },
                 onPinTerminalClick = onTogglePinTerminal,
                 modifier = Modifier.padding(vertical = 2.dp)
             )
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Segmented Tabs: [ All ] [ Action & Command ] [ Suggestions ] [ Pin Tabs ]
+            // Segmented Tabs: [ All ] [ Attachments ] [ Suggestions ] [ Pin Tabs ]
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -373,7 +382,7 @@ fun CommandAutocompletePopup(
                     val isSelected = selectedTab == tab
                     val (tabColor, tabIcon) = when (tab) {
                         CommandPopupTab.ALL -> Color(0xFFE2E8F0) to Icons.Rounded.Apps
-                        CommandPopupTab.TERMINAL -> GVONEPrimary to Icons.Rounded.Terminal
+                        CommandPopupTab.ATTACHMENTS -> GVONEPrimary to Icons.Rounded.AttachFile
                         CommandPopupTab.SUGGESTIONS -> Color(0xFFFBBF24) to Icons.Rounded.Lightbulb
                         CommandPopupTab.PIN_ATTACHMENTS -> Color(0xFF38BDF8) to Icons.Rounded.PushPin
                     }
@@ -382,7 +391,8 @@ fun CommandAutocompletePopup(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
                             .clickable { selectedTab = tab }
-                            .testTag(tab.testTag),
+                            .testTag(tab.testTag)
+                            .testTag(if (tab == CommandPopupTab.ATTACHMENTS) "tab_action_command" else tab.testTag),
                         shape = RoundedCornerShape(12.dp),
                         color = if (isSelected) tabColor.copy(alpha = 0.20f) else Color(0x201E293B),
                         border = BorderStroke(
@@ -425,12 +435,12 @@ fun CommandAutocompletePopup(
                     .heightIn(max = 360.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                // 1. TERMINAL COMMANDS SECTION
-                if (selectedTab == CommandPopupTab.ALL || selectedTab == CommandPopupTab.TERMINAL) {
+                // 1. ATTACHMENTS & COMMANDS SECTION
+                if (selectedTab == CommandPopupTab.ALL || selectedTab == CommandPopupTab.ATTACHMENTS) {
                     if (selectedTab == CommandPopupTab.ALL) {
                         SectionHeader(
-                            icon = Icons.Rounded.Terminal,
-                            title = "ACTION & COMMAND",
+                            icon = Icons.Rounded.AttachFile,
+                            title = "ATTACHMENTS",
                             accentColor = GVONEPrimary,
                             count = suggestions.size
                         )

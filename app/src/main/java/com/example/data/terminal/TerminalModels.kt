@@ -37,7 +37,6 @@ data class TerminalSession(
     val lines: List<TerminalLine> = emptyList(),
     val currentInput: String = "",
     val historyIndex: Int = -1,
-    val tabGroupId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val lastActiveAt: Long = System.currentTimeMillis()
 )
