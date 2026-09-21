@@ -11,10 +11,52 @@ import androidx.compose.ui.graphics.vector.ImageVector
  */
 enum class StorageLocation(val displayName: String, val folderName: String) {
     MY_FILES("My Files", ""),
+    PROJECTS("Projects", "Projects"),
     CLOUD("Cloud", "Cloud"),
     DOWNLOADS("Downloads", "Downloads"),
     FAVORITES("Favorites", ""),
     RECENT("Recent", "")
+}
+
+/**
+ * Supported templates for initializing new software projects.
+ */
+enum class ProjectTemplate(
+    val displayName: String,
+    val description: String,
+    val mainFile: String,
+    val initialContent: String
+) {
+    KOTLIN_APP(
+        "Kotlin App",
+        "Standard Kotlin application with src/Main.kt",
+        "src/Main.kt",
+        "package com.gvone.app\n\nfun main() {\n    println(\"Hello from GVONE Kotlin Application!\")\n}\n"
+    ),
+    WEB_HTML(
+        "Web Frontend",
+        "HTML5, CSS3 and JavaScript responsive project",
+        "index.html",
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title>GVONE Web App</title>\n</head>\n<body>\n  <h1>Welcome to GVONE Web App</h1>\n</body>\n</html>\n"
+    ),
+    PYTHON_SCRIPT(
+        "Python Script",
+        "Python application workspace with main.py",
+        "main.py",
+        "# GVONE Python Workspace\n\ndef main():\n    print(\"Running GVONE Python Script...\")\n\nif __name__ == \"__main__\":\n    main()\n"
+    ),
+    NODE_JS(
+        "Node.js",
+        "JavaScript backend service with server.js",
+        "server.js",
+        "// GVONE Node.js Server\nconst http = require('http');\nconst port = 3000;\n\nconst server = http.createServer((req, res) => {\n  res.statusCode = 200;\n  res.setHeader('Content-Type', 'text/plain');\n  res.end('Hello from GVONE Node.js Service\\n');\n});\n\nserver.listen(port, () => {\n  console.log(`Server running at port \${port}`);\n});\n"
+    ),
+    BLANK(
+        "Blank Project",
+        "Empty project folder with git tracking",
+        "README.md",
+        "# Project\n\nCreated in GVONE Universal Workspace.\n"
+    )
 }
 
 /**
@@ -53,7 +95,8 @@ data class GVONEFileItem(
     val extension: String,
     val fileType: FileType,
     val isFavorite: Boolean = false,
-    val mimeType: String = "application/octet-stream"
+    val mimeType: String = "application/octet-stream",
+    val gitStatus: GitFileStatus = GitFileStatus.UNMODIFIED
 )
 
 /**

@@ -71,6 +71,10 @@ fun GVONEFileViewerScreen(
     var isSaving by remember { mutableStateOf(false) }
     var isFavorite by remember { mutableStateOf(false) }
     var showInfoDialog by remember { mutableStateOf(false) }
+    var showCommitDialog by remember { mutableStateOf(false) }
+    var commitMessageInput by remember { mutableStateOf("Update file") }
+    var commitExtendedDesc by remember { mutableStateOf("") }
+    var commitBranchOption by remember { mutableStateOf("main") }
     var mdEditMode by remember { mutableStateOf(false) } // For markdown: preview vs edit
     val file = remember(fileRelativePath) { fileSystem.getFile(fileRelativePath) }
     val fileName = remember(fileRelativePath) { file.name }
@@ -257,18 +261,23 @@ fun GVONEFileViewerScreen(
                             }
                         }
 
-                        // Save Button
+                        // GitHub Style Commit Changes Button
                         if (hasUnsavedChanges) {
                             Button(
-                                onClick = { saveChanges() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                onClick = {
+                                    commitMessageInput = "Update $fileName"
+                                    showCommitDialog = true
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
                                 shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(32.dp)
+                                modifier = Modifier
+                                    .height(32.dp)
+                                    .testTag("file_commit_changes_btn")
                             ) {
-                                Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Save", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Commit changes...", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             }
                         }
 
@@ -472,6 +481,42 @@ fun GVONEFileViewerScreen(
             relativePath = fileRelativePath,
             fileSystem = fileSystem,
             onDismiss = { showInfoDialog = false }
+        )
+    }
+
+    if (showCommitDialog) {
+        GitHubCommitDialog(
+            fileName = fileName,
+            commitMessage = commitMessageInput,
+            onCommitMessageChange = { commitMessageInput = it },
+            extendedDescription = commitExtendedDesc,
+            onExtendedDescriptionChange = { commitExtendedDesc = it },
+            selectedBranch = commitBranchOption,
+            onBranchSelected = { commitBranchOption = it },
+            isSaving = isSaving,
+            onDismiss = { showCommitDialog = false },
+            onCommit = {
+                coroutineScope.launch {
+                    isSaving = true
+                    val success = fileSystem.writeFileContent(fileRelativePath, fileContent)
+                    if (success) {
+                        originalContent = fileContent
+                        val projectRoot = fileSystem.gitManager.resolveProjectRoot(fileRelativePath) ?: "Projects"
+                        fileSystem.gitManager.commitChanges(
+                            projectPath = projectRoot,
+                            message = commitMessageInput.ifBlank { "Update $fileName" },
+                            description = commitExtendedDesc,
+                            branch = commitBranchOption,
+                            files = listOf(fileName)
+                        )
+                        showCommitDialog = false
+                        toastMessage = "Committed to $commitBranchOption: ${commitMessageInput.ifBlank { "Update $fileName" }}"
+                    } else {
+                        toastMessage = "Failed to write file changes"
+                    }
+                    isSaving = false
+                }
+            }
         )
     }
 }
@@ -1216,4 +1261,190 @@ private fun InfoRow(label: String, value: String) {
         Text(text = label.uppercase(), color = Color(0xFF64748B), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Text(text = value, color = Color(0xFFE2E8F0), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
     }
+}
+
+/**
+ * GitHub Mobile style "Commit changes" modal dialog.
+ */
+@Composable
+fun GitHubCommitDialog(
+    fileName: String,
+    commitMessage: String,
+    onCommitMessageChange: (String) -> Unit,
+    extendedDescription: String,
+    onExtendedDescriptionChange: (String) -> Unit,
+    selectedBranch: String,
+    onBranchSelected: (String) -> Unit,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onCommit: () -> Unit
+) {
+    var commitDirectlyToBranch by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF238636)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Commit changes",
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Commit changes directly to $selectedBranch",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Commit summary message
+                Text(
+                    text = "Commit message",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                OutlinedTextField(
+                    value = commitMessage,
+                    onValueChange = onCommitMessageChange,
+                    singleLine = true,
+                    placeholder = { Text("Update $fileName", color = Color(0xFF64748B), fontSize = 13.sp) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF334155),
+                        focusedContainerColor = Color(0xFF0F172A),
+                        unfocusedContainerColor = Color(0xFF0F172A)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("commit_message_input")
+                )
+
+                // Optional extended description
+                Text(
+                    text = "Extended description (optional)",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                OutlinedTextField(
+                    value = extendedDescription,
+                    onValueChange = onExtendedDescriptionChange,
+                    maxLines = 3,
+                    minLines = 2,
+                    placeholder = { Text("Add an optional extended description...", color = Color(0xFF64748B), fontSize = 13.sp) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF334155),
+                        focusedContainerColor = Color(0xFF0F172A),
+                        unfocusedContainerColor = Color(0xFF0F172A)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Commit target options (Direct branch vs new branch PR)
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF0F172A),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { commitDirectlyToBranch = true }
+                        ) {
+                            RadioButton(
+                                selected = commitDirectlyToBranch,
+                                onClick = { commitDirectlyToBranch = true },
+                                colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF38BDF8))
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Column {
+                                Text("Commit directly to the $selectedBranch branch", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                Text("Immediate write to repository tree", color = Color(0xFF64748B), fontSize = 10.sp)
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { commitDirectlyToBranch = false }
+                        ) {
+                            RadioButton(
+                                selected = !commitDirectlyToBranch,
+                                onClick = { commitDirectlyToBranch = false },
+                                colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF38BDF8))
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Column {
+                                Text("Create a new branch and start a pull request", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                Text("Propose changes safely without direct push", color = Color(0xFF64748B), fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onCommit,
+                enabled = commitMessage.isNotBlank() && !isSaving,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.testTag("confirm_commit_btn")
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
+                } else {
+                    Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (commitDirectlyToBranch) "Commit changes" else "Propose changes",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color(0xFF94A3B8))
+            }
+        },
+        containerColor = Color(0xFF131926)
+    )
 }
