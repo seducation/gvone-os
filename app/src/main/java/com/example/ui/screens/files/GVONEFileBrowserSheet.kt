@@ -94,6 +94,7 @@ fun GVONEFileBrowserSheet(
     var contextMenuItem by remember { mutableStateOf<GVONEFileItem?>(null) }
     var showContextMenu by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var createTargetFolder by remember { mutableStateOf("") }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
     var showPreviewDialog by remember { mutableStateOf(false) }
@@ -781,7 +782,10 @@ fun GVONEFileBrowserSheet(
 
                         // Add / Create File + button
                         Button(
-                            onClick = { showCreateDialog = true },
+                            onClick = {
+                                createTargetFolder = currentFolder
+                                showCreateDialog = true
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
                             shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -912,82 +916,6 @@ fun GVONEFileBrowserSheet(
             Spacer(modifier = Modifier.height(14.dp))
 
             // =========================================================================
-            // 2. LOCATIONS PILLS (My Files, Cloud, Downloads, Favorites, Recent)
-            // =========================================================================
-            Text(
-                text = "LOCATIONS",
-                color = Color(0xFF64748B),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.6.sp
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    LocationChip(
-                        icon = Icons.Rounded.PhoneAndroid,
-                        label = "My Files",
-                        isSelected = activeLocation == StorageLocation.MY_FILES,
-                        onClick = {
-                            activeLocation = StorageLocation.MY_FILES
-                            currentFolder = ""
-                        }
-                    )
-                }
-                item {
-                    LocationChip(
-                        icon = Icons.Rounded.CloudQueue,
-                        label = "Cloud",
-                        isSelected = activeLocation == StorageLocation.CLOUD,
-                        onClick = {
-                            activeLocation = StorageLocation.CLOUD
-                            currentFolder = ""
-                        }
-                    )
-                }
-                item {
-                    LocationChip(
-                        icon = Icons.Rounded.Download,
-                        label = "Downloads",
-                        isSelected = activeLocation == StorageLocation.DOWNLOADS,
-                        onClick = {
-                            activeLocation = StorageLocation.DOWNLOADS
-                            currentFolder = ""
-                        }
-                    )
-                }
-                item {
-                    LocationChip(
-                        icon = Icons.Rounded.Star,
-                        label = "Favorites",
-                        isSelected = activeLocation == StorageLocation.FAVORITES,
-                        onClick = {
-                            activeLocation = StorageLocation.FAVORITES
-                            currentFolder = ""
-                        }
-                    )
-                }
-                item {
-                    LocationChip(
-                        icon = Icons.Rounded.Schedule,
-                        label = "Recent",
-                        isSelected = activeLocation == StorageLocation.RECENT,
-                        onClick = {
-                            activeLocation = StorageLocation.RECENT
-                            currentFolder = ""
-                        }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // =========================================================================
             // 3. FOLDERS / PROJECTS SHORTCUTS (Dynamic from storageConfig.visibleFolders)
             // =========================================================================
             if (activeLocation == StorageLocation.MY_FILES && currentFolder.isEmpty()) {
@@ -1048,7 +976,11 @@ fun GVONEFileBrowserSheet(
                         FolderShortcutCard(
                             name = folderName,
                             icon = icon,
-                            modifier = Modifier.widthIn(min = 82.dp)
+                            modifier = Modifier.widthIn(min = 90.dp),
+                            onAddInside = {
+                                createTargetFolder = folderName
+                                showCreateDialog = true
+                            }
                         ) {
                             currentFolder = folderName
                         }
@@ -1325,6 +1257,12 @@ fun GVONEFileBrowserSheet(
                                 contextMenuItem = item
                                 showContextMenu = true
                             },
+                            onAddInside = if (item.isDirectory) {
+                                {
+                                    createTargetFolder = item.path
+                                    showCreateDialog = true
+                                }
+                            } else null,
                             onSelectFile = onSelectFile?.let { selectFn ->
                                 {
                                     selectFn(item)
@@ -1479,6 +1417,12 @@ fun GVONEFileBrowserSheet(
 
                     // Folder as Project & Visibility Actions
                     if (item.isDirectory) {
+                        ActionSheetButton(icon = Icons.Rounded.Add, label = "Add File or Subfolder inside") {
+                            showContextMenu = false
+                            createTargetFolder = item.path
+                            showCreateDialog = true
+                        }
+
                         val isProjectFolder = allProjects.any { it.projectPath == item.path || it.projectName == item.name }
                         if (!isProjectFolder) {
                             ActionSheetButton(icon = Icons.Rounded.RocketLaunch, label = "Initialize as Project Repository") {
@@ -1572,15 +1516,16 @@ fun GVONEFileBrowserSheet(
 
     // 2. Create File / Folder / Project Dialog
     if (showCreateDialog) {
+        val targetFolder = if (createTargetFolder.isNotEmpty()) createTargetFolder else currentFolder
         CreateFileDialog(
-            currentFolder = currentFolder,
+            currentFolder = targetFolder,
             onDismiss = { showCreateDialog = false },
             onCreate = { name, ext, type, content ->
                 coroutineScope.launch {
                     if (type == FileType.FOLDER) {
-                        fileSystem.createFolder(currentFolder, name)
+                        fileSystem.createFolder(targetFolder, name)
                     } else {
-                        val file = fileSystem.createFile(currentFolder, name, ext, content)
+                        val file = fileSystem.createFile(targetFolder, name, ext, content)
                         onOpenFileInTab(file, false)
                         onDismiss()
                     }
@@ -1590,11 +1535,6 @@ fun GVONEFileBrowserSheet(
             },
             onCreateProject = { repoName, template, description ->
                 coroutineScope.launch {
-                    val targetPath = if (currentFolder.isEmpty() || currentFolder == "Projects") {
-                        "Projects/$repoName"
-                    } else {
-                        "$currentFolder/$repoName"
-                    }
                     fileSystem.createProject(repoName, template, description)
                     activeLocation = StorageLocation.PROJECTS
                     currentFolder = "Projects/$repoName"
@@ -1892,6 +1832,7 @@ private fun FolderShortcutCard(
     name: String,
     icon: ImageVector,
     modifier: Modifier = Modifier,
+    onAddInside: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     Surface(
@@ -1901,23 +1842,40 @@ private fun FolderShortcutCard(
         border = BorderStroke(1.dp, Color(0xFF222F43)),
         modifier = modifier.height(64.dp)
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(imageVector = icon, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(22.dp))
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = name,
-                color = Color(0xFFE2E8F0),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(imageVector = icon, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = name,
+                    color = Color(0xFFE2E8F0),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (onAddInside != null) {
+                IconButton(
+                    onClick = onAddInside,
+                    modifier = Modifier.size(28.dp).testTag("shortcut_add_btn_$name")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = "Add files or subfolder to $name",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -1930,6 +1888,7 @@ private fun FileItemRow(
     onToggleSelect: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onAddInside: (() -> Unit)? = null,
     onSelectFile: (() -> Unit)? = null,
     selectionModeLabel: String? = null
 ) {
@@ -2046,8 +2005,23 @@ private fun FileItemRow(
                 }
             }
 
-            // Actions: Attach chip + More options
+            // Actions: Plus button for folders + Attach chip + More options
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (item.isDirectory && onAddInside != null) {
+                    IconButton(
+                        onClick = onAddInside,
+                        modifier = Modifier.size(32.dp).testTag("folder_add_btn_${item.name}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Add files or subfolder to ${item.name}",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(2.dp))
+                }
+
                 if (onSelectFile != null && !item.isDirectory) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
