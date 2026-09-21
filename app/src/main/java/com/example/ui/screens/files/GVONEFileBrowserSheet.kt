@@ -40,6 +40,30 @@ import kotlinx.coroutines.launch
 /**
  * Dedicated Universal File Browser Interface for GVONE.
  */
+@Composable
+fun ReadmePreview(fileSystem: GVONEFileSystem, readmeItem: GVONEFileItem) {
+    var content by remember { mutableStateOf("") }
+    LaunchedEffect(readmeItem) {
+        content = fileSystem.readFileContent(readmeItem.path)
+    }
+    Surface(
+        color = Color(0xFF141C2B),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color(0xFF222F43)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("README.md", color = Color(0xFF94A3B8), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = if (content.length > 200) content.take(200) + "..." else content,
+                color = Color(0xFFE2E8F0),
+                fontSize = 13.sp
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GVONEFileBrowserSheet(
@@ -126,7 +150,56 @@ fun GVONEFileBrowserSheet(
                 .padding(horizontal = 16.dp)
         ) {
             // =========================================================================
-            // 1. TOP HEADER & SEARCH
+            // 0. GITHUB-LIKE PROJECT HEADER
+            // =========================================================================
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.FolderSpecial,
+                        contentDescription = "Repository",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "MyProject", // Hardcoded for now
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.AccountTree,
+                                contentDescription = "Branch",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "main",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+                IconButton(onClick = { /* TODO: Implement branch menu */ }) {
+                    Icon(Icons.Rounded.MoreVert, contentDescription = "Menu", tint = Color.White)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // =========================================================================
+            // 1. TOP HEADER & SEARCH (Updated)
             // =========================================================================
             Row(
                 modifier = Modifier
@@ -504,9 +577,17 @@ fun GVONEFileBrowserSheet(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
-                    items(fileItems, key = { it.path }) { item ->
-                        val isSelected = selectedItemIds.contains(item.path)
+                    // README.md section
+                    val readmeItem = fileItems.find { it.name.equals("README.md", ignoreCase = true) }
+                    if (readmeItem != null) {
+                        item {
+                            ReadmePreview(fileSystem = fileSystem, readmeItem = readmeItem)
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                    }
 
+                    items(fileItems.filter { !it.name.equals("README.md", ignoreCase = true) }, key = { it.path }) { item ->
+                        val isSelected = selectedItemIds.contains(item.path)
                         FileItemRow(
                             item = item,
                             isMultiSelect = isMultiSelectMode,
@@ -544,6 +625,7 @@ fun GVONEFileBrowserSheet(
             }
         }
     }
+
 
     // =========================================================================
     // MODALS & ACTIONS (Context Menu, Create, Rename, Move, Info, Preview)
