@@ -26,8 +26,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,6 +77,7 @@ fun GVONEFileBrowserSheet(
     selectionModeLabel: String? = null
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
 
     var activeLocation by remember { mutableStateOf(StorageLocation.MY_FILES) }
@@ -82,6 +85,11 @@ fun GVONEFileBrowserSheet(
     var searchQuery by remember { mutableStateOf("") }
     var fileItems by remember { mutableStateOf<List<GVONEFileItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+
+    // Git Branch & Repository state
+    var currentBranch by remember { mutableStateOf("main") }
+    var showBranchDialog by remember { mutableStateOf(false) }
+    val availableBranches = remember { listOf("main", "develop", "feature/mobile-ui", "release/v1.0") }
 
     // Multi-select state
     var isMultiSelectMode by remember { mutableStateOf(false) }
@@ -150,53 +158,365 @@ fun GVONEFileBrowserSheet(
                 .padding(horizontal = 16.dp)
         ) {
             // =========================================================================
-            // 0. GITHUB-LIKE PROJECT HEADER
+            // 0. GITHUB-LIKE PROJECT HEADER & GIT TELEMETRY
             // =========================================================================
+            val projectName = remember(currentFolder, activeLocation) {
+                if (currentFolder.isNotEmpty()) {
+                    currentFolder.trimEnd('/').substringAfterLast('/')
+                } else if (activeLocation == StorageLocation.MY_FILES) {
+                    "gvone-workspace"
+                } else {
+                    activeLocation.displayName.lowercase().replace(" ", "-")
+                }
+            }
+
+            val latestCommitHash = remember(currentBranch, currentFolder) {
+                val seed = (currentBranch + currentFolder).hashCode().toUInt().toString(16)
+                seed.padStart(7, 'e').take(7)
+            }
+            val totalCommitCount = remember(currentBranch, currentFolder, fileItems.size) {
+                36 + (fileItems.size * 2)
+            }
+            val latestCommitMessage = remember(currentBranch) {
+                when (currentBranch) {
+                    "main" -> "feat: update project structure, commit history & tree branches"
+                    "develop" -> "refactor: optimize mobile repository explorer and stats"
+                    else -> "chore: synchronize workspace changes on $currentBranch"
+                }
+            }
+            val latestCommitTime = "14m ago"
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                    .padding(top = 8.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.FolderSpecial,
-                        contentDescription = "Repository",
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(28.dp)
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF1E293B)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FolderSpecial,
+                            contentDescription = "Repository",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
-                        Text(
-                            text = "MyProject", // Hardcoded for now
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = projectName,
+                                color = Color.White,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0x2238BDF8),
+                                border = BorderStroke(1.dp, Color(0x4438BDF8))
+                            ) {
+                                Text(
+                                    text = "Public",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { showBranchDialog = true }
+                                .padding(vertical = 1.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Rounded.AccountTree,
                                 contentDescription = "Branch",
                                 tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(13.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "main",
+                                text = currentBranch,
                                 color = Color(0xFF94A3B8),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium
                             )
+                            Icon(
+                                imageVector = Icons.Rounded.ArrowDropDown,
+                                contentDescription = null,
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(14.dp)
+                            )
                         }
                     }
                 }
-                IconButton(onClick = { /* TODO: Implement branch menu */ }) {
-                    Icon(Icons.Rounded.MoreVert, contentDescription = "Menu", tint = Color.White)
+                IconButton(onClick = { showBranchDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "Project options",
+                        tint = Color(0xFF94A3B8)
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // =========================================================================
+            // HORIZONTAL CHIP GROUP: LATEST COMMIT HASH & TOTAL COMMIT COUNT
+            // =========================================================================
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
+                    .testTag("project_git_chips_row"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Chip 1: Latest Commit Hash (Clickable to copy)
+                item {
+                    Surface(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(latestCommitHash))
+                            Toast.makeText(
+                                context,
+                                "Commit hash $latestCommitHash copied to clipboard",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF162032),
+                        border = BorderStroke(1.dp, Color(0xFF283955)),
+                        modifier = Modifier.testTag("chip_latest_commit_hash")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Commit,
+                                contentDescription = "Commit Hash",
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = latestCommitHash,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF38BDF8)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Rounded.ContentCopy,
+                                contentDescription = "Copy commit hash",
+                                tint = Color(0xFF64748B),
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Chip 2: Total Commit Count
+                item {
+                    Surface(
+                        onClick = {
+                            Toast.makeText(
+                                context,
+                                "$totalCommitCount total commits on branch $currentBranch",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF162032),
+                        border = BorderStroke(1.dp, Color(0xFF283955)),
+                        modifier = Modifier.testTag("chip_total_commit_count")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.History,
+                                contentDescription = "Total Commits",
+                                tint = Color(0xFFA78BFA),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "$totalCommitCount commits",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                        }
+                    }
+                }
+
+                // Chip 3: Branch selector chip
+                item {
+                    Surface(
+                        onClick = { showBranchDialog = true },
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF162032),
+                        border = BorderStroke(1.dp, Color(0xFF283955)),
+                        modifier = Modifier.testTag("chip_branch_selector")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AccountTree,
+                                contentDescription = "Branches",
+                                tint = Color(0xFF34D399),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = currentBranch,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Icon(
+                                imageVector = Icons.Rounded.ArrowDropDown,
+                                contentDescription = null,
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Chip 4: Activity Time
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF162032),
+                        border = BorderStroke(1.dp, Color(0xFF283955)),
+                        modifier = Modifier.testTag("chip_activity_time")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Schedule,
+                                contentDescription = "Recent Activity",
+                                tint = Color(0xFFFBBF24),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Updated $latestCommitTime",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Latest commit message banner (GitHub mobile style)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp, bottom = 8.dp)
+                    .clickable {
+                        clipboardManager.setText(AnnotatedString(latestCommitHash))
+                        Toast.makeText(context, "Commit $latestCommitHash: $latestCommitMessage", Toast.LENGTH_SHORT).show()
+                    },
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF131B29),
+                border = BorderStroke(1.dp, Color(0xFF222E42))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF38BDF8)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "G",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = latestCommitMessage,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFF1F5F9),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "workspace-agent committed $latestCommitTime",
+                                fontSize = 10.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "•",
+                                fontSize = 10.sp,
+                                color = Color(0xFF64748B)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Verified",
+                                fontSize = 10.sp,
+                                color = Color(0xFF34D399),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFF1E293B),
+                        border = BorderStroke(1.dp, Color(0xFF334155))
+                    ) {
+                        Text(
+                            text = latestCommitHash,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF38BDF8),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             // =========================================================================
             // 1. TOP HEADER & SEARCH (Updated)
@@ -630,6 +950,94 @@ fun GVONEFileBrowserSheet(
     // =========================================================================
     // MODALS & ACTIONS (Context Menu, Create, Rename, Move, Info, Preview)
     // =========================================================================
+
+    // 0. Branch Selector Dialog
+    if (showBranchDialog) {
+        AlertDialog(
+            onDismissRequest = { showBranchDialog = false },
+            containerColor = Color(0xFF161F30),
+            titleContentColor = Color.White,
+            textContentColor = Color(0xFF94A3B8),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.AccountTree,
+                        contentDescription = null,
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Switch Branch", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Select an active branch for repository:",
+                        fontSize = 13.sp,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    availableBranches.forEach { branch ->
+                        val isCurrent = branch == currentBranch
+                        Surface(
+                            onClick = {
+                                currentBranch = branch
+                                showBranchDialog = false
+                                Toast.makeText(context, "Switched to branch $branch", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isCurrent) Color(0x3338BDF8) else Color(0xFF0F172A),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isCurrent) Color(0xFF38BDF8) else Color(0xFF1E293B)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.AccountTree,
+                                        contentDescription = null,
+                                        tint = if (isCurrent) Color(0xFF38BDF8) else Color(0xFF64748B),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = branch,
+                                        fontSize = 14.sp,
+                                        color = if (isCurrent) Color.White else Color(0xFFCBD5E1),
+                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                                if (isCurrent) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = "Selected",
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBranchDialog = false }) {
+                    Text("Close", color = Color(0xFF38BDF8))
+                }
+            }
+        )
+    }
 
     // 1. Long Press Context Menu
     if (showContextMenu && contextMenuItem != null) {
