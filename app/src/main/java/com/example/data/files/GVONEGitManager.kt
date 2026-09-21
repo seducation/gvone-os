@@ -63,23 +63,19 @@ class GVONEGitManager(private val context: Context, private val rootDir: File) {
 
     /**
      * Resolves which project a relative file/folder path belongs to.
-     * E.g. "Projects/MySoftware/src/Main.kt" -> "Projects/MySoftware" (Project: "MySoftware")
+     * Every folder (including Images, Documents, GVONE, Downloads, etc.) is a project!
      */
     fun resolveProjectRoot(relativePath: String): String? {
         val clean = relativePath.trim('/').replace('\\', '/')
         if (clean.isBlank()) return null
 
         val parts = clean.split('/')
-        return when {
-            // Under Projects folder: Projects/<ProjectName>/...
-            parts.size >= 2 && parts[0].equals("Projects", ignoreCase = true) -> {
-                "${parts[0]}/${parts[1]}"
-            }
-            // Root-level folder treated as project
-            parts.isNotEmpty() && !parts[0].equals("Downloads", ignoreCase = true) && !parts[0].equals("Cloud", ignoreCase = true) -> {
-                parts[0]
-            }
-            else -> null
+        return if (parts.size >= 2 && parts[0].equals("Projects", ignoreCase = true)) {
+            "${parts[0]}/${parts[1]}"
+        } else if (parts.isNotEmpty()) {
+            parts[0]
+        } else {
+            null
         }
     }
 
@@ -92,11 +88,19 @@ class GVONEGitManager(private val context: Context, private val rootDir: File) {
 
     /**
      * Lists all projects discovered in the file system.
+     * All folders are treated as project folders (including Images, Documents, GVONE, etc.)
      */
     suspend fun listProjects(): List<ProjectRepoInfo> = withContext(Dispatchers.IO) {
         val projects = mutableListOf<ProjectRepoInfo>()
-        val projectsDir = File(rootDir, "Projects")
 
+        // Discover all root-level folders as projects
+        rootDir.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.forEach { dir ->
+            val relPath = dir.name
+            projects.add(getProjectRepoInfo(relPath))
+        }
+
+        // Also check if any subfolders exist under Projects/
+        val projectsDir = File(rootDir, "Projects")
         if (projectsDir.exists() && projectsDir.isDirectory) {
             projectsDir.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.forEach { dir ->
                 val relPath = "Projects/${dir.name}"
@@ -104,31 +108,22 @@ class GVONEGitManager(private val context: Context, private val rootDir: File) {
             }
         }
 
-        // Also check root folders if any user created top-level project folders
-        rootDir.listFiles()?.filter { 
-            it.isDirectory && 
-            !it.name.startsWith(".") && 
-            !it.name.equals("Projects", ignoreCase = true) &&
-            !it.name.equals("Downloads", ignoreCase = true) &&
-            !it.name.equals("Cloud", ignoreCase = true) &&
-            !it.name.equals("Images", ignoreCase = true) &&
-            !it.name.equals("Documents", ignoreCase = true) &&
-            !it.name.equals("GVONE", ignoreCase = true)
-        }?.forEach { dir ->
-            val relPath = dir.name
-            projects.add(getProjectRepoInfo(relPath))
-        }
-
-        // Ensure default "Projects" folder itself is represented if empty
         if (projects.isEmpty()) {
-            val defaultProject = "Projects/DefaultProject"
+            val defaultProject = "Documents"
             val defDir = File(rootDir, defaultProject)
             if (!defDir.exists()) defDir.mkdirs()
             initializeProjectRepo(defaultProject, "Default Workspace Project")
             projects.add(getProjectRepoInfo(defaultProject))
         }
 
-        projects.sortedBy { it.projectName.lowercase(Locale.ROOT) }
+        projects.distinctBy { it.projectPath }.sortedBy { it.projectName.lowercase(Locale.ROOT) }
+    }
+
+    /**
+     * Alias for initializeProjectRepo.
+     */
+    suspend fun initRepo(projectPath: String, projectName: String = "", description: String = ""): ProjectRepoInfo {
+        return initializeProjectRepo(projectPath, description.ifBlank { "Project repository for $projectName" })
     }
 
     /**

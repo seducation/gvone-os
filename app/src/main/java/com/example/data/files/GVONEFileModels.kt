@@ -125,6 +125,7 @@ data class FilesStorageConfig(
     val showHiddenFiles: Boolean = false,
     val autoOrganization: Boolean = true,
     val cloudSyncEnabled: Boolean = true,
+    val visibleFolders: List<String> = listOf("Projects", "Documents", "Downloads", "Images", "GVONE"),
     val associations: List<FileAssociation> = listOf(
         FileAssociation("md", "Markdown Viewer / Editor"),
         FileAssociation("txt", "Text Editor"),

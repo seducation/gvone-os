@@ -1408,6 +1408,48 @@ class GVONEFileSystem(private val context: Context) {
         }
     }
 
+    /**
+     * Exports the entire workspace to a temporary ZIP file.
+     */
+    suspend fun exportWorkspaceZip(): File? = withContext(Dispatchers.IO) {
+        try {
+            val cacheDir = context.cacheDir
+            val zipFile = File(cacheDir, "gvone_workspace_${System.currentTimeMillis()}.zip")
+            if (exportAllAsZip(zipFile)) zipFile else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Retrieves the storage & files preferences.
+     */
+    fun getStorageConfig(): FilesStorageConfig {
+        val prefs = context.getSharedPreferences("gvone_storage_config", Context.MODE_PRIVATE)
+        val visibleSet = prefs.getStringSet("visible_folders", setOf("Projects", "Documents", "Downloads", "Images", "GVONE")) ?: setOf("Projects", "Documents", "Downloads", "Images", "GVONE")
+        return FilesStorageConfig(
+            defaultDownloadLocation = prefs.getString("default_download_location", "Downloads") ?: "Downloads",
+            showHiddenFiles = prefs.getBoolean("show_hidden_files", false),
+            autoOrganization = prefs.getBoolean("auto_organization", true),
+            cloudSyncEnabled = prefs.getBoolean("cloud_sync_enabled", true),
+            visibleFolders = visibleSet.toList()
+        )
+    }
+
+    /**
+     * Persists storage & files preferences.
+     */
+    fun saveStorageConfig(config: FilesStorageConfig) {
+        val prefs = context.getSharedPreferences("gvone_storage_config", Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString("default_download_location", config.defaultDownloadLocation)
+            .putBoolean("show_hidden_files", config.showHiddenFiles)
+            .putBoolean("auto_organization", config.autoOrganization)
+            .putBoolean("cloud_sync_enabled", config.cloudSyncEnabled)
+            .putStringSet("visible_folders", config.visibleFolders.toSet())
+            .apply()
+    }
+
     fun getFile(relativePath: String): File {
         return File(rootDir, relativePath)
     }

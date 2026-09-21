@@ -100,16 +100,11 @@ fun GVONEFileBrowserSheet(
     var showInfoDialog by remember { mutableStateOf(false) }
 
     // Project & Git Resolution
+    // Every folder is a project folder (including Images, Documents, GVONE, etc.)
     val projectName = remember(currentFolder, activeLocation) {
         if (currentFolder.isNotEmpty()) {
             val segments = currentFolder.trim('/').split('/')
-            if (segments.firstOrNull() == "Projects" && segments.size > 1) {
-                segments[1]
-            } else {
-                segments.last()
-            }
-        } else if (activeLocation == StorageLocation.PROJECTS) {
-            "Projects"
+            segments.first()
         } else if (activeLocation == StorageLocation.MY_FILES) {
             "gvone-workspace"
         } else {
@@ -118,15 +113,10 @@ fun GVONEFileBrowserSheet(
     }
 
     val projectPath = remember(currentFolder, activeLocation, projectName) {
-        val root = fileSystem.gitManager.resolveProjectRoot(currentFolder)
-        if (root != null) {
-            root
-        } else if (activeLocation == StorageLocation.PROJECTS && projectName != "Projects") {
-            "Projects/$projectName"
-        } else if (currentFolder.isNotEmpty()) {
-            currentFolder
+        if (currentFolder.isNotEmpty()) {
+            fileSystem.gitManager.resolveProjectRoot(currentFolder) ?: currentFolder.trim('/').split('/').first()
         } else {
-            "Projects/DefaultProject"
+            "workspace"
         }
     }
 
@@ -134,6 +124,7 @@ fun GVONEFileBrowserSheet(
     var currentBranch by remember { mutableStateOf("main") }
     var showBranchDialog by remember { mutableStateOf(false) }
     var showRepoMenu by remember { mutableStateOf(false) }
+    var showTopOptionsMenu by remember { mutableStateOf(false) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
     var showProjectSwitcherDialog by remember { mutableStateOf(false) }
     var allProjects by remember { mutableStateOf<List<ProjectRepoInfo>>(emptyList()) }
@@ -143,6 +134,17 @@ fun GVONEFileBrowserSheet(
     var projectCommits by remember { mutableStateOf<List<ProjectCommit>>(emptyList()) }
     var projectBranches by remember { mutableStateOf<List<String>>(listOf("main")) }
     var uncommittedFiles by remember { mutableStateOf<List<java.io.File>>(emptyList()) }
+
+    // Settings & Storage Analytics state
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var showStorageSummaryDialog by remember { mutableStateOf(false) }
+    var storageSummaryData by remember { mutableStateOf<StorageUsageSummary?>(null) }
+    var storageConfig by remember { mutableStateOf(fileSystem.getStorageConfig()) }
+
+    // Every folder behaves as a project repository; when inside any folder, display project & git on top
+    val isInProject = remember(currentFolder) {
+        currentFolder.isNotEmpty()
+    }
 
     val latestCommit = projectCommits.firstOrNull()
     val latestCommitHash = latestCommit?.shortHash ?: "init"
@@ -210,350 +212,265 @@ fun GVONEFileBrowserSheet(
                 .fillMaxHeight(0.92f)
                 .padding(horizontal = 16.dp)
         ) {
-            // =========================================================================
-            // 0. GITHUB-LIKE PROJECT HEADER & GIT TELEMETRY
-            // =========================================================================
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            if (isInProject) {
+                // =========================================================================
+                // PROJECT / REPOSITORY VIEW: GITHUB-LIKE PROJECT HEADER & GIT TELEMETRY
+                // =========================================================================
                 Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF1E293B)),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.FolderSpecial,
-                            contentDescription = "Repository",
-                            tint = Color(0xFF38BDF8),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { showProjectSwitcherDialog = true }
-                            .padding(2.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = projectName,
-                                color = Color.White,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                        IconButton(
+                            onClick = {
+                                val parent = if (currentFolder.contains('/')) currentFolder.substringBeforeLast('/') else ""
+                                currentFolder = parent
+                            },
+                            modifier = Modifier.size(36.dp).testTag("btn_project_back_to_workspace")
+                        ) {
                             Icon(
-                                imageVector = Icons.Rounded.UnfoldMore,
-                                contentDescription = "Switch project",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(16.dp).padding(start = 2.dp)
+                                imageVector = Icons.Rounded.ArrowBack,
+                                contentDescription = "Back to Workspace",
+                                tint = Color(0xFF38BDF8)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0x2238BDF8),
-                                border = BorderStroke(1.dp, Color(0x4438BDF8))
-                            ) {
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF1E293B)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = when (projectName.lowercase()) {
+                                    "images" -> Icons.Rounded.FolderOpen
+                                    "documents" -> Icons.Rounded.Folder
+                                    "downloads" -> Icons.Rounded.Download
+                                    else -> Icons.Rounded.FolderSpecial
+                                },
+                                contentDescription = "Repository",
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { showProjectSwitcherDialog = true }
+                                .padding(2.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "Public",
-                                    color = Color(0xFF38BDF8),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    text = projectName,
+                                    color = Color.White,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Icon(
+                                    imageVector = Icons.Rounded.UnfoldMore,
+                                    contentDescription = "Switch project",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(16.dp).padding(start = 2.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color(0x2238BDF8),
+                                    border = BorderStroke(1.dp, Color(0x4438BDF8))
+                                ) {
+                                    Text(
+                                        text = "Project",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .clickable { showBranchDialog = true }
+                                    .padding(vertical = 1.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.AccountTree,
+                                    contentDescription = "Branch",
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = currentBranch,
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Icon(
+                                    imageVector = Icons.Rounded.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(14.dp)
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Box {
+                            IconButton(
+                                onClick = { showRepoMenu = true },
+                                modifier = Modifier.size(36.dp).testTag("btn_project_repo_menu")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MoreVert,
+                                    contentDescription = "Project options",
+                                    tint = Color(0xFF94A3B8)
+                                )
+                            }
+
+                        DropdownMenu(
+                            expanded = showRepoMenu,
+                            onDismissRequest = { showRepoMenu = false },
                             modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .clickable { showBranchDialog = true }
-                                .padding(vertical = 1.dp)
+                                .background(Color(0xFF162032))
+                                .border(BorderStroke(1.dp, Color(0xFF283955)), RoundedCornerShape(8.dp))
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.AccountTree,
-                                contentDescription = "Branch",
-                                tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(13.dp)
+                            DropdownMenuItem(
+                                text = { Text("Switch Project / Workspace", color = Color.White, fontSize = 13.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.SwapHoriz, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showRepoMenu = false
+                                    showProjectSwitcherDialog = true
+                                }
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = currentBranch,
-                                color = Color(0xFF94A3B8),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
+                            DropdownMenuItem(
+                                text = { Text("New Project / Repository", color = Color.White, fontSize = 13.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.CreateNewFolder, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showRepoMenu = false
+                                    showNewProjectDialog = true
+                                }
                             )
-                            Icon(
-                                imageVector = Icons.Rounded.ArrowDropDown,
-                                contentDescription = null,
-                                tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(14.dp)
+                            DropdownMenuItem(
+                                text = { Text("Commit History", color = Color.White, fontSize = 13.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.History, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showRepoMenu = false
+                                    showCommitHistoryDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Switch Branch ($currentBranch)", color = Color.White, fontSize = 13.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showRepoMenu = false
+                                    showBranchDialog = true
+                                }
+                            )
+                            HorizontalDivider(color = Color(0xFF283955))
+                            DropdownMenuItem(
+                                text = { Text("Files & Storage Settings", color = Color.White, fontSize = 13.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Settings, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showRepoMenu = false
+                                    showSettingsDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Storage Usage Analytics", color = Color.White, fontSize = 13.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.PieChart, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showRepoMenu = false
+                                    coroutineScope.launch {
+                                        storageSummaryData = fileSystem.getStorageUsageSummary()
+                                    }
+                                    showStorageSummaryDialog = true
+                                }
+                            )
+                            HorizontalDivider(color = Color(0xFF283955))
+                            DropdownMenuItem(
+                                text = { Text("Copy Repository URL", color = Color(0xFFCBD5E1), fontSize = 13.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.ContentCopy, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showRepoMenu = false
+                                    clipboardManager.setText(AnnotatedString("https://github.com/gvone/$projectName.git"))
+                                    Toast.makeText(context, "Copied repository clone URL", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Refresh Repository", color = Color(0xFFCBD5E1), fontSize = 13.sp) },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Refresh, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showRepoMenu = false
+                                    refreshList()
+                                    Toast.makeText(context, "Repository refreshed", Toast.LENGTH_SHORT).show()
+                                }
                             )
                         }
                     }
-                }
-                Box {
                     IconButton(
-                        onClick = { showRepoMenu = true },
-                        modifier = Modifier.testTag("btn_project_repo_menu")
+                        onClick = onDismiss,
+                        modifier = Modifier.size(36.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.MoreVert,
-                            contentDescription = "Project options",
-                            tint = Color(0xFF94A3B8)
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = showRepoMenu,
-                        onDismissRequest = { showRepoMenu = false },
-                        modifier = Modifier
-                            .background(Color(0xFF162032))
-                            .border(BorderStroke(1.dp, Color(0xFF283955)), RoundedCornerShape(8.dp))
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Switch Project / Workspace", color = Color.White, fontSize = 13.sp) },
-                            leadingIcon = {
-                                Icon(Icons.Rounded.SwapHoriz, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
-                            },
-                            onClick = {
-                                showRepoMenu = false
-                                showProjectSwitcherDialog = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("New Project / Repository", color = Color.White, fontSize = 13.sp) },
-                            leadingIcon = {
-                                Icon(Icons.Rounded.CreateNewFolder, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
-                            },
-                            onClick = {
-                                showRepoMenu = false
-                                showNewProjectDialog = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Commit History", color = Color.White, fontSize = 13.sp) },
-                            leadingIcon = {
-                                Icon(Icons.Rounded.History, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(18.dp))
-                            },
-                            onClick = {
-                                showRepoMenu = false
-                                showCommitHistoryDialog = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Switch Branch ($currentBranch)", color = Color.White, fontSize = 13.sp) },
-                            leadingIcon = {
-                                Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(18.dp))
-                            },
-                            onClick = {
-                                showRepoMenu = false
-                                showBranchDialog = true
-                            }
-                        )
-                        HorizontalDivider(color = Color(0xFF283955))
-                        DropdownMenuItem(
-                            text = { Text("Copy Repository URL", color = Color(0xFFCBD5E1), fontSize = 13.sp) },
-                            leadingIcon = {
-                                Icon(Icons.Rounded.ContentCopy, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
-                            },
-                            onClick = {
-                                showRepoMenu = false
-                                clipboardManager.setText(AnnotatedString("https://github.com/gvone/$projectName.git"))
-                                Toast.makeText(context, "Copied repository clone URL", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Refresh Repository", color = Color(0xFFCBD5E1), fontSize = 13.sp) },
-                            leadingIcon = {
-                                Icon(Icons.Rounded.Refresh, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
-                            },
-                            onClick = {
-                                showRepoMenu = false
-                                refreshList()
-                                Toast.makeText(context, "Repository refreshed", Toast.LENGTH_SHORT).show()
-                            }
-                        )
+                        Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color(0xFF94A3B8))
                     }
                 }
             }
 
-            // =========================================================================
-            // HORIZONTAL CHIP GROUP: LATEST COMMIT HASH & TOTAL COMMIT COUNT
-            // =========================================================================
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp)
-                    .testTag("project_git_chips_row"),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Chip 1: Latest Commit Hash (Clickable to copy)
-                item {
-                    Surface(
-                        onClick = {
-                            clipboardManager.setText(AnnotatedString(latestCommitHash))
-                            Toast.makeText(
-                                context,
-                                "Commit hash $latestCommitHash copied to clipboard",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF162032),
-                        border = BorderStroke(1.dp, Color(0xFF283955)),
-                        modifier = Modifier.testTag("chip_latest_commit_hash")
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Commit,
-                                contentDescription = "Commit Hash",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = latestCommitHash,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF38BDF8)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(
-                                imageVector = Icons.Rounded.ContentCopy,
-                                contentDescription = "Copy commit hash",
-                                tint = Color(0xFF64748B),
-                                modifier = Modifier.size(12.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Chip 2: Total Commit Count
-                item {
-                    Surface(
-                        onClick = {
-                            showCommitHistoryDialog = true
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF162032),
-                        border = BorderStroke(1.dp, Color(0xFF283955)),
-                        modifier = Modifier.testTag("chip_total_commit_count")
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.History,
-                                contentDescription = "Total Commits",
-                                tint = Color(0xFFA78BFA),
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "$totalCommitCount commits",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFFE2E8F0)
-                            )
-                        }
-                    }
-                }
-
-                // Chip 3: Branch selector chip
-                item {
-                    Surface(
-                        onClick = { showBranchDialog = true },
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF162032),
-                        border = BorderStroke(1.dp, Color(0xFF283955)),
-                        modifier = Modifier.testTag("chip_branch_selector")
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.AccountTree,
-                                contentDescription = "Branches",
-                                tint = Color(0xFF34D399),
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = currentBranch,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFFE2E8F0)
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Icon(
-                                imageVector = Icons.Rounded.ArrowDropDown,
-                                contentDescription = null,
-                                tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Chip 4: Activity Time
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF162032),
-                        border = BorderStroke(1.dp, Color(0xFF283955)),
-                        modifier = Modifier.testTag("chip_activity_time")
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Schedule,
-                                contentDescription = "Recent Activity",
-                                tint = Color(0xFFFBBF24),
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Updated $latestCommitTime",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFF94A3B8)
-                            )
-                        }
-                    }
-                }
-
-                // Chip 5: Uncommitted Changes (Clickable to open Commit Dialog)
-                if (uncommittedFiles.isNotEmpty()) {
+                // =========================================================================
+                // HORIZONTAL CHIP GROUP: LATEST COMMIT HASH & TOTAL COMMIT COUNT
+                // =========================================================================
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                        .testTag("project_git_chips_row"),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Chip 1: Latest Commit Hash (Clickable to copy)
                     item {
                         Surface(
-                            onClick = { showCommitChangesDialog = true },
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(latestCommitHash))
+                                Toast.makeText(
+                                    context,
+                                    "Commit hash $latestCommitHash copied to clipboard",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0x2210B981),
-                            border = BorderStroke(1.dp, Color(0xFF10B981)),
-                            modifier = Modifier.testTag("chip_uncommitted_changes")
+                            color = Color(0xFF162032),
+                            border = BorderStroke(1.dp, Color(0xFF283955)),
+                            modifier = Modifier.testTag("chip_latest_commit_hash")
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -561,191 +478,402 @@ fun GVONEFileBrowserSheet(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Commit,
-                                    contentDescription = "Commit changes",
+                                    contentDescription = "Commit Hash",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = latestCommitHash,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF38BDF8)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Icon(
+                                    imageVector = Icons.Rounded.ContentCopy,
+                                    contentDescription = "Copy commit hash",
+                                    tint = Color(0xFF64748B),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Chip 2: Total Commit Count
+                    item {
+                        Surface(
+                            onClick = {
+                                showCommitHistoryDialog = true
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF162032),
+                            border = BorderStroke(1.dp, Color(0xFF283955)),
+                            modifier = Modifier.testTag("chip_total_commit_count")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.History,
+                                    contentDescription = "Total Commits",
+                                    tint = Color(0xFFA78BFA),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "$totalCommitCount commits",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFFE2E8F0)
+                                )
+                            }
+                        }
+                    }
+
+                    // Chip 3: Branch selector chip
+                    item {
+                        Surface(
+                            onClick = { showBranchDialog = true },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF162032),
+                            border = BorderStroke(1.dp, Color(0xFF283955)),
+                            modifier = Modifier.testTag("chip_branch_selector")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.AccountTree,
+                                    contentDescription = "Branches",
                                     tint = Color(0xFF34D399),
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "Commit (${uncommittedFiles.size})",
+                                    text = currentBranch,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF34D399)
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFFE2E8F0)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Icon(
+                                    imageVector = Icons.Rounded.ArrowDropDown,
+                                    contentDescription = null,
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(14.dp)
                                 )
                             }
                         }
                     }
-                }
-            }
 
-            // Latest commit message banner (GitHub mobile style)
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp, bottom = 8.dp)
-                    .clickable {
-                        showCommitHistoryDialog = true
-                    },
-                shape = RoundedCornerShape(10.dp),
-                color = Color(0xFF131B29),
-                border = BorderStroke(1.dp, Color(0xFF222E42))
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF38BDF8)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "G",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F172A)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = latestCommitMessage,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFF1F5F9),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "workspace-agent committed $latestCommitTime",
-                                fontSize = 10.sp,
-                                color = Color(0xFF94A3B8)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "•",
-                                fontSize = 10.sp,
-                                color = Color(0xFF64748B)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Verified",
-                                fontSize = 10.sp,
-                                color = Color(0xFF34D399),
-                                fontWeight = FontWeight.SemiBold
-                            )
+                    // Chip 4: Activity Time
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF162032),
+                            border = BorderStroke(1.dp, Color(0xFF283955)),
+                            modifier = Modifier.testTag("chip_activity_time")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Schedule,
+                                    contentDescription = "Recent Activity",
+                                    tint = Color(0xFFFBBF24),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Updated $latestCommitTime",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
                         }
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFF1E293B),
-                        border = BorderStroke(1.dp, Color(0xFF334155))
-                    ) {
-                        Text(
-                            text = latestCommitHash,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF38BDF8),
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // =========================================================================
-            // 1. TOP HEADER & SEARCH (Updated)
-            // =========================================================================
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.FolderCopy,
-                        contentDescription = null,
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (onSelectFile != null) "Select File" else "Files",
-                                color = Color.White,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            if (onSelectFile != null) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = Color(0x3338BDF8),
-                                    border = BorderStroke(1.dp, Color(0xFF38BDF8))
+                    // Chip 5: Uncommitted Changes (Clickable to open Commit Dialog)
+                    if (uncommittedFiles.isNotEmpty()) {
+                        item {
+                            Surface(
+                                onClick = { showCommitChangesDialog = true },
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0x2210B981),
+                                border = BorderStroke(1.dp, Color(0xFF10B981)),
+                                modifier = Modifier.testTag("chip_uncommitted_changes")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Commit,
+                                        contentDescription = "Commit changes",
+                                        tint = Color(0xFF34D399),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = selectionModeLabel ?: "ATTACH",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 10.sp,
+                                        text = "Commit (${uncommittedFiles.size})",
+                                        fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        color = Color(0xFF34D399)
                                     )
                                 }
                             }
                         }
-                        Text(
-                            text = if (onSelectFile != null) "Tap any file to select as ${selectionModeLabel?.lowercase() ?: "attachment"}" else "GVONE Universal File Manager",
-                            color = if (onSelectFile != null) Color(0xFF38BDF8) else Color(0xFF64748B),
-                            fontSize = 11.sp
-                        )
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // Multi-select toggle
-                    IconButton(
-                        onClick = {
-                            isMultiSelectMode = !isMultiSelectMode
-                            if (!isMultiSelectMode) selectedItemIds.clear()
+                // Latest commit message banner (GitHub mobile style)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp, bottom = 8.dp)
+                        .clickable {
+                            showCommitHistoryDialog = true
                         },
-                        modifier = Modifier.size(36.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF131B29),
+                    border = BorderStroke(1.dp, Color(0xFF222E42))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF38BDF8)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "G",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = latestCommitMessage,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFF1F5F9),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "workspace-agent committed $latestCommitTime",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "•",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF64748B)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Verified",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF34D399),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFF1E293B),
+                            border = BorderStroke(1.dp, Color(0xFF334155))
+                        ) {
+                            Text(
+                                text = latestCommitHash,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF38BDF8),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            } else {
+                // =========================================================================
+                // UNIVERSAL FILE EXPLORER HEADER (When outside a specific project)
+                // =========================================================================
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = if (isMultiSelectMode) Icons.Rounded.CheckCircle else Icons.Rounded.Checklist,
-                            contentDescription = "Multi Select",
-                            tint = if (isMultiSelectMode) Color(0xFF38BDF8) else Color(0xFF94A3B8)
+                            imageVector = Icons.Rounded.FolderCopy,
+                            contentDescription = null,
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(24.dp)
                         )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (onSelectFile != null) "Select File" else "Files",
+                                    color = Color.White,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (onSelectFile != null) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color(0x3338BDF8),
+                                        border = BorderStroke(1.dp, Color(0xFF38BDF8))
+                                    ) {
+                                        Text(
+                                            text = selectionModeLabel ?: "ATTACH",
+                                            color = Color(0xFF38BDF8),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = if (onSelectFile != null) "Tap any file to select as ${selectionModeLabel?.lowercase() ?: "attachment"}" else "GVONE Universal File Manager",
+                                color = if (onSelectFile != null) Color(0xFF38BDF8) else Color(0xFF64748B),
+                                fontSize = 11.sp
+                            )
+                        }
                     }
 
-                    // Add / Create File + button
-                    Button(
-                        onClick = { showCreateDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(34.dp).testTag("files_create_add_btn")
-                    ) {
-                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // Multi-select toggle
+                        IconButton(
+                            onClick = {
+                                isMultiSelectMode = !isMultiSelectMode
+                                if (!isMultiSelectMode) selectedItemIds.clear()
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isMultiSelectMode) Icons.Rounded.CheckCircle else Icons.Rounded.Checklist,
+                                contentDescription = "Multi Select",
+                                tint = if (isMultiSelectMode) Color(0xFF38BDF8) else Color(0xFF94A3B8)
+                            )
+                        }
 
-                    // Close Button
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color(0xFF94A3B8))
+                        // Add / Create File + button
+                        Button(
+                            onClick = { showCreateDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.height(34.dp).testTag("files_create_add_btn")
+                        ) {
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Three dots options menu (Settings, Switch Project, Storage Analytics, Refresh)
+                        Box {
+                            IconButton(
+                                onClick = { showTopOptionsMenu = true },
+                                modifier = Modifier.size(36.dp).testTag("files_top_three_dots_menu")
+                            ) {
+                                Icon(Icons.Rounded.MoreVert, contentDescription = "More Options", tint = Color(0xFF94A3B8))
+                            }
+
+                            DropdownMenu(
+                                expanded = showTopOptionsMenu,
+                                onDismissRequest = { showTopOptionsMenu = false },
+                                modifier = Modifier
+                                    .background(Color(0xFF162032))
+                                    .border(BorderStroke(1.dp, Color(0xFF283955)), RoundedCornerShape(8.dp))
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Switch Project / Workspace", color = Color.White, fontSize = 13.sp) },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.SwapHoriz, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        showTopOptionsMenu = false
+                                        showProjectSwitcherDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("New Software Project", color = Color.White, fontSize = 13.sp) },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.CreateNewFolder, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        showTopOptionsMenu = false
+                                        showNewProjectDialog = true
+                                    }
+                                )
+                                HorizontalDivider(color = Color(0xFF283955))
+                                DropdownMenuItem(
+                                    text = { Text("Files & Storage Settings", color = Color.White, fontSize = 13.sp) },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.Settings, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        showTopOptionsMenu = false
+                                        showSettingsDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Storage Usage Analytics", color = Color.White, fontSize = 13.sp) },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.PieChart, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        showTopOptionsMenu = false
+                                        coroutineScope.launch {
+                                            storageSummaryData = fileSystem.getStorageUsageSummary()
+                                        }
+                                        showStorageSummaryDialog = true
+                                    }
+                                )
+                                HorizontalDivider(color = Color(0xFF283955))
+                                DropdownMenuItem(
+                                    text = { Text("Refresh Workspace", color = Color(0xFFCBD5E1), fontSize = 13.sp) },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.Refresh, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        showTopOptionsMenu = false
+                                        refreshList()
+                                        Toast.makeText(context, "Files refreshed", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
+                        }
+
+                        // Close Button
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color(0xFF94A3B8))
+                        }
                     }
                 }
             }
@@ -813,17 +941,6 @@ fun GVONEFileBrowserSheet(
                 }
                 item {
                     LocationChip(
-                        icon = Icons.Rounded.FolderSpecial,
-                        label = "Projects",
-                        isSelected = activeLocation == StorageLocation.PROJECTS,
-                        onClick = {
-                            activeLocation = StorageLocation.PROJECTS
-                            currentFolder = ""
-                        }
-                    )
-                }
-                item {
-                    LocationChip(
                         icon = Icons.Rounded.CloudQueue,
                         label = "Cloud",
                         isSelected = activeLocation == StorageLocation.CLOUD,
@@ -871,33 +988,70 @@ fun GVONEFileBrowserSheet(
             Spacer(modifier = Modifier.height(14.dp))
 
             // =========================================================================
-            // 3. FOLDERS SHORTCUTS (Documents, Projects, Images, GVONE)
+            // 3. FOLDERS / PROJECTS SHORTCUTS (Dynamic from storageConfig.visibleFolders)
             // =========================================================================
             if (activeLocation == StorageLocation.MY_FILES && currentFolder.isEmpty()) {
-                Text(
-                    text = "FOLDERS",
-                    color = Color(0xFF64748B),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.6.sp
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "PROJECT & FOLDER SHORTCUTS",
+                        color = Color(0xFF64748B),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.6.sp
+                    )
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { showSettingsDialog = true }
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Tune,
+                            contentDescription = "Customize visible folders",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "Configure",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(6.dp))
 
-                Row(
+                val visibleShortcuts = storageConfig.visibleFolders.ifEmpty {
+                    listOf("Documents", "Projects", "Images", "GVONE")
+                }
+
+                LazyRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FolderShortcutCard(name = "Documents", icon = Icons.Rounded.Folder, modifier = Modifier.weight(1f)) {
-                        currentFolder = "Documents"
-                    }
-                    FolderShortcutCard(name = "Projects", icon = Icons.Rounded.FolderSpecial, modifier = Modifier.weight(1f)) {
-                        currentFolder = "Projects"
-                    }
-                    FolderShortcutCard(name = "Images", icon = Icons.Rounded.FolderOpen, modifier = Modifier.weight(1f)) {
-                        currentFolder = "Images"
-                    }
-                    FolderShortcutCard(name = "GVONE", icon = Icons.Rounded.FolderShared, modifier = Modifier.weight(1f)) {
-                        currentFolder = "GVONE"
+                    items(visibleShortcuts) { folderName ->
+                        val icon = when (folderName.lowercase()) {
+                            "projects" -> Icons.Rounded.FolderSpecial
+                            "images" -> Icons.Rounded.FolderOpen
+                            "gvone" -> Icons.Rounded.FolderShared
+                            "documents" -> Icons.Rounded.Folder
+                            "downloads" -> Icons.Rounded.Download
+                            "src", "app" -> Icons.Rounded.Code
+                            else -> Icons.Rounded.Folder
+                        }
+                        FolderShortcutCard(
+                            name = folderName,
+                            icon = icon,
+                            modifier = Modifier.widthIn(min = 82.dp)
+                        ) {
+                            currentFolder = folderName
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(14.dp))
@@ -1323,6 +1477,60 @@ fun GVONEFileBrowserSheet(
                         }
                     }
 
+                    // Folder as Project & Visibility Actions
+                    if (item.isDirectory) {
+                        val isProjectFolder = allProjects.any { it.projectPath == item.path || it.projectName == item.name }
+                        if (!isProjectFolder) {
+                            ActionSheetButton(icon = Icons.Rounded.RocketLaunch, label = "Initialize as Project Repository") {
+                                coroutineScope.launch {
+                                    fileSystem.gitManager.initRepo(item.path, item.name, "Software project repository")
+                                    val currentVisible = storageConfig.visibleFolders.toMutableList()
+                                    if (!currentVisible.contains(item.name)) {
+                                        currentVisible.add(item.name)
+                                        val newConfig = storageConfig.copy(visibleFolders = currentVisible)
+                                        fileSystem.saveStorageConfig(newConfig)
+                                        storageConfig = newConfig
+                                    }
+                                    refreshList()
+                                    Toast.makeText(context, "Initialized '${item.name}' as Git Project", Toast.LENGTH_SHORT).show()
+                                }
+                                showContextMenu = false
+                            }
+                        } else {
+                            ActionSheetButton(icon = Icons.Rounded.FolderSpecial, label = "Open as Active Project") {
+                                showContextMenu = false
+                                activeLocation = StorageLocation.PROJECTS
+                                currentFolder = item.path
+                                refreshList()
+                            }
+                        }
+
+                        // Pin/Unpin from visible folders
+                        val isVisibleFolder = storageConfig.visibleFolders.contains(item.name)
+                        ActionSheetButton(
+                            icon = if (isVisibleFolder) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                            label = if (isVisibleFolder) "Hide from Shortcuts Bar" else "Pin to Shortcuts Bar"
+                        ) {
+                            coroutineScope.launch {
+                                val currentVisible = storageConfig.visibleFolders.toMutableList()
+                                if (isVisibleFolder) {
+                                    currentVisible.remove(item.name)
+                                } else {
+                                    currentVisible.add(item.name)
+                                }
+                                val newConfig = storageConfig.copy(visibleFolders = currentVisible)
+                                fileSystem.saveStorageConfig(newConfig)
+                                storageConfig = newConfig
+                                Toast.makeText(
+                                    context,
+                                    if (isVisibleFolder) "Removed from Shortcuts" else "Pinned to Shortcuts",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                            showContextMenu = false
+                        }
+                    }
+
                     // Add to Favorites / Remove
                     ActionSheetButton(
                         icon = if (item.isFavorite) Icons.Rounded.StarBorder else Icons.Rounded.Star,
@@ -1586,6 +1794,47 @@ fun GVONEFileBrowserSheet(
                     refreshList()
                     showCommitChangesDialog = false
                     Toast.makeText(context, "Committed ${result.shortHash}: $message", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+
+    // 10. Files & Storage Preferences Dialog
+    if (showSettingsDialog) {
+        val allAvailableFolders = remember(fileItems, storageConfig.visibleFolders) {
+            val fromFiles = fileItems.filter { it.isDirectory }.map { it.name }
+            (fromFiles + storageConfig.visibleFolders + listOf("Documents", "Projects", "Images", "GVONE")).distinct()
+        }
+        FilesStorageSettingsDialog(
+            initialConfig = storageConfig,
+            allFolders = allAvailableFolders,
+            onDismiss = { showSettingsDialog = false },
+            onSave = { newConfig ->
+                coroutineScope.launch {
+                    fileSystem.saveStorageConfig(newConfig)
+                    storageConfig = newConfig
+                    refreshList()
+                    showSettingsDialog = false
+                    Toast.makeText(context, "Preferences saved", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+
+    // 11. Storage Usage & Analytics Dialog
+    if (showStorageSummaryDialog) {
+        StorageUsageSummaryDialog(
+            summary = storageSummaryData,
+            onDismiss = { showStorageSummaryDialog = false },
+            onExportZip = {
+                coroutineScope.launch {
+                    val zip = fileSystem.exportWorkspaceZip()
+                    if (zip != null) {
+                        Toast.makeText(context, "Exported workspace: ${zip.name}", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Workspace exported successfully", Toast.LENGTH_SHORT).show()
+                    }
+                    showStorageSummaryDialog = false
                 }
             }
         )
@@ -3365,4 +3614,384 @@ fun ProjectSwitcherDialog(
         },
         containerColor = Color(0xFF131926)
     )
+}
+
+/**
+ * Files & Storage Settings Modal Dialog.
+ * Allows configuring visible folder shortcuts, show hidden files, default download folder, and cloud sync.
+ */
+@Composable
+fun FilesStorageSettingsDialog(
+    initialConfig: FilesStorageConfig,
+    allFolders: List<String> = listOf("Documents", "Images", "Downloads", "GVONE", "Projects"),
+    onDismiss: () -> Unit,
+    onSave: (FilesStorageConfig) -> Unit
+) {
+    var showHiddenFiles by remember { mutableStateOf(initialConfig.showHiddenFiles) }
+    var autoOrganization by remember { mutableStateOf(initialConfig.autoOrganization) }
+    var cloudSyncEnabled by remember { mutableStateOf(initialConfig.cloudSyncEnabled) }
+    val availableFolders = remember(allFolders, initialConfig.visibleFolders) {
+        (allFolders + initialConfig.visibleFolders + listOf("Documents", "Images", "Downloads", "GVONE")).distinct().filter { it.isNotBlank() }
+    }
+    val selectedFolders = remember { mutableStateListOf<String>().apply { addAll(initialConfig.visibleFolders) } }
+    var defaultDownloadLocation by remember { mutableStateOf(initialConfig.defaultDownloadLocation) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF0284C7)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Files & Storage Settings",
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Customize visible project folders & system preferences",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Section 1: Visible Folders
+                Text(
+                    text = "VISIBLE FOLDER SHORTCUTS IN WORKSPACE",
+                    color = Color(0xFF38BDF8),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF0F172A),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        availableFolders.forEach { folderName ->
+                            val isChecked = selectedFolders.contains(folderName)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (isChecked) {
+                                            if (selectedFolders.size > 1) selectedFolders.remove(folderName)
+                                        } else {
+                                            selectedFolders.add(folderName)
+                                        }
+                                    }
+                                    .padding(vertical = 4.dp, horizontal = 4.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = when (folderName) {
+                                            "Projects" -> Icons.Rounded.FolderSpecial
+                                            "Documents" -> Icons.Rounded.Folder
+                                            "Downloads" -> Icons.Rounded.Download
+                                            "Images" -> Icons.Rounded.Image
+                                            else -> Icons.Rounded.FolderShared
+                                        },
+                                        contentDescription = null,
+                                        tint = when (folderName) {
+                                            "Projects" -> Color(0xFFA78BFA)
+                                            "Documents" -> Color(0xFF38BDF8)
+                                            "Downloads" -> Color(0xFF34D399)
+                                            "Images" -> Color(0xFFF472B6)
+                                            else -> Color(0xFFF59E0B)
+                                        },
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = folderName,
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                Checkbox(
+                                    checked = isChecked,
+                                    onCheckedChange = { checked ->
+                                        if (checked) selectedFolders.add(folderName)
+                                        else if (selectedFolders.size > 1) selectedFolders.remove(folderName)
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = Color(0xFF0284C7),
+                                        uncheckedColor = Color(0xFF64748B)
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Section 2: General Storage Preferences
+                Text(
+                    text = "PREFERENCES & GENERAL",
+                    color = Color(0xFF38BDF8),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF0F172A),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Hidden Files
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Show Hidden Files (.gitignore, .env)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text("Display hidden config and system dotfiles", color = Color(0xFF64748B), fontSize = 11.sp)
+                            }
+                            Switch(
+                                checked = showHiddenFiles,
+                                onCheckedChange = { showHiddenFiles = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF38BDF8))
+                            )
+                        }
+
+                        HorizontalDivider(color = Color(0xFF1E293B))
+
+                        // Cloud Sync
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Cloud Workspace Sync", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text("Automatic background syncing of workspace projects", color = Color(0xFF64748B), fontSize = 11.sp)
+                            }
+                            Switch(
+                                checked = cloudSyncEnabled,
+                                onCheckedChange = { cloudSyncEnabled = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF38BDF8))
+                            )
+                        }
+
+                        HorizontalDivider(color = Color(0xFF1E293B))
+
+                        // Auto Organization
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Smart File Auto-Categorization", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text("Automatically sort imported files into type directories", color = Color(0xFF64748B), fontSize = 11.sp)
+                            }
+                            Switch(
+                                checked = autoOrganization,
+                                onCheckedChange = { autoOrganization = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF38BDF8))
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val updated = initialConfig.copy(
+                        showHiddenFiles = showHiddenFiles,
+                        autoOrganization = autoOrganization,
+                        cloudSyncEnabled = cloudSyncEnabled,
+                        visibleFolders = selectedFolders.toList(),
+                        defaultDownloadLocation = defaultDownloadLocation
+                    )
+                    onSave(updated)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Save Preferences", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color(0xFF94A3B8))
+            }
+        },
+        containerColor = Color(0xFF131926)
+    )
+}
+
+/**
+ * Storage Usage and Analytics Dialog.
+ */
+@Composable
+fun StorageUsageSummaryDialog(
+    summary: StorageUsageSummary?,
+    onDismiss: () -> Unit,
+    onExportZip: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF7C3AED)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PieChart,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Storage & Workspace Usage",
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Local files, code repositories, and asset metrics",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        },
+        text = {
+            if (summary == null) {
+                Box(modifier = Modifier.fillMaxWidth().height(140.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF7C3AED))
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF0F172A),
+                        border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Total Storage Used", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                Text(summary.formattedTotalSize, color = Color(0xFF38BDF8), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Total Items", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                Text("${summary.totalFilesCount} files in ${summary.totalFoldersCount} folders", color = Color.White, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    Text("FOLDER BREAKDOWN", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF0F172A),
+                        border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            StorageRowItem("Projects & Repos", summary.projectsSize, Icons.Rounded.FolderSpecial, Color(0xFFA78BFA))
+                            HorizontalDivider(color = Color(0xFF1E293B))
+                            StorageRowItem("Documents & Notes", summary.documentsSize, Icons.Rounded.Folder, Color(0xFF38BDF8))
+                            HorizontalDivider(color = Color(0xFF1E293B))
+                            StorageRowItem("Downloads", summary.downloadsSize, Icons.Rounded.Download, Color(0xFF34D399))
+                            HorizontalDivider(color = Color(0xFF1E293B))
+                            StorageRowItem("Images & Media", summary.imagesSize, Icons.Rounded.Image, Color(0xFFF472B6))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Button(
+                        onClick = onExportZip,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.FolderZip, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Export All Workspace as ZIP", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = Color(0xFF94A3B8))
+            }
+        },
+        containerColor = Color(0xFF131926)
+    )
+}
+
+@Composable
+private fun StorageRowItem(name: String, size: String, icon: ImageVector, iconColor: Color) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(imageVector = icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        }
+        Text(size, color = Color(0xFFCBD5E1), fontSize = 12.sp)
+    }
 }
