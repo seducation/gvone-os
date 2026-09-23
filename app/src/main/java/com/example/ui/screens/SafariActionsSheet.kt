@@ -183,7 +183,67 @@ fun SafariActionsSheet(
                 .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 0. Top Horizontal Category Switcher Bar (Main, About, Info, Git, Notification, Widget)
+            // 0. Inspector Panel Header
+            Row(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(listOf(Color(0xFF00E5FF), Color(0xFF0083B0)))
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Explore,
+                            contentDescription = "Inspector Panel",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Inspector Panel",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Actions, controls, page tools & extensions",
+                            color = GVONETextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF1E2430))
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Close",
+                        tint = GVONETextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // Top Horizontal Category Switcher Bar (Main, About, Info, Git, Notification, Widget)
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xFF141A26),

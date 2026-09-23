@@ -33,7 +33,7 @@ enum class BrowserActionType(val actionId: String, val label: String) {
     BOOKMARKS("bookmarks", "Open Bookmarks"),
     DOWNLOADS("downloads", "Open Downloads"),
     CLOSE_TAB("close_tab", "Close Current Tab"),
-    TAB_OVERVIEW("tab_overview", "Open Tab Overview"),
+    TAB_OVERVIEW("tab_overview", "Open Navigator Panel"),
     SETTINGS("settings", "Open Settings"),
     COMMAND_MANAGER("commands", "Open Command Manager"),
     DESKTOP_MODE("desktop_mode", "Toggle Desktop Site"),

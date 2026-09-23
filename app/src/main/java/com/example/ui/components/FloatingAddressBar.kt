@@ -52,6 +52,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -500,7 +502,7 @@ fun FloatingAddressBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(rowSpacing)
             ) {
-                // 1. LEFT CIRCULAR BUTTON: Safari Tabs Switcher (Overlapping Rectangles)
+                // 1. LEFT CIRCULAR BUTTON: Navigator Panel (Tabs & Overview Switcher)
                 Box(
                     modifier = Modifier
                         .width(sideButtonWidth)
@@ -537,6 +539,9 @@ fun FloatingAddressBar(
                                     ),
                                     shape = CircleShape
                                 )
+                                .semantics {
+                                    contentDescription = "Navigator Panel"
+                                }
                                 .combinedClickable(
                                     interactionSource = leftButtonSource,
                                     indication = null,
@@ -558,7 +563,8 @@ fun FloatingAddressBar(
                         ) {
                             SafariTabsIcon(
                                 color = if (isPrivate) GVONESecondary else Color(0xFFF0F3F8),
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(22.dp),
+                                contentDescription = "Navigator Panel"
                             )
                         }
                     }
@@ -933,7 +939,7 @@ fun FloatingAddressBar(
                     }
                 }
 
-                // 3. RIGHT CIRCULAR BUTTON: Safari Actions Menu
+                // 3. RIGHT CIRCULAR BUTTON: Inspector Panel (Actions & More Menu)
                 Box(
                     modifier = Modifier
                         .width(sideButtonWidth)
@@ -970,6 +976,9 @@ fun FloatingAddressBar(
                                     ),
                                     shape = CircleShape
                                 )
+                                .semantics {
+                                    contentDescription = "Inspector Panel"
+                                }
                                 .combinedClickable(
                                     interactionSource = rightButtonSource,
                                     indication = null,
@@ -991,7 +1000,8 @@ fun FloatingAddressBar(
                         ) {
                             SafariThreeDotsIcon(
                                 color = Color(0xFFF0F3F8),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(20.dp),
+                                contentDescription = "Inspector Panel"
                             )
                         }
                     }
@@ -1229,14 +1239,19 @@ fun FloatingAddressBar(
 }
 
 /**
- * Custom Vector Canvas for Safari Tab Switcher (Overlapping Rounded Rectangles)
+ * Custom Vector Canvas for Safari Tab Switcher / Navigator Panel (Overlapping Rounded Rectangles)
  */
 @Composable
 fun SafariTabsIcon(
     color: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentDescription: String = "Navigator Panel"
 ) {
-    Canvas(modifier = modifier) {
+    Canvas(
+        modifier = modifier.semantics {
+            this.contentDescription = contentDescription
+        }
+    ) {
         val strokeWidth = 1.6.dp.toPx()
         val cornerRadius = CornerRadius(3.5.dp.toPx(), 3.5.dp.toPx())
         val cardWidth = size.width * 0.62f
@@ -1263,14 +1278,19 @@ fun SafariTabsIcon(
 }
 
 /**
- * Custom Horizontally Aligned Safari Three Dots Icon
+ * Custom Horizontally Aligned Safari Three Dots Icon / Inspector Panel
  */
 @Composable
 fun SafariThreeDotsIcon(
     color: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentDescription: String = "Inspector Panel"
 ) {
-    Canvas(modifier = modifier) {
+    Canvas(
+        modifier = modifier.semantics {
+            this.contentDescription = contentDescription
+        }
+    ) {
         val radius = 2.2.dp.toPx()
         val centerY = size.height / 2f
         val spacing = size.width / 3.2f
