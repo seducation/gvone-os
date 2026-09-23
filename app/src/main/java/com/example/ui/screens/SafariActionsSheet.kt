@@ -32,11 +32,24 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import com.example.data.model.BrowserTab
 import com.example.data.model.ShortsAudioMode
 import com.example.data.model.isInternalHomeUrl
 import com.example.ui.components.SafariShortcutsCard
 import com.example.ui.theme.*
+import kotlinx.coroutines.launch
+
+enum class SafariActionTab(val label: String, val icon: ImageVector) {
+    MAIN("Main", Icons.Rounded.Dashboard),
+    ABOUT("About", Icons.Rounded.Info),
+    INFO("Info", Icons.Rounded.Insights),
+    GIT("Git", Icons.Rounded.Source),
+    NOTIFICATION("Notification", Icons.Rounded.Notifications),
+    WIDGET("Widget", Icons.Rounded.Widgets)
+}
 
 data class MenuShortcut(
     val title: String,
@@ -122,6 +135,7 @@ fun SafariActionsSheet(
     var showSignInDialog by remember { mutableStateOf(false) }
     var zoomPercentage by remember { mutableIntStateOf(100) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
+    var selectedTab by remember { mutableStateOf(SafariActionTab.MAIN) }
 
     // Extension toggles
     var adBlockerActive by remember { mutableStateOf(true) }
@@ -169,15 +183,115 @@ fun SafariActionsSheet(
                 .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Main Scrollable Area inside the Bottom Sheet
-            LazyColumn(
+            // 0. Top Horizontal Category Switcher Bar (Main, About, Info, Git, Notification, Widget)
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF141A26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF222D3E)),
                 modifier = Modifier
                     .widthIn(max = 560.dp)
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(top = 2.dp, bottom = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 6.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SafariActionTab.values().forEach { tabItem ->
+                        val isSelected = selectedTab == tabItem
+                        val badgeCount = when (tabItem) {
+                            SafariActionTab.NOTIFICATION -> 3
+                            SafariActionTab.GIT -> 2
+                            else -> 0
+                        }
+                        Box(
+                            modifier = Modifier
+                                .height(36.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(
+                                    if (isSelected) {
+                                        Brush.horizontalGradient(
+                                            colors = listOf(Color(0xFF00E5FF), Color(0xFF0083B0))
+                                        )
+                                    } else {
+                                        Brush.linearGradient(listOf(Color(0xFF1A2232), Color(0xFF1A2232)))
+                                    }
+                                )
+                                .clickable { selectedTab = tabItem }
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                                .testTag("safari_menu_tab_${tabItem.name.lowercase()}"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = tabItem.icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) Color.White else GVONETextSecondary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = if (badgeCount > 0) "${tabItem.label} ($badgeCount)" else tabItem.label,
+                                    color = if (isSelected) Color.White else GVONETextSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Global Toast notification pill when actions are triggered
+            if (toastMessage != null) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = GVONEPrimary.copy(alpha = 0.2f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, GVONEPrimary),
+                    modifier = Modifier
+                        .widthIn(max = 560.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            tint = GVONEPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = toastMessage ?: "",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            when (selectedTab) {
+                SafariActionTab.MAIN -> {
+                    // Main Scrollable Area inside the Bottom Sheet
+                    LazyColumn(
+                        modifier = Modifier
+                            .widthIn(max = 560.dp)
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(top = 2.dp, bottom = 6.dp)
+                    ) {
                 // Toast notification pill when actions are triggered
                 if (toastMessage != null) {
                     item {
@@ -1026,6 +1140,88 @@ fun SafariActionsSheet(
                 }
             }
         }
+
+        SafariActionTab.ABOUT -> {
+            SafariAboutTabContent(
+                onOpenTerminal = {
+                    onClose()
+                    onOpenTerminal()
+                },
+                onOpenTorDiagnostics = {
+                    onClose()
+                    onOpenTorDiagnostics()
+                },
+                onOpenSettings = {
+                    onClose()
+                    onOpenSettings()
+                },
+                onShowToast = { toastMessage = it }
+            )
+        }
+
+        SafariActionTab.INFO -> {
+            SafariInfoTabContent(
+                tab = tab,
+                onReload = onReload,
+                onShare = onShare,
+                onOpenSiteInfo = {
+                    onClose()
+                    onOpenSiteInfo()
+                },
+                onShowToast = { toastMessage = it }
+            )
+        }
+
+        SafariActionTab.GIT -> {
+            SafariGitTabContent(
+                onOpenTerminal = {
+                    onClose()
+                    onOpenTerminal()
+                },
+                onShowToast = { toastMessage = it }
+            )
+        }
+
+        SafariActionTab.NOTIFICATION -> {
+            SafariNotificationTabContent(
+                onOpenFiles = {
+                    onClose()
+                    onOpenFiles()
+                },
+                onShowToast = { toastMessage = it }
+            )
+        }
+
+        SafariActionTab.WIDGET -> {
+            SafariWidgetTabContent(
+                tab = tab,
+                isShortsMuted = isShortsMuted,
+                shortsAudioMode = shortsAudioMode,
+                backgroundPlayEnabled = backgroundPlayEnabled,
+                isMediaPlaying = isMediaPlaying,
+                onToggleAudio = onToggleShortsAudio,
+                onToggleMediaPlay = onToggleMediaPlay,
+                onMediaPrevious = onMediaPrevious,
+                onMediaNext = onMediaNext,
+                onToggleBackgroundPlay = onToggleBackgroundPlay,
+                onSelectShortsAudioMode = onSelectShortsAudioMode,
+                onOpenWidgetSelection = {
+                    onClose()
+                    onOpenWidgetSelection()
+                },
+                onOpenFiles = {
+                    onClose()
+                    onOpenFiles()
+                },
+                onOpenTerminal = {
+                    onClose()
+                    onOpenTerminal()
+                },
+                onShowToast = { toastMessage = it }
+            )
+        }
+    }
+}
     }
 
     // Sign in / Sync Dialog
@@ -1852,3 +2048,1738 @@ private fun MediaPlayerMenuCard(
         }
     }
 }
+
+// -----------------------------------------------------------------------------------------
+// TAB 2: ABOUT TAB CONTENT
+// -----------------------------------------------------------------------------------------
+@Composable
+private fun SafariAboutTabContent(
+    onOpenTerminal: () -> Unit,
+    onOpenTorDiagnostics: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onShowToast: (String) -> Unit
+) {
+    var isCheckingUpdates by remember { mutableStateOf(false) }
+    var updateStatus by remember { mutableStateOf("Up to date • v4.2.8 LTS") }
+    val coroutineScope = rememberCoroutineScope()
+
+    LazyColumn(
+        modifier = Modifier
+            .widthIn(max = 560.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)
+    ) {
+        // Hero App Banner
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF131926),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    Brush.horizontalGradient(listOf(Color(0xFF00E5FF), Color(0xFF0083B0)))
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("safari_about_hero_banner")
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF0F172A),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF)),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.VerifiedUser,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00E5FF),
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        }
+
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "GVONE Browser & OS",
+                                    color = Color.White,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFF0284C7).copy(alpha = 0.25f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8))
+                                ) {
+                                    Text(
+                                        text = "PROD",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Quantum Dual-Engine Runtime • v4.2.8 LTS",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+
+                    Text(
+                        text = "Next-generation private web environment combining Chromium V8 JIT acceleration, Tor Onion privacy circuits, native sandbox filesystem, and bidirectional terminal automation.",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                }
+            }
+        }
+
+        // Live Engine Specifications & Subsystems
+        item {
+            Text(
+                text = "ENGINE SPECIFICATIONS & SUBSYSTEMS",
+                color = Color(0xFF64748B),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.6.sp,
+                modifier = Modifier.padding(horizontal = 4.dp).padding(top = 2.dp)
+            )
+        }
+
+        item {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    AboutSpecRow(
+                        title = "Core Rendering Engine",
+                        value = "Chromium Quantum / Gecko Fallback",
+                        icon = Icons.Rounded.Speed,
+                        tint = Color(0xFF38BDF8)
+                    )
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+                    AboutSpecRow(
+                        title = "JavaScript Runtime",
+                        value = "V8 Engine JIT (Isolated Contexts)",
+                        icon = Icons.Rounded.Code,
+                        tint = Color(0xFFA78BFA)
+                    )
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+                    AboutSpecRow(
+                        title = "Tor Onion Routing",
+                        value = "v3 Onion Proxy Circuits Active",
+                        icon = Icons.Rounded.Security,
+                        tint = Color(0xFF10B981)
+                    )
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+                    AboutSpecRow(
+                        title = "Bidirectional Bridge",
+                        value = "WebSocket / HTTP IPC Multiplexer v2.4",
+                        icon = Icons.Rounded.SyncAlt,
+                        tint = Color(0xFFF59E0B)
+                    )
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+                    AboutSpecRow(
+                        title = "Cryptography & Vault",
+                        value = "AES-256-GCM Hardware Encrypted",
+                        icon = Icons.Rounded.Lock,
+                        tint = Color(0xFF00E5FF)
+                    )
+                }
+            }
+        }
+
+        // Live Memory & Resource Diagnostics
+        item {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "LIVE SYSTEM TELEMETRY",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TelemetryMiniCard(
+                            label = "RAM Allocated",
+                            value = "84.6 MB",
+                            subtext = "512 MB Max",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.weight(1f)
+                        )
+                        TelemetryMiniCard(
+                            label = "V8 JS Heap",
+                            value = "26.2 MB",
+                            subtext = "Optimized",
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.weight(1f)
+                        )
+                        TelemetryMiniCard(
+                            label = "Page Cache",
+                            value = "14.8 MB",
+                            subtext = "ZRAM x2.8",
+                            tint = Color(0xFFA78BFA),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Update Check & Quick Action Triggers
+        item {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "Software Updates",
+                                color = Color.White,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = updateStatus,
+                                color = if (isCheckingUpdates) Color(0xFF38BDF8) else Color(0xFF10B981),
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                if (!isCheckingUpdates) {
+                                    isCheckingUpdates = true
+                                    updateStatus = "Checking repository..."
+                                    coroutineScope.launch {
+                                        kotlinx.coroutines.delay(1300)
+                                        isCheckingUpdates = false
+                                        updateStatus = "Up to date • v4.2.8 LTS"
+                                        onShowToast("GVONE OS is running the latest build")
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isCheckingUpdates) Color(0xFF1E293B) else Color(0xFF0284C7)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            if (isCheckingUpdates) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Checking", fontSize = 11.sp, color = Color.White)
+                            } else {
+                                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Check Now", fontSize = 11.sp, color = Color.White)
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onOpenTerminal,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF38BDF8))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("CLI Console", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                        }
+
+                        OutlinedButton(
+                            onClick = onOpenTorDiagnostics,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF10B981))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Tor Onion", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                        }
+
+                        OutlinedButton(
+                            onClick = onOpenSettings,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Rounded.Settings, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF94A3B8))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Settings", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------
+// TAB 3: INFO TAB CONTENT (Page & Connection Inspector)
+// -----------------------------------------------------------------------------------------
+@Composable
+private fun SafariInfoTabContent(
+    tab: BrowserTab?,
+    onReload: () -> Unit,
+    onShare: () -> Unit,
+    onOpenSiteInfo: () -> Unit,
+    onShowToast: (String) -> Unit
+) {
+    val clipboardManager = LocalClipboardManager.current
+    val currentUrl = tab?.url ?: ""
+    val isSecure = currentUrl.startsWith("https://")
+    val isOnion = currentUrl.contains(".onion")
+    val isInternal = isInternalHomeUrl(currentUrl)
+
+    LazyColumn(
+        modifier = Modifier
+            .widthIn(max = 560.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)
+    ) {
+        // Page Overview Card
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF131926),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (isSecure || isOnion) Color(0xFF10B981).copy(alpha = 0.6f) else Color(0xFF243042)
+                ),
+                modifier = Modifier.fillMaxWidth().testTag("safari_info_page_overview")
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = when {
+                                isOnion -> Color(0xFF8B5CF6).copy(alpha = 0.2f)
+                                isSecure -> Color(0xFF10B981).copy(alpha = 0.2f)
+                                else -> Color(0xFF38BDF8).copy(alpha = 0.2f)
+                            },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = when {
+                                        isOnion -> Icons.Rounded.Security
+                                        isSecure -> Icons.Rounded.Lock
+                                        else -> Icons.Rounded.Language
+                                    },
+                                    contentDescription = null,
+                                    tint = when {
+                                        isOnion -> Color(0xFFA78BFA)
+                                        isSecure -> Color(0xFF34D399)
+                                        else -> Color(0xFF38BDF8)
+                                    },
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = tab?.title?.ifBlank { "Untitled Page" } ?: "Untitled Page",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = currentUrl.ifBlank { "about:blank" },
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = when {
+                                isOnion -> Color(0xFF8B5CF6).copy(alpha = 0.2f)
+                                isSecure -> Color(0xFF10B981).copy(alpha = 0.2f)
+                                else -> Color(0xFF334155)
+                            }
+                        ) {
+                            Text(
+                                text = when {
+                                    isOnion -> "ONION v3"
+                                    isSecure -> "TLS 1.3"
+                                    isInternal -> "LOCAL"
+                                    else -> "HTTP"
+                                },
+                                color = when {
+                                    isOnion -> Color(0xFFA78BFA)
+                                    isSecure -> Color(0xFF34D399)
+                                    else -> Color(0xFF94A3B8)
+                                },
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+
+                    // Quick buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(currentUrl))
+                                onShowToast("URL copied to clipboard")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF38BDF8))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Copy URL", fontSize = 11.sp, color = Color.White)
+                        }
+
+                        Button(
+                            onClick = onShare,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF38BDF8))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Share", fontSize = 11.sp, color = Color.White)
+                        }
+
+                        Button(
+                            onClick = onOpenSiteInfo,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color.White)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Details", fontSize = 11.sp, color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Security & Cryptographic Details
+        item {
+            Text(
+                text = "CONNECTION & CERTIFICATE ENCRYPTION",
+                color = Color(0xFF64748B),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.6.sp,
+                modifier = Modifier.padding(horizontal = 4.dp).padding(top = 2.dp)
+            )
+        }
+
+        item {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AboutSpecRow(
+                        title = "Security Protocol",
+                        value = if (isSecure) "TLS 1.3 / HTTP/3 QUIC" else if (isOnion) "Tor v3 End-to-End" else "Unencrypted HTTP",
+                        icon = Icons.Rounded.Lock,
+                        tint = if (isSecure || isOnion) Color(0xFF10B981) else Color(0xFFEF4444)
+                    )
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+                    AboutSpecRow(
+                        title = "Cipher Suite",
+                        value = "TLS_AES_256_GCM_SHA384 (X25519)",
+                        icon = Icons.Rounded.Key,
+                        tint = Color(0xFF38BDF8)
+                    )
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+                    AboutSpecRow(
+                        title = "Certificate Authority",
+                        value = if (isSecure) "Google Trust Services / DigiCert" else "Self-Signed / Tor v3 Hidden",
+                        icon = Icons.Rounded.VerifiedUser,
+                        tint = Color(0xFFA78BFA)
+                    )
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+                    AboutSpecRow(
+                        title = "Mixed Insecure Content",
+                        value = "Strictly Blocked (0 insecure items)",
+                        icon = Icons.Rounded.Shield,
+                        tint = Color(0xFF10B981)
+                    )
+                }
+            }
+        }
+
+        // Privacy & Telemetry Blocked
+        item {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "PAGE PRIVACY & SHIELD ANALYTICS",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TelemetryMiniCard(
+                            label = "Trackers Blocked",
+                            value = "34",
+                            subtext = "Scripts blocked",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.weight(1f)
+                        )
+                        TelemetryMiniCard(
+                            label = "Fingerprints",
+                            value = "12",
+                            subtext = "Canvas masked",
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.weight(1f)
+                        )
+                        TelemetryMiniCard(
+                            label = "3rd-Party Cookies",
+                            value = "0",
+                            subtext = "Sandboxed",
+                            tint = Color(0xFFA78BFA),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+
+        // DOM & Performance Metrics
+        item {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Page Load Latency", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("DOM Loaded in 184 ms • 22 requests", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        }
+                        Text("184 ms", color = Color(0xFF10B981), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { onShowToast("DOM Inspector initialized in Developer Bar") },
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.Code, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF38BDF8))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Inspect DOM", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                        }
+
+                        OutlinedButton(
+                            onClick = { onShowToast("Cookies & storage cleared for this site") },
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFFEF4444))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Clear Site Data", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------
+// TAB 4: GIT TAB CONTENT (Workspace & Repository Control)
+// -----------------------------------------------------------------------------------------
+@Composable
+private fun SafariGitTabContent(
+    onOpenTerminal: () -> Unit,
+    onShowToast: (String) -> Unit
+) {
+    var commitMessage by remember { mutableStateOf("") }
+    var selectedBranch by remember { mutableStateOf("main") }
+    var isDiffExpanded by remember { mutableStateOf(false) }
+    var isCommitting by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    val branches = listOf("main", "feature/tab-groups", "dev", "+ New Branch")
+
+    LazyColumn(
+        modifier = Modifier
+            .widthIn(max = 560.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)
+    ) {
+        // Repository Status Header
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF131926),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.6f)),
+                modifier = Modifier.fillMaxWidth().testTag("safari_git_repo_header")
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFF0F172A),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8)),
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Source,
+                                        contentDescription = null,
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            Column {
+                                Text(
+                                    text = "gvone-browser-workspace",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF10B981))
+                                    )
+                                    Text(
+                                        text = "origin/main • commit 8f21bc4",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFF10B981).copy(alpha = 0.2f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981))
+                        ) {
+                            Text(
+                                text = "2 Modified",
+                                color = Color(0xFF34D399),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+
+                    // Branch Switcher Pills
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        branches.forEach { branch ->
+                            val isSelected = selectedBranch == branch
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) Color(0xFF38BDF8) else Color(0xFF334155)
+                                ),
+                                modifier = Modifier.clickable {
+                                    if (branch == "+ New Branch") {
+                                        onShowToast("Create new branch dialog")
+                                    } else {
+                                        selectedBranch = branch
+                                        onShowToast("Switched to branch $branch")
+                                    }
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ForkRight,
+                                        contentDescription = null,
+                                        tint = if (isSelected) Color.White else Color(0xFF94A3B8),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Text(
+                                        text = branch,
+                                        color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Git Quick Actions Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = { onShowToast("Git Pull: Already up to date") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF38BDF8))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Pull", fontSize = 11.sp, color = Color.White)
+                        }
+
+                        Button(
+                            onClick = { onShowToast("Git Push: Synced with origin/main") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.Upload, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFF10B981))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Push", fontSize = 11.sp, color = Color.White)
+                        }
+
+                        Button(
+                            onClick = { onShowToast("Git Fetch: Remote references updated") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color(0xFFF59E0B))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Fetch", fontSize = 11.sp, color = Color.White)
+                        }
+
+                        Button(
+                            onClick = { isDiffExpanded = !isDiffExpanded },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDiffExpanded) Color(0xFF0284C7) else Color(0xFF1E293B)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Rounded.Difference, contentDescription = null, modifier = Modifier.size(13.dp), tint = Color.White)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Diff", fontSize = 11.sp, color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Working Tree Changes
+        item {
+            Text(
+                text = "WORKING TREE MODIFIED FILES",
+                color = Color(0xFF64748B),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.6.sp,
+                modifier = Modifier.padding(horizontal = 4.dp).padding(top = 2.dp)
+            )
+        }
+
+        item {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    GitFileChangeRow(
+                        fileName = "SafariActionsSheet.kt",
+                        path = "app/src/main/java/com/example/ui/screens/",
+                        status = "MODIFIED",
+                        diffText = "+140 -12",
+                        statusColor = Color(0xFFF59E0B)
+                    )
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+                    GitFileChangeRow(
+                        fileName = "TabOverviewScreen.kt",
+                        path = "app/src/main/java/com/example/ui/screens/",
+                        status = "MODIFIED",
+                        diffText = "+85 -4",
+                        statusColor = Color(0xFFF59E0B)
+                    )
+
+                    AnimatedVisibility(visible = isDiffExpanded) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF0F141D))
+                                .padding(10.dp)
+                        ) {
+                            Text(
+                                text = "@@ -180,6 +180,24 @@ Top Horizontal Pill Bar",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 10.5.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = "+ Surface(shape = RoundedCornerShape(20.dp))",
+                                color = Color(0xFF34D399),
+                                fontSize = 10.5.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = "+   Row(horizontalArrangement = spacedBy(6.dp))",
+                                color = Color(0xFF34D399),
+                                fontSize = 10.5.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = "+     SafariActionTab.values().forEach { ... }",
+                                color = Color(0xFF34D399),
+                                fontSize = 10.5.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Commit Message Composer
+        item {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "COMMIT CHANGES TO $selectedBranch",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    OutlinedTextField(
+                        value = commitMessage,
+                        onValueChange = { commitMessage = it },
+                        placeholder = { Text("feat: add horizontal tabs to safari action sheet", fontSize = 12.sp, color = Color(0xFF64748B)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF0284C7),
+                            unfocusedBorderColor = Color(0xFF334155),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (commitMessage.isBlank()) {
+                                    onShowToast("Please enter a commit message")
+                                } else {
+                                    isCommitting = true
+                                    coroutineScope.launch {
+                                        kotlinx.coroutines.delay(800)
+                                        isCommitting = false
+                                        val msg = commitMessage
+                                        commitMessage = ""
+                                        onShowToast("Committed: $msg")
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            if (isCommitting) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Commit", fontSize = 11.5.sp, color = Color.White)
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = onOpenTerminal,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF38BDF8))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Open Git CLI", fontSize = 11.5.sp, color = Color(0xFFE2E8F0))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Commit Log Timeline
+        item {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "RECENT COMMIT HISTORY",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    GitCommitItem(
+                        hash = "8f21bc4",
+                        message = "feat: add horizontal tab layout to safari bottom sheet",
+                        author = "GVONE System",
+                        time = "Just now",
+                        isHead = true
+                    )
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+                    GitCommitItem(
+                        hash = "a3f910b",
+                        message = "feat: add Files category to tab overview pill bar",
+                        author = "GVONE System",
+                        time = "15m ago"
+                    )
+                    HorizontalDivider(color = Color(0xFF233044), thickness = 0.5.dp)
+                    GitCommitItem(
+                        hash = "c991e20",
+                        message = "perf: optimize memory footprint & tab switching",
+                        author = "GVONE Core",
+                        time = "1h ago"
+                    )
+                }
+            }
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------
+// TAB 5: NOTIFICATION TAB CONTENT (Browser Notifications & Events)
+// -----------------------------------------------------------------------------------------
+@Composable
+private fun SafariNotificationTabContent(
+    onOpenFiles: () -> Unit,
+    onShowToast: (String) -> Unit
+) {
+    var selectedFilter by remember { mutableStateOf("All") }
+    val filters = listOf("All", "Downloads", "Security", "Bridge")
+
+    LazyColumn(
+        modifier = Modifier
+            .widthIn(max = 560.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)
+    ) {
+        // Notification Filter Chips & Clear All
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF131926),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth().testTag("safari_notification_header")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        filters.forEach { filter ->
+                            val isSelected = selectedFilter == filter
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) Color(0xFF38BDF8) else Color(0xFF334155)
+                                ),
+                                modifier = Modifier.clickable { selectedFilter = filter }
+                            ) {
+                                Text(
+                                    text = filter,
+                                    color = if (isSelected) Color.White else Color(0xFF94A3B8),
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    TextButton(
+                        onClick = { onShowToast("Notifications cleared") },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text("Clear All", fontSize = 11.sp, color = Color(0xFF38BDF8))
+                    }
+                }
+            }
+        }
+
+        // Notification Cards Stream
+        if (selectedFilter == "All" || selectedFilter == "Security") {
+            item {
+                NotificationItemCard(
+                    title = "Anti-Fingerprinting Shield Active",
+                    body = "Blocked 14 canvas & WebGL fingerprint attempts on current domain",
+                    timestamp = "4m ago",
+                    icon = Icons.Rounded.Shield,
+                    badgeColor = Color(0xFF10B981),
+                    actionLabel = "Review Shield",
+                    onAction = { onShowToast("Shield telemetry: 14 blocked") }
+                )
+            }
+        }
+
+        if (selectedFilter == "All" || selectedFilter == "Downloads") {
+            item {
+                NotificationItemCard(
+                    title = "Download Complete: document_preview.pdf",
+                    body = "2.4 MB • Saved to /storage/emulated/0/Download/GVONE",
+                    timestamp = "12m ago",
+                    icon = Icons.Rounded.DownloadDone,
+                    badgeColor = Color(0xFF38BDF8),
+                    actionLabel = "Open in Files",
+                    onAction = {
+                        onOpenFiles()
+                    }
+                )
+            }
+        }
+
+        if (selectedFilter == "All" || selectedFilter == "Bridge") {
+            item {
+                NotificationItemCard(
+                    title = "Bidirectional Bridge Connected",
+                    body = "WebSocket IPC connected to CharAssist AI multiplexer on :8080",
+                    timestamp = "25m ago",
+                    icon = Icons.Rounded.SyncAlt,
+                    badgeColor = Color(0xFFF59E0B),
+                    actionLabel = "Bridge Status",
+                    onAction = { onShowToast("Bridge IPC healthy • 0 packet drops") }
+                )
+            }
+        }
+
+        if (selectedFilter == "All" || selectedFilter == "Downloads") {
+            item {
+                NotificationItemCard(
+                    title = "Download Complete: app-release.apk",
+                    body = "18.1 MB • SHA256 verified",
+                    timestamp = "1h ago",
+                    icon = Icons.Rounded.DownloadDone,
+                    badgeColor = Color(0xFF38BDF8),
+                    actionLabel = "Show in Files",
+                    onAction = { onOpenFiles() }
+                )
+            }
+        }
+
+        if (selectedFilter == "All" || selectedFilter == "Security") {
+            item {
+                NotificationItemCard(
+                    title = "RAM Optimizer Report",
+                    body = "Freed 142 MB by sleeping 3 idle background tabs",
+                    timestamp = "2h ago",
+                    icon = Icons.Rounded.Speed,
+                    badgeColor = Color(0xFFA78BFA),
+                    actionLabel = "View Memory",
+                    onAction = { onShowToast("Current RAM: 84 MB allocated") }
+                )
+            }
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------
+// TAB 6: WIDGET TAB CONTENT (Interactive In-Sheet Widgets & Tools)
+// -----------------------------------------------------------------------------------------
+@Composable
+private fun SafariWidgetTabContent(
+    tab: BrowserTab?,
+    isShortsMuted: Boolean,
+    shortsAudioMode: ShortsAudioMode,
+    backgroundPlayEnabled: Boolean,
+    isMediaPlaying: Boolean,
+    onToggleAudio: () -> Unit,
+    onToggleMediaPlay: () -> Unit,
+    onMediaPrevious: () -> Unit,
+    onMediaNext: () -> Unit,
+    onToggleBackgroundPlay: () -> Unit,
+    onSelectShortsAudioMode: (ShortsAudioMode) -> Unit,
+    onOpenWidgetSelection: () -> Unit,
+    onOpenFiles: () -> Unit,
+    onOpenTerminal: () -> Unit,
+    onShowToast: (String) -> Unit
+) {
+    var noteText by remember { mutableStateOf("Quick idea: Check out Web Portion canvas extraction on Wikipedia article...") }
+    val clipboardManager = LocalClipboardManager.current
+
+    LazyColumn(
+        modifier = Modifier
+            .widthIn(max = 560.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp)
+    ) {
+        // Widget 1: Background Media & Audio Controller Widget
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF131926),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth().testTag("safari_widget_media_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Rounded.PlayCircle, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                            Text("Background Audio & Media Player", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Switch(
+                            checked = backgroundPlayEnabled,
+                            onCheckedChange = {
+                                onToggleBackgroundPlay()
+                                onShowToast(if (it) "Background Audio Enabled" else "Background Audio Disabled")
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF00E5FF),
+                                uncheckedThumbColor = Color(0xFF94A3B8),
+                                uncheckedTrackColor = Color(0xFF1E293B)
+                            ),
+                            modifier = Modifier.scale(0.75f)
+                        )
+                    }
+
+                    // Media Track & Controls
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF0F1520))
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = tab?.title?.ifBlank { "Ambient Audio Stream" } ?: "Ambient Audio Stream",
+                                color = Color.White,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = if (backgroundPlayEnabled) "Background Audio: Active" else "Ready",
+                                color = if (backgroundPlayEnabled) Color(0xFF34D399) else Color(0xFF94A3B8),
+                                fontSize = 10.5.sp
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            IconButton(
+                                onClick = onMediaPrevious,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+
+                            IconButton(
+                                onClick = onToggleMediaPlay,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF00E5FF))
+                            ) {
+                                Icon(
+                                    imageVector = if (isMediaPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                    contentDescription = "Play/Pause",
+                                    tint = Color(0xFF0A0E17),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = onMediaNext,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Rounded.SkipNext, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Widget 2: Quick Scratchpad Note Widget
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth().testTag("safari_widget_scratchpad")
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Rounded.EditNote, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(20.dp))
+                            Text("Quick Scratchpad & Clipboard", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            IconButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(noteText))
+                                    onShowToast("Note copied to clipboard")
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy", tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    noteText = ""
+                                    onShowToast("Note cleared")
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Clear", tint = Color(0xFF94A3B8), modifier = Modifier.size(15.dp))
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = noteText,
+                        onValueChange = { noteText = it },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFF59E0B),
+                            unfocusedBorderColor = Color(0xFF334155),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 4
+                    )
+                }
+            }
+        }
+
+        // Widget 3: Live Crypto & Market Ticker
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth().testTag("safari_widget_crypto_ticker")
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Rounded.TrendingUp, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+                            Text("Market & Crypto Tickers", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        IconButton(
+                            onClick = { onShowToast("Market rates refreshed") },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh", tint = Color(0xFF94A3B8), modifier = Modifier.size(15.dp))
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        LiveCryptoCard(symbol = "BTC", price = "$68,420", change = "+3.4%", isPositive = true, modifier = Modifier.weight(1f))
+                        LiveCryptoCard(symbol = "ETH", price = "$3,540", change = "+2.1%", isPositive = true, modifier = Modifier.weight(1f))
+                        LiveCryptoCard(symbol = "SOL", price = "$184", change = "+5.8%", isPositive = true, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+
+        // Widget 4: Quick CLI Launcher & Web Portion Canvas
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF161C26),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "CANVAS & TERMINAL LAUNCHERS",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onOpenWidgetSelection,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Rounded.Widgets, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF38BDF8))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Canvas Widgets", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                        }
+
+                        OutlinedButton(
+                            onClick = onOpenTerminal,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Rounded.Terminal, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF10B981))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("CLI Commands", fontSize = 11.sp, color = Color(0xFFE2E8F0))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------
+// REUSABLE SUB-COMPONENTS FOR TAB VIEWS
+// -----------------------------------------------------------------------------------------
+
+@Composable
+private fun AboutSpecRow(
+    title: String,
+    value: String,
+    icon: ImageVector,
+    tint: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+            Text(text = title, color = Color(0xFFCBD5E1), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        }
+        Text(text = value, color = Color(0xFF94A3B8), fontSize = 11.5.sp)
+    }
+}
+
+@Composable
+private fun TelemetryMiniCard(
+    label: String,
+    value: String,
+    subtext: String,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFF0F1520),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF233044)),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(text = label, color = Color(0xFF94A3B8), fontSize = 10.sp)
+            Text(text = value, color = tint, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(text = subtext, color = Color(0xFF64748B), fontSize = 9.sp)
+        }
+    }
+}
+
+@Composable
+private fun GitFileChangeRow(
+    fileName: String,
+    path: String,
+    status: String,
+    diffText: String,
+    statusColor: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = statusColor.copy(alpha = 0.2f)
+            ) {
+                Text(
+                    text = status.take(1),
+                    color = statusColor,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                )
+            }
+            Column {
+                Text(text = fileName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text(text = path, color = Color(0xFF64748B), fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Text(text = diffText, color = Color(0xFF34D399), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+    }
+}
+
+@Composable
+private fun GitCommitItem(
+    hash: String,
+    message: String,
+    author: String,
+    time: String,
+    isHead: Boolean = false
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(0xFF1E293B)
+                ) {
+                    Text(
+                        text = hash,
+                        color = Color(0xFF38BDF8),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+                if (isHead) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFF0284C7).copy(alpha = 0.3f)
+                    ) {
+                        Text(
+                            text = "HEAD",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
+            Text(text = time, color = Color(0xFF64748B), fontSize = 10.sp)
+        }
+        Text(text = message, color = Color(0xFFCBD5E1), fontSize = 11.5.sp, fontWeight = FontWeight.Normal)
+        Text(text = "by $author", color = Color(0xFF64748B), fontSize = 9.5.sp)
+    }
+}
+
+@Composable
+private fun NotificationItemCard(
+    title: String,
+    body: String,
+    timestamp: String,
+    icon: ImageVector,
+    badgeColor: Color,
+    actionLabel: String,
+    onAction: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF161C26),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF243042)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = badgeColor.copy(alpha = 0.2f),
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(imageVector = icon, contentDescription = null, tint = badgeColor, modifier = Modifier.size(15.dp))
+                        }
+                    }
+                    Text(text = title, color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Text(text = timestamp, color = Color(0xFF64748B), fontSize = 10.sp)
+            }
+
+            Text(text = body, color = Color(0xFF94A3B8), fontSize = 11.5.sp, lineHeight = 16.sp)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(
+                    onClick = onAction,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(text = actionLabel, fontSize = 11.sp, color = badgeColor, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveCryptoCard(
+    symbol: String,
+    price: String,
+    change: String,
+    isPositive: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFF0F1520),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF233044)),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(text = symbol, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(text = price, color = Color(0xFFCBD5E1), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(text = change, color = if (isPositive) Color(0xFF10B981) else Color(0xFFEF4444), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+

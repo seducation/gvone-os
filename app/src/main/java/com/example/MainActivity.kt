@@ -603,6 +603,9 @@ fun BrowserApp(
                 isPrivateMode = isPrivateMode,
                 environments = environments,
                 currentEnvironment = currentEnvironment,
+                fileSystem = viewModel.fileSystem,
+                onOpenFileInTab = { file, inNewTab -> viewModel.openFileInTab(file, inNewTab) },
+                onOpenFilesSheet = { viewModel.openFiles(false) },
                 onSelectEnvironment = { viewModel.switchEnvironment(it) },
                 onCreateEnvironment = { name, icon, theme, preset, initialLinkUrl, initialLinkTitle ->
                     viewModel.createEnvironment(name, icon, theme, preset, initialLinkUrl, initialLinkTitle)

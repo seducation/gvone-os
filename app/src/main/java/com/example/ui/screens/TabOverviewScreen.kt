@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -8,14 +12,17 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -31,17 +38,21 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import com.example.data.files.*
 import com.example.data.model.BrowserTab
 import com.example.data.model.Environment
 import com.example.data.model.TabGroup
@@ -53,6 +64,8 @@ import com.example.ui.screens.canvas.CreateEnvironmentDialog
 import com.example.ui.screens.canvas.EnvironmentSwitchSheet
 import com.example.ui.screens.canvas.getIconForName
 import com.example.ui.theme.*
+import kotlinx.coroutines.launch
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,6 +79,9 @@ fun TabOverviewScreen(
     isPrivateMode: Boolean,
     environments: List<Environment> = emptyList(),
     currentEnvironment: Environment? = null,
+    fileSystem: GVONEFileSystem? = null,
+    onOpenFileInTab: ((GVONEFileItem, inNewTab: Boolean) -> Unit)? = null,
+    onOpenFilesSheet: (() -> Unit)? = null,
     onSelectEnvironment: (String) -> Unit = {},
     onCreateEnvironment: (name: String, icon: String, theme: String, preset: String, initialLinkUrl: String?, initialLinkTitle: String?) -> Unit = { _, _, _, _, _, _ -> },
     onDuplicateEnvironment: (String) -> Unit = {},
@@ -95,22 +111,32 @@ fun TabOverviewScreen(
     onCloseOverview: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val fs = remember(fileSystem) { fileSystem ?: GVONEFileSystem(context) }
+
     // Navigation state: null = Root All Tabs (Folders + Ungrouped), non-null = Viewing specific Folder
     var currentFolderId by remember { mutableStateOf<String?>(null) }
 
     // Search and filter state
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
-    var selectedCategory by rememberSaveable { mutableStateOf(0) } // 0 = Tabs, 1 = Chats
+    var selectedCategory by rememberSaveable { mutableStateOf(0) } // 0 = Tabs, 1 = Chats, 2 = Files
+
+    // Files state
+    var allFiles by remember { mutableStateOf<List<GVONEFileItem>>(emptyList()) }
+    var folderFiles by remember { mutableStateOf<List<GVONEFileItem>>(emptyList()) }
+    var isFilesLoading by remember { mutableStateOf(false) }
 
     // Custom shortcuts added by the user in Tab Overview
     var customShortcuts by remember { mutableStateOf<List<MenuShortcut>>(emptyList()) }
 
-    // Selection mode state (both tabs and chats)
+    // Selection mode state (tabs, chats, files)
     var isSelectionMode by remember { mutableStateOf(false) }
     var selectedTabIds by remember { mutableStateOf(setOf<String>()) }
     var selectedChatIds by remember { mutableStateOf(setOf<String>()) }
-    val totalSelectedCount = selectedTabIds.size + selectedChatIds.size
+    var selectedFileIds by remember { mutableStateOf(setOf<String>()) }
+    val totalSelectedCount = selectedTabIds.size + selectedChatIds.size + selectedFileIds.size
 
     // Dialogs & Context menus state
     var showCreateGroupDialog by remember { mutableStateOf(false) }
@@ -125,11 +151,53 @@ fun TabOverviewScreen(
     var showEnvironmentSheet by remember { mutableStateOf(false) }
     var showCreateEnvironmentDialog by remember { mutableStateOf(false) }
 
+    // File Action Dialogs
+    var showCreateFileDialog by remember { mutableStateOf(false) }
+    var fileToPreview by remember { mutableStateOf<GVONEFileItem?>(null) }
+    var fileToRename by remember { mutableStateOf<GVONEFileItem?>(null) }
+    var fileToDelete by remember { mutableStateOf<GVONEFileItem?>(null) }
+
     // Drag and Drop tracking
     var draggingTabId by remember { mutableStateOf<String?>(null) }
     var dragPosition by remember { mutableStateOf(Offset.Zero) }
     val folderBounds = remember { mutableStateMapOf<String, Rect>() }
     var hoveredFolderId by remember { mutableStateOf<String?>(null) }
+
+    // Reload files for workspace and folder
+    val reloadFiles: () -> Unit = {
+        coroutineScope.launch {
+            isFilesLoading = true
+            try {
+                val rootFiles = fs.listFiles(StorageLocation.MY_FILES, currentFolder = "")
+                allFiles = rootFiles
+                if (currentFolderId != null) {
+                    val group = tabGroups.find { it.id == currentFolderId }
+                    val groupFolderName = group?.name ?: ""
+                    val directGroupFiles = if (groupFolderName.isNotEmpty()) {
+                        fs.listFiles(StorageLocation.MY_FILES, currentFolder = groupFolderName)
+                    } else {
+                        emptyList()
+                    }
+                    folderFiles = if (directGroupFiles.isNotEmpty()) {
+                        directGroupFiles
+                    } else {
+                        rootFiles.filter { it.path.contains(groupFolderName, ignoreCase = true) || it.name.contains(groupFolderName, ignoreCase = true) }
+                    }
+                } else {
+                    folderFiles = emptyList()
+                }
+            } catch (_: Exception) {
+                allFiles = emptyList()
+                folderFiles = emptyList()
+            } finally {
+                isFilesLoading = false
+            }
+        }
+    }
+
+    LaunchedEffect(currentFolderId, tabGroups) {
+        reloadFiles()
+    }
 
     // Handle back inside TabOverviewScreen gracefully
     BackHandler(enabled = isSearchActive || searchQuery.isNotEmpty() || isSelectionMode || currentFolderId != null) {
@@ -140,6 +208,7 @@ fun TabOverviewScreen(
                 isSelectionMode = false
                 selectedTabIds = emptySet()
                 selectedChatIds = emptySet()
+                selectedFileIds = emptySet()
             }
             currentFolderId != null -> currentFolderId = null
         }
@@ -179,7 +248,7 @@ fun TabOverviewScreen(
         emptyList<TerminalSession>()
     }
 
-    // Search results across all tabs, chats, and folders
+    // Search results across all tabs, chats, and files
     val isSearching = searchQuery.isNotBlank()
     val searchResultsTabs = remember(modeTabs, tabGroups, searchQuery) {
         if (isSearching) {
@@ -206,12 +275,24 @@ fun TabOverviewScreen(
         }
     }
 
+    val searchResultsFiles = remember(allFiles, searchQuery) {
+        if (isSearching) {
+            val q = searchQuery.trim().lowercase()
+            allFiles.filter { file ->
+                file.name.lowercase().contains(q) ||
+                file.extension.lowercase().contains(q) ||
+                file.path.lowercase().contains(q)
+            }
+        } else {
+            emptyList()
+        }
+    }
+
     var isShortcutsExpanded by rememberSaveable { mutableStateOf(false) }
 
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                // Swiping up when shortcuts are expanded collapses them
                 if (available.y < -20f && isShortcutsExpanded) {
                     isShortcutsExpanded = false
                 }
@@ -223,7 +304,6 @@ fun TabOverviewScreen(
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
-                // Pulling down from anywhere on the tabs list expands shortcuts
                 if (available.y > 10f && !isShortcutsExpanded) {
                     isShortcutsExpanded = true
                     return Offset(0f, available.y)
@@ -270,8 +350,10 @@ fun TabOverviewScreen(
                         folder = currentFolder,
                         tabCount = folderTabs.size,
                         chatCount = folderChats.size,
+                        fileCount = folderFiles.size,
                         onBack = { currentFolderId = null },
                         onAddTab = { onNewTab(currentFolder.id) },
+                        onAddFile = { showCreateFileDialog = true },
                         onRename = { groupToRename = currentFolder },
                         onCloseAllInFolder = { onCloseTabsInGroup(currentFolder.id) },
                         onDeleteFolder = { groupToDelete = currentFolder }
@@ -311,6 +393,7 @@ fun TabOverviewScreen(
                             if (!isSelectionMode) {
                                 selectedTabIds = emptySet()
                                 selectedChatIds = emptySet()
+                                selectedFileIds = emptySet()
                             }
                         },
                         showSortMenu = showSortMenu,
@@ -327,7 +410,7 @@ fun TabOverviewScreen(
                     )
                 }
 
-                // Shortcuts UI: matching the one in the bottom-right three-dot menu, positioned below "Arrange Tabs By"
+                // Shortcuts UI: positioned below header
                 if (!isSearching) {
                     Spacer(modifier = Modifier.height(8.dp))
                     SafariShortcutsCard(
@@ -356,6 +439,7 @@ fun TabOverviewScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            // --- CATEGORY PILL BAR: Tabs | Chats | Files ---
             if (!isSearching) {
                 Row(
                     modifier = Modifier
@@ -367,7 +451,11 @@ fun TabOverviewScreen(
                         .padding(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Category 1: Tabs
+                    val activeTabCount = if (currentFolderId != null) folderTabs.size else modeTabs.size
+                    val activeChatCount = if (currentFolderId != null) folderChats.size else terminalSessions.size
+                    val activeFileCount = if (currentFolderId != null) folderFiles.size else allFiles.size
+
+                    // Category 0: Tabs
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -397,15 +485,16 @@ fun TabOverviewScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "Tabs (${modeTabs.size})",
+                                text = "Tabs ($activeTabCount)",
                                 color = if (selectedCategory == 0) Color.White else GVONETextSecondary,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
                             )
                         }
                     }
 
-                    // Category 2: Chats
+                    // Category 1: Chats
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -435,10 +524,50 @@ fun TabOverviewScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "Chats (${terminalSessions.size})",
+                                text = "Chats ($activeChatCount)",
                                 color = if (selectedCategory == 1) Color.White else GVONETextSecondary,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    // Category 2: Files
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(
+                                if (selectedCategory == 2) {
+                                    Brush.horizontalGradient(
+                                        colors = listOf(Color(0xFF10B981), Color(0xFF059669))
+                                    )
+                                } else {
+                                    Brush.linearGradient(colors = listOf(Color.Transparent, Color.Transparent))
+                                }
+                            )
+                            .clickable { selectedCategory = 2 }
+                            .testTag("category_pill_files"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.InsertDriveFile,
+                                contentDescription = null,
+                                tint = if (selectedCategory == 2) Color.White else GVONETextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Files ($activeFileCount)",
+                                color = if (selectedCategory == 2) Color.White else GVONETextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
                             )
                         }
                     }
@@ -447,7 +576,7 @@ fun TabOverviewScreen(
 
             // --- CONTENT AREA ---
             if (isSearching) {
-                // SEARCH RESULTS VIEW: Tabs & Chats
+                // SEARCH RESULTS VIEW: Tabs, Chats & Files
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier
@@ -457,7 +586,7 @@ fun TabOverviewScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    val totalMatches = searchResultsTabs.size + searchResultsChats.size
+                    val totalMatches = searchResultsTabs.size + searchResultsChats.size + searchResultsFiles.size
                     item(span = { GridItemSpan(2) }) {
                         Text(
                             text = "Search Results ($totalMatches)",
@@ -468,6 +597,7 @@ fun TabOverviewScreen(
                         )
                     }
 
+                    // Tabs in search results
                     if (searchResultsTabs.isNotEmpty()) {
                         item(span = { GridItemSpan(2) }) {
                             Row(
@@ -517,6 +647,56 @@ fun TabOverviewScreen(
                         }
                     }
 
+                    // Files in search results
+                    if (searchResultsFiles.isNotEmpty()) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
+                            ) {
+                                Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                                Text("Files (${searchResultsFiles.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        items(searchResultsFiles, key = { "search_file_${it.id}" }) { file ->
+                            TabFileCard(
+                                file = file,
+                                isSelectionMode = isSelectionMode,
+                                isChecked = selectedFileIds.contains(file.id),
+                                onToggleCheck = {
+                                    selectedFileIds = if (selectedFileIds.contains(file.id)) {
+                                        selectedFileIds - file.id
+                                    } else {
+                                        selectedFileIds + file.id
+                                    }
+                                },
+                                onClick = {
+                                    onOpenFileInTab?.invoke(file, false) ?: run {
+                                        fileToPreview = file
+                                    }
+                                },
+                                onOpenInNewTab = {
+                                    onOpenFileInTab?.invoke(file, true) ?: run {
+                                        fileToPreview = file
+                                    }
+                                },
+                                onPreview = { fileToPreview = file },
+                                onRename = { fileToRename = file },
+                                onDelete = { fileToDelete = file },
+                                onShare = {
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, file.name)
+                                        putExtra(Intent.EXTRA_TEXT, "GVONE File: ${file.name}\nPath: ${file.path}")
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Share ${file.name}"))
+                                }
+                            )
+                        }
+                    }
+
                     if (totalMatches == 0) {
                         item(span = { GridItemSpan(2) }) {
                             Box(
@@ -525,15 +705,15 @@ fun TabOverviewScreen(
                                     .padding(vertical = 32.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("No matching tabs found.", color = GVONETextSecondary, fontSize = 13.sp)
+                                Text("No matching tabs or files found.", color = GVONETextSecondary, fontSize = 13.sp)
                             }
                         }
                     }
                 }
             } else if (currentFolderId != null && currentFolder != null) {
-                // INSIDE DEDICATED FOLDER VIEW: Tabs and Chats in this folder
-                val hasItems = folderTabs.isNotEmpty() || folderChats.isNotEmpty()
-                if (!hasItems) {
+                // INSIDE DEDICATED FOLDER VIEW: Tabs, Chats, or Files in this folder
+                val hasItems = folderTabs.isNotEmpty() || folderChats.isNotEmpty() || folderFiles.isNotEmpty()
+                if (!hasItems && selectedCategory != 2) {
                     // Empty folder state
                     Box(
                         modifier = Modifier
@@ -561,13 +741,13 @@ fun TabOverviewScreen(
                                 )
                             }
                             Text(
-                                text = "No tabs in this group",
+                                text = "No tabs or files in this group",
                                 color = GVONETextPrimary,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Add tabs to \"${currentFolder.name}\" to keep your work organized.",
+                                text = "Add tabs or files to \"${currentFolder.name}\" to keep your work organized.",
                                 color = GVONETextSecondary,
                                 fontSize = 13.sp
                             )
@@ -582,6 +762,15 @@ fun TabOverviewScreen(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("Add Tab")
                                 }
+                                Button(
+                                    onClick = { showCreateFileDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Rounded.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Add File")
+                                }
                             }
                         }
                     }
@@ -595,7 +784,7 @@ fun TabOverviewScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // SECTION: Tabs in this group
+                        // SECTION 0: Tabs in this group
                         if (selectedCategory == 0) {
                             if (folderTabs.isNotEmpty()) {
                                 item(span = { GridItemSpan(2) }) {
@@ -681,7 +870,7 @@ fun TabOverviewScreen(
                             }
                         }
 
-                        // SECTION: Chats in this group
+                        // SECTION 1: Chats in this group
                         if (selectedCategory == 1) {
                             item(span = { GridItemSpan(2) }) {
                                 Box(
@@ -708,7 +897,7 @@ fun TabOverviewScreen(
                                             fontWeight = FontWeight.SemiBold
                                         )
                                         Text(
-                                            text = "Terminal sessions are now managed locally within the Terminal Screen.",
+                                            text = "Terminal sessions are managed locally within the Terminal Screen.",
                                             color = GVONETextSecondary,
                                             fontSize = 13.sp,
                                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -717,10 +906,119 @@ fun TabOverviewScreen(
                                 }
                             }
                         }
+
+                        // SECTION 2: Files in this group
+                        if (selectedCategory == 2) {
+                            item(span = { GridItemSpan(2) }) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                                        Text("Files in ${currentFolder.name} (${folderFiles.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        TextButton(
+                                            onClick = { showCreateFileDialog = true },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF10B981))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("New File", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (folderFiles.isEmpty()) {
+                                item(span = { GridItemSpan(2) }) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 32.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF10B981).copy(alpha = 0.15f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.FolderOpen,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFF10B981),
+                                                    modifier = Modifier.size(28.dp)
+                                                )
+                                            }
+                                            Text("No files in this group yet", color = GVONETextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("Create documents, code, notes, or assets for ${currentFolder.name}.", color = GVONETextSecondary, fontSize = 12.sp)
+                                            Button(
+                                                onClick = { showCreateFileDialog = true },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ) {
+                                                Icon(Icons.Rounded.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Create File", fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                items(folderFiles, key = { "folder_file_${it.id}" }) { file ->
+                                    TabFileCard(
+                                        file = file,
+                                        isSelectionMode = isSelectionMode,
+                                        isChecked = selectedFileIds.contains(file.id),
+                                        onToggleCheck = {
+                                            selectedFileIds = if (selectedFileIds.contains(file.id)) {
+                                                selectedFileIds - file.id
+                                            } else {
+                                                selectedFileIds + file.id
+                                            }
+                                        },
+                                        onClick = {
+                                            onOpenFileInTab?.invoke(file, false) ?: run {
+                                                fileToPreview = file
+                                            }
+                                        },
+                                        onOpenInNewTab = {
+                                            onOpenFileInTab?.invoke(file, true) ?: run {
+                                                fileToPreview = file
+                                            }
+                                        },
+                                        onPreview = { fileToPreview = file },
+                                        onRename = { fileToRename = file },
+                                        onDelete = { fileToDelete = file },
+                                        onShare = {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_SUBJECT, file.name)
+                                                putExtra(Intent.EXTRA_TEXT, "GVONE File: ${file.name}\nPath: ${file.path}")
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Share ${file.name}"))
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             } else {
-                // ROOT "ALL TABS" FILE MANAGER VIEW: Tab Group Folders + Ungrouped Tabs + Ungrouped Chats
+                // ROOT "ALL TABS" VIEW: Tab Group Folders + Ungrouped Tabs + Files
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier
@@ -730,7 +1028,7 @@ fun TabOverviewScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // SECTION 1: TAB GROUP FOLDERS (Mixed Tabs & Chats)
+                    // SECTION 1: TAB GROUP FOLDERS
                     if (tabGroups.isNotEmpty()) {
                         item(span = { GridItemSpan(2) }) {
                             Row(
@@ -796,7 +1094,7 @@ fun TabOverviewScreen(
                         }
                     }
 
-                    // SECTION 2: UNGROUPED TABS
+                    // SECTION 2: UNGROUPED TABS (when category == 0)
                     if (selectedCategory == 0) {
                         item(span = { GridItemSpan(2) }) {
                             Row(
@@ -901,7 +1199,7 @@ fun TabOverviewScreen(
                         }
                     }
 
-                    // SECTION 3: UNGROUPED CHATS (Terminal Sessions)
+                    // SECTION 3: CHATS (when category == 1)
                     if (selectedCategory == 1) {
                         item(span = { GridItemSpan(2) }) {
                             Box(
@@ -934,6 +1232,131 @@ fun TabOverviewScreen(
                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    // SECTION 4: FILES & WORKSPACE (when category == 2)
+                    if (selectedCategory == 2) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 12.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.InsertDriveFile,
+                                        contentDescription = null,
+                                        tint = Color(0xFF10B981),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Files & Workspace (${allFiles.size})",
+                                        color = GVONETextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    TextButton(
+                                        onClick = { showCreateFileDialog = true },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF10B981))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("New File", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    if (onOpenFilesSheet != null) {
+                                        TextButton(
+                                            onClick = onOpenFilesSheet,
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.FolderSpecial, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Storage Browser", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (allFiles.isEmpty()) {
+                            item(span = { GridItemSpan(2) }) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF10B981).copy(alpha = 0.15f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(28.dp))
+                                        }
+                                        Text("No files in workspace yet", color = GVONETextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("Create starter files, notes, or import documents into GVONE.", color = GVONETextSecondary, fontSize = 12.sp)
+                                        Button(
+                                            onClick = { showCreateFileDialog = true },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Create File", fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            items(allFiles, key = { "root_file_${it.id}" }) { file ->
+                                TabFileCard(
+                                    file = file,
+                                    isSelectionMode = isSelectionMode,
+                                    isChecked = selectedFileIds.contains(file.id),
+                                    onToggleCheck = {
+                                        selectedFileIds = if (selectedFileIds.contains(file.id)) {
+                                            selectedFileIds - file.id
+                                        } else {
+                                            selectedFileIds + file.id
+                                        }
+                                    },
+                                    onClick = {
+                                        onOpenFileInTab?.invoke(file, false) ?: run {
+                                            fileToPreview = file
+                                        }
+                                    },
+                                    onOpenInNewTab = {
+                                        onOpenFileInTab?.invoke(file, true) ?: run {
+                                            fileToPreview = file
+                                        }
+                                    },
+                                    onPreview = { fileToPreview = file },
+                                    onRename = { fileToRename = file },
+                                    onDelete = { fileToDelete = file },
+                                    onShare = {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_SUBJECT, file.name)
+                                            putExtra(Intent.EXTRA_TEXT, "GVONE File: ${file.name}\nPath: ${file.path}")
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Share ${file.name}"))
+                                    }
+                                )
                             }
                         }
                     }
@@ -1005,13 +1428,23 @@ fun TabOverviewScreen(
                             Text("Move", fontSize = 12.sp)
                         }
 
-                        // Close Selected Tabs & Chats
+                        // Close/Delete Selected Tabs, Chats, and Files
                         IconButton(
                             onClick = {
                                 selectedTabIds.forEach { onTabClose(it) }
                                 selectedChatIds.forEach { onDeleteChat(it) }
+                                if (selectedFileIds.isNotEmpty()) {
+                                    coroutineScope.launch {
+                                        selectedFileIds.forEach { fileId ->
+                                            val fileItem = allFiles.find { it.id == fileId } ?: folderFiles.find { it.id == fileId }
+                                            fileItem?.let { fs.deleteItem(it.path) }
+                                        }
+                                        reloadFiles()
+                                    }
+                                }
                                 selectedTabIds = emptySet()
                                 selectedChatIds = emptySet()
+                                selectedFileIds = emptySet()
                                 isSelectionMode = false
                             },
                             enabled = totalSelectedCount > 0,
@@ -1118,10 +1551,16 @@ fun TabOverviewScreen(
                         }
                     }
 
-                    // BOTTOM RIGHT: New Tab FAB
+                    // BOTTOM RIGHT: Action FAB (Add Tab / Add File)
                     FloatingActionButton(
-                        onClick = { onNewTab(currentFolderId) },
-                        containerColor = if (isPrivateMode) GVONESecondary else GVONEPrimary,
+                        onClick = {
+                            if (selectedCategory == 2) {
+                                showCreateFileDialog = true
+                            } else {
+                                onNewTab(currentFolderId)
+                            }
+                        },
+                        containerColor = if (selectedCategory == 2) Color(0xFF10B981) else if (isPrivateMode) GVONESecondary else GVONEPrimary,
                         contentColor = Color.White,
                         shape = CircleShape,
                         modifier = Modifier
@@ -1129,8 +1568,8 @@ fun TabOverviewScreen(
                             .testTag("new_tab_fab")
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = "New Tab",
+                            imageVector = if (selectedCategory == 2) Icons.Rounded.NoteAdd else Icons.Rounded.Add,
+                            contentDescription = if (selectedCategory == 2) "New File" else "New Tab",
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -1245,6 +1684,7 @@ fun TabOverviewScreen(
                 }
                 selectedTabIds = emptySet()
                 selectedChatIds = emptySet()
+                selectedFileIds = emptySet()
                 isSelectionMode = false
                 isMovingBatchToGroup = false
             },
@@ -1252,6 +1692,72 @@ fun TabOverviewScreen(
                 isMovingBatchToGroup = false
                 initialTabsForNewGroup = selectedTabIds.toList()
                 showCreateGroupDialog = true
+            }
+        )
+    }
+
+    // File Management Dialogs
+    if (showCreateFileDialog) {
+        CreateFileDialog(
+            initialFolder = currentFolder?.name,
+            onDismiss = { showCreateFileDialog = false },
+            onConfirm = { fileName, content ->
+                coroutineScope.launch {
+                    val targetPath = if (currentFolderId != null && currentFolder != null) {
+                        "${currentFolder.name}/$fileName"
+                    } else {
+                        fileName
+                    }
+                    fs.writeFileContent(targetPath, content)
+                    reloadFiles()
+                    showCreateFileDialog = false
+                }
+            }
+        )
+    }
+
+    fileToPreview?.let { file ->
+        FilePreviewDialog(
+            file = file,
+            fileSystem = fs,
+            onDismiss = { fileToPreview = null },
+            onOpenInTab = {
+                fileToPreview = null
+                onOpenFileInTab?.invoke(file, false)
+            },
+            onOpenInNewTab = {
+                fileToPreview = null
+                onOpenFileInTab?.invoke(file, true)
+            }
+        )
+    }
+
+    fileToRename?.let { file ->
+        RenameFileDialog(
+            file = file,
+            onDismiss = { fileToRename = null },
+            onConfirm = { newName ->
+                coroutineScope.launch {
+                    val parentDir = if (file.path.contains("/")) file.path.substringBeforeLast('/') else ""
+                    val newPath = if (parentDir.isNotBlank()) "$parentDir/$newName" else newName
+                    fs.renameItem(file.path, newPath)
+                    reloadFiles()
+                    fileToRename = null
+                }
+            }
+        )
+    }
+
+    fileToDelete?.let { file ->
+        DeleteFileDialog(
+            file = file,
+            onDismiss = { fileToDelete = null },
+            onConfirm = {
+                coroutineScope.launch {
+                    fs.deleteItem(file.path)
+                    reloadFiles()
+                    fileToDelete = null
+                }
             }
         )
     }
@@ -1552,12 +2058,15 @@ private fun FolderViewHeader(
     folder: TabGroup,
     tabCount: Int,
     chatCount: Int = 0,
+    fileCount: Int = 0,
     onBack: () -> Unit,
     onAddTab: () -> Unit,
     onAddChat: () -> Unit = {},
+    onAddFile: () -> Unit = {},
     onRename: () -> Unit,
     onCloseAllInFolder: () -> Unit,
     onCloseAllChatsInFolder: () -> Unit = {},
+    onCloseAllFilesInFolder: () -> Unit = {},
     onDeleteFolder: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -1567,6 +2076,9 @@ private fun FolderViewHeader(
         append("$tabCount tabs")
         if (chatCount > 0) {
             append(", $chatCount chats")
+        }
+        if (fileCount > 0) {
+            append(", $fileCount files")
         }
     }
 
@@ -1630,7 +2142,7 @@ private fun FolderViewHeader(
             )
         }
 
-        // Action Buttons: [+] Add Tab, [Terminal] Add Chat, [⋮] Folder Options
+        // Action Buttons: [+] Add Tab, [Terminal] Add Chat, [NoteAdd] Add File, [⋮] Folder Options
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1655,6 +2167,17 @@ private fun FolderViewHeader(
                     .border(1.dp, Color(0xFF0284C7).copy(alpha = 0.5f), CircleShape)
             ) {
                 Icon(Icons.Rounded.Terminal, contentDescription = "Add Chat to Group", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+            }
+
+            IconButton(
+                onClick = onAddFile,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF1E2430))
+                    .border(1.dp, Color(0xFF10B981).copy(alpha = 0.5f), CircleShape)
+            ) {
+                Icon(Icons.Rounded.NoteAdd, contentDescription = "Add File to Group", tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
             }
 
             Box {
@@ -1685,6 +2208,14 @@ private fun FolderViewHeader(
                         }
                     )
                     DropdownMenuItem(
+                        text = { Text("Add File to Group", color = GVONETextPrimary, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Rounded.NoteAdd, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            showMenu = false
+                            onAddFile()
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text("Close All Tabs in Group", color = GVONETextPrimary, fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Rounded.Close, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp)) },
                         onClick = {
@@ -1698,6 +2229,14 @@ private fun FolderViewHeader(
                         onClick = {
                             showMenu = false
                             onCloseAllChatsInFolder()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete All Files in Group", color = GVONETextPrimary, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Rounded.DeleteSweep, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            showMenu = false
+                            onCloseAllFilesInFolder()
                         }
                     )
                     Divider(color = Color(0xFF263042), thickness = 0.5.dp)
@@ -2001,5 +2540,507 @@ private fun parseSafeColor(hex: String?, defaultColor: Color = Color(0xFF38BDF8)
         defaultColor
     }
 }
+
+@Composable
+fun TabFileCard(
+    file: GVONEFileItem,
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false,
+    isChecked: Boolean = false,
+    onToggleCheck: () -> Unit = {},
+    onClick: () -> Unit,
+    onOpenInTab: () -> Unit = onClick,
+    onOpenInNewTab: () -> Unit,
+    onPreview: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+    onShare: () -> Unit
+) {
+    var showContextMenu by remember { mutableStateOf(false) }
+    val borderColor = if (isChecked) GVONESecondary else if (isSelected) Color(0xFF10B981) else Color(0xFF263042)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(210.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .border(if (isChecked || isSelected) 2.dp else 1.dp, borderColor, RoundedCornerShape(16.dp))
+            .background(Color(0xFF161F2E))
+            .clickable {
+                if (isSelectionMode) {
+                    onToggleCheck()
+                } else {
+                    onClick()
+                }
+            }
+            .pointerInput(file.id) {
+                detectTapGestures(
+                    onTap = {
+                        if (isSelectionMode) {
+                            onToggleCheck()
+                        } else {
+                            onClick()
+                        }
+                    },
+                    onLongPress = {
+                        if (!isSelectionMode) {
+                            showContextMenu = true
+                        }
+                    }
+                )
+            }
+            .testTag("tab_file_card_${file.name}")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Top row: File Type Badge + Checkbox / More Options
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF10B981).copy(alpha = 0.15f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = getFileIcon(file.name),
+                            contentDescription = null,
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = file.extension.uppercase().ifEmpty { "FILE" },
+                            color = Color(0xFF10B981),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                if (isSelectionMode) {
+                    Checkbox(
+                        checked = isChecked,
+                        onCheckedChange = { onToggleCheck() },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = GVONESecondary,
+                            uncheckedColor = GVONETextSecondary,
+                            checkmarkColor = Color.Black
+                        ),
+                        modifier = Modifier.size(24.dp)
+                    )
+                } else {
+                    IconButton(
+                        onClick = { showContextMenu = true },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MoreVert,
+                            contentDescription = "File Options",
+                            tint = GVONETextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+
+            // Middle: File Icon & Preview snippet
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(vertical = 6.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF0F141E))
+                    .border(0.5.dp, Color(0xFF1E2838), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(8.dp)
+                ) {
+                    Icon(
+                        imageVector = getFileIcon(file.name),
+                        contentDescription = null,
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Text(
+                        text = formatFileSize(file.size),
+                        color = GVONETextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            // Bottom row: File Name & Path
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = file.name,
+                    color = GVONETextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = file.path,
+                    color = GVONETextSecondary,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        // Context Menu Dropdown
+        DropdownMenu(
+            expanded = showContextMenu,
+            onDismissRequest = { showContextMenu = false },
+            modifier = Modifier
+                .background(Color(0xFF1B2230))
+                .border(1.dp, Color(0xFF303A4E), RoundedCornerShape(12.dp))
+        ) {
+            DropdownMenuItem(
+                text = { Text("Open in Tab", color = GVONETextPrimary, fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Rounded.OpenInBrowser, contentDescription = null, tint = GVONEPrimary, modifier = Modifier.size(18.dp)) },
+                onClick = {
+                    showContextMenu = false
+                    onOpenInTab()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Open in New Tab", color = GVONETextPrimary, fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Rounded.OpenInNew, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp)) },
+                onClick = {
+                    showContextMenu = false
+                    onOpenInNewTab()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Quick Preview", color = GVONETextPrimary, fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Rounded.Visibility, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp)) },
+                onClick = {
+                    showContextMenu = false
+                    onPreview()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Rename File", color = GVONETextPrimary, fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp)) },
+                onClick = {
+                    showContextMenu = false
+                    onRename()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Share", color = GVONETextPrimary, fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(18.dp)) },
+                onClick = {
+                    showContextMenu = false
+                    onShare()
+                }
+            )
+            Divider(color = Color(0xFF263042), thickness = 0.5.dp)
+            DropdownMenuItem(
+                text = { Text("Delete File", color = Color(0xFFEF4444), fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp)) },
+                onClick = {
+                    showContextMenu = false
+                    onDelete()
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun CreateFileDialog(
+    initialFolder: String? = null,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, content: String) -> Unit
+) {
+    var fileName by remember { mutableStateOf("") }
+    var fileContent by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1B2230),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.NoteAdd, contentDescription = null, tint = Color(0xFF10B981))
+                Text(
+                    text = if (!initialFolder.isNullOrBlank()) "New File in $initialFolder" else "Create New File",
+                    color = GVONETextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = fileName,
+                    onValueChange = { fileName = it },
+                    label = { Text("File Name (e.g. notes.txt, index.html)") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = GVONETextPrimary,
+                        unfocusedTextColor = GVONETextPrimary,
+                        focusedBorderColor = Color(0xFF10B981),
+                        unfocusedBorderColor = Color(0xFF333E52)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = fileContent,
+                    onValueChange = { fileContent = it },
+                    label = { Text("File Content (Optional)") },
+                    minLines = 4,
+                    maxLines = 8,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = GVONETextPrimary,
+                        unfocusedTextColor = GVONETextPrimary,
+                        focusedBorderColor = Color(0xFF10B981),
+                        unfocusedBorderColor = Color(0xFF333E52)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (fileName.isNotBlank()) {
+                        onConfirm(fileName.trim(), fileContent)
+                    }
+                },
+                enabled = fileName.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+            ) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = GVONETextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+fun FilePreviewDialog(
+    file: GVONEFileItem,
+    fileSystem: GVONEFileSystem,
+    onDismiss: () -> Unit,
+    onOpenInTab: () -> Unit,
+    onOpenInNewTab: () -> Unit
+) {
+    var content by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(file.path) {
+        isLoading = true
+        content = fileSystem.readFileContent(file.path)
+        isLoading = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1B2230),
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(getFileIcon(file.name), contentDescription = null, tint = Color(0xFF38BDF8))
+                    Text(file.name, color = GVONETextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Text(formatFileSize(file.size), color = GVONETextSecondary, fontSize = 11.sp)
+            }
+        },
+        text = {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF0F141E),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF263042)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 120.dp, max = 320.dp)
+            ) {
+                if (isLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFF38BDF8), modifier = Modifier.size(24.dp))
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = content ?: "Unable to read file content.",
+                            color = GVONETextPrimary,
+                            fontSize = 12.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onOpenInNewTab,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF38BDF8)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8))
+                ) {
+                    Text("New Tab")
+                }
+                Button(
+                    onClick = onOpenInTab,
+                    colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary)
+                ) {
+                    Text("Open")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = GVONETextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+fun RenameFileDialog(
+    file: GVONEFileItem,
+    onDismiss: () -> Unit,
+    onConfirm: (newName: String) -> Unit
+) {
+    var newName by remember { mutableStateOf(file.name) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1B2230),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.Edit, contentDescription = null, tint = Color(0xFFF59E0B))
+                Text("Rename File", color = GVONETextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            OutlinedTextField(
+                value = newName,
+                onValueChange = { newName = it },
+                label = { Text("File Name") },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = GVONETextPrimary,
+                    unfocusedTextColor = GVONETextPrimary,
+                    focusedBorderColor = Color(0xFFF59E0B),
+                    unfocusedBorderColor = Color(0xFF333E52)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (newName.isNotBlank() && newName != file.name) {
+                        onConfirm(newName.trim())
+                    }
+                },
+                enabled = newName.isNotBlank() && newName != file.name,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+            ) {
+                Text("Rename")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = GVONETextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+fun DeleteFileDialog(
+    file: GVONEFileItem,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1B2230),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Rounded.Warning, contentDescription = null, tint = Color(0xFFEF4444))
+                Text("Delete File", color = GVONETextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Text(
+                text = "Are you sure you want to delete \"${file.name}\"? This action cannot be undone.",
+                color = GVONETextSecondary,
+                fontSize = 14.sp
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = GVONETextSecondary)
+            }
+        }
+    )
+}
+
+fun getFileIcon(fileName: String): ImageVector {
+    val ext = fileName.substringAfterLast('.', "").lowercase()
+    return when (ext) {
+        "txt", "md", "log" -> Icons.Rounded.Description
+        "json", "xml", "yaml", "yml" -> Icons.Rounded.Code
+        "html", "htm", "css", "js", "ts", "kt" -> Icons.Rounded.Terminal
+        "png", "jpg", "jpeg", "svg", "gif", "webp" -> Icons.Rounded.Image
+        "pdf" -> Icons.Rounded.PictureAsPdf
+        "zip", "tar", "gz" -> Icons.Rounded.FolderZip
+        "mp3", "wav", "m4a" -> Icons.Rounded.AudioFile
+        "mp4", "webm", "mkv" -> Icons.Rounded.VideoFile
+        else -> Icons.Rounded.InsertDriveFile
+    }
+}
+
+fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB")
+    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
+    val size = bytes / Math.pow(1024.0, digitGroups.toDouble())
+    return String.format("%.1f %s", size, units[digitGroups.coerceAtMost(units.size - 1)])
+}
+
 
 
