@@ -242,6 +242,7 @@ fun IdeGrokBotsView(
             GrokBotPersona.CODE_ARCHITECT -> listOf("Design modular structure", "Clean Architecture review", "Extract reusable component", "Decouple layers")
             GrokBotPersona.BUG_HUNTER -> listOf("Audit null safety", "Find edge cases", "Security audit", "Check memory leaks")
             GrokBotPersona.TEST_SPECIALIST -> listOf("Generate unit tests", "Create mock data", "Edge case tests", "Refactor for testability")
+            GrokBotPersona.WEB_SCRAPER -> listOf("Extract page DOM", "Scrape all links", "Extract JSON tables", "Extract script endpoints")
         }
 
         Row(

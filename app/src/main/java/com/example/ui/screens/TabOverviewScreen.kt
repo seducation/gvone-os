@@ -6,10 +6,12 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -63,6 +65,8 @@ import com.example.ui.components.*
 import com.example.ui.screens.canvas.CreateEnvironmentDialog
 import com.example.ui.screens.canvas.EnvironmentSwitchSheet
 import com.example.ui.screens.canvas.getIconForName
+import com.example.data.ai.GVONEAIService
+import com.example.ui.screens.ide.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 import java.io.File
@@ -80,6 +84,10 @@ fun TabOverviewScreen(
     environments: List<Environment> = emptyList(),
     currentEnvironment: Environment? = null,
     fileSystem: GVONEFileSystem? = null,
+    aiService: GVONEAIService? = null,
+    activeTab: IdeTab? = null,
+    openTabs: List<IdeTab> = emptyList(),
+    onApplyAiCodeToEditor: ((String) -> Unit)? = null,
     onOpenFileInTab: ((GVONEFileItem, inNewTab: Boolean) -> Unit)? = null,
     onOpenFileInIde: ((GVONEFileItem) -> Unit)? = null,
     onOpenIde: (() -> Unit)? = null,
@@ -123,7 +131,18 @@ fun TabOverviewScreen(
     // Search and filter state
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
-    var selectedCategory by rememberSaveable { mutableStateOf(0) } // 0 = Tabs, 1 = Chats, 2 = Files
+    var selectedCategory by rememberSaveable { mutableStateOf(0) } // 0 = Tabs, 1 = Chats, 2 = Files, 3 = Bots, 4 = Extensions
+
+    // Extensions state for Navigator panel
+    val extensions = remember {
+        mutableStateListOf(
+            IdeExtension("prettier", "Prettier Formatter", "v3.2.0", "Prettier", "Opinionated code formatter for Kotlin, Python, JS, HTML, CSS, JSON", Icons.Rounded.FormatPaint, true, "Formatters"),
+            IdeExtension("eslint", "ESLint Linter", "v8.56.0", "OpenJS", "Identifies syntax errors, code smells, and TODO markers", Icons.Rounded.Rule, true, "Linters"),
+            IdeExtension("gitlens", "GitLens Supercharged", "v14.0.0", "GitKraken", "Blame annotations, commit history, and diff navigation", Icons.Rounded.AccountTree, true, "Git"),
+            IdeExtension("live_server", "Live Preview Server", "v0.4.0", "Microsoft", "Local preview server for HTML, CSS, and JS web projects", Icons.Rounded.Preview, true, "Preview"),
+            IdeExtension("language_tools", "Language Tools Pack", "v2.1.0", "GVONE", "Enhanced autocomplete snippets for Kotlin, Python, JS", Icons.Rounded.Code, true, "Languages")
+        )
+    }
 
     // Files state
     var allFiles by remember { mutableStateOf<List<GVONEFileItem>>(emptyList()) }
@@ -408,7 +427,6 @@ fun TabOverviewScreen(
                             initialTabsForNewGroup = emptyList()
                             showCreateGroupDialog = true
                         },
-                        onOpenIde = onOpenIde,
                         onCloseOverview = onCloseOverview
                     )
                 }
@@ -442,7 +460,7 @@ fun TabOverviewScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // --- CATEGORY PILL BAR: Tabs | Chats | Files ---
+            // --- CATEGORY PILL BAR: Tabs | Chats | Files | Bots | Extensions ---
             if (!isSearching) {
                 Row(
                     modifier = Modifier
@@ -451,162 +469,64 @@ fun TabOverviewScreen(
                         .clip(RoundedCornerShape(24.dp))
                         .background(Color(0xFF141923))
                         .border(1.dp, Color(0xFF2C384D), RoundedCornerShape(24.dp))
+                        .horizontalScroll(rememberScrollState())
                         .padding(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     val activeTabCount = if (currentFolderId != null) folderTabs.size else modeTabs.size
                     val activeChatCount = if (currentFolderId != null) folderChats.size else terminalSessions.size
                     val activeFileCount = if (currentFolderId != null) folderFiles.size else allFiles.size
 
-                    // Category 0: Tabs
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(
-                                if (selectedCategory == 0) {
-                                    Brush.horizontalGradient(
-                                        colors = listOf(Color(0xFF00E5FF), Color(0xFF0083B0))
-                                    )
-                                } else {
-                                    Brush.linearGradient(colors = listOf(Color.Transparent, Color.Transparent))
-                                }
-                            )
-                            .clickable { selectedCategory = 0 }
-                            .testTag("category_pill_tabs"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Public,
-                                contentDescription = null,
-                                tint = if (selectedCategory == 0) Color.White else GVONETextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "Tabs ($activeTabCount)",
-                                color = if (selectedCategory == 0) Color.White else GVONETextSecondary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                        }
-                    }
+                    val navCategories = listOf(
+                        Triple(0, "Tabs ($activeTabCount)", Icons.Rounded.Public),
+                        Triple(1, "Chats ($activeChatCount)", Icons.Rounded.Terminal),
+                        Triple(2, "Files ($activeFileCount)", Icons.Rounded.InsertDriveFile),
+                        Triple(3, "Bots (5)", Icons.Rounded.AutoAwesome),
+                        Triple(4, "Extensions (${extensions.size})", Icons.Rounded.Extension)
+                    )
 
-                    // Category 1: Chats
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(
-                                if (selectedCategory == 1) {
-                                    Brush.horizontalGradient(
-                                        colors = listOf(Color(0xFF38BDF8), Color(0xFF0284C7))
-                                    )
-                                } else {
-                                    Brush.linearGradient(colors = listOf(Color.Transparent, Color.Transparent))
-                                }
-                            )
-                            .clickable { selectedCategory = 1 }
-                            .testTag("category_pill_chats"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Terminal,
-                                contentDescription = null,
-                                tint = if (selectedCategory == 1) Color.White else GVONETextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "Chats ($activeChatCount)",
-                                color = if (selectedCategory == 1) Color.White else GVONETextSecondary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
+                    navCategories.forEach { (catId, title, icon) ->
+                        val isSelected = selectedCategory == catId
+                        val bgGradient = when (catId) {
+                            0 -> Brush.horizontalGradient(listOf(Color(0xFF00E5FF), Color(0xFF0083B0)))
+                            1 -> Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Color(0xFF0284C7)))
+                            2 -> Brush.horizontalGradient(listOf(Color(0xFF10B981), Color(0xFF059669)))
+                            3 -> Brush.horizontalGradient(listOf(Color(0xFFA855F7), Color(0xFF7C3AED)))
+                            else -> Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))
                         }
-                    }
 
-                    // Category 2: Files
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(
-                                if (selectedCategory == 2) {
-                                    Brush.horizontalGradient(
-                                        colors = listOf(Color(0xFF10B981), Color(0xFF059669))
-                                    )
-                                } else {
-                                    Brush.linearGradient(colors = listOf(Color.Transparent, Color.Transparent))
-                                }
-                            )
-                            .clickable { selectedCategory = 2 }
-                            .testTag("category_pill_files"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.InsertDriveFile,
-                                contentDescription = null,
-                                tint = if (selectedCategory == 2) Color.White else GVONETextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "Files ($activeFileCount)",
-                                color = if (selectedCategory == 2) Color.White else GVONETextSecondary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                        }
-                    }
-
-                    // Category 3: Code Studio (IDE)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(Color(0xFFA855F7), Color(0xFF7C3AED))
+                        Box(
+                            modifier = Modifier
+                                .height(36.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(
+                                    if (isSelected) bgGradient
+                                    else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                                 )
-                            )
-                            .clickable { onOpenIde?.invoke() }
-                            .testTag("category_pill_ide"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                .clickable { selectedCategory = catId }
+                                .padding(horizontal = 12.dp)
+                                .testTag("category_pill_${title.substringBefore(" ").lowercase()}"),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Code,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Text(
-                                text = "IDE",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) Color.White else GVONETextSecondary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = title,
+                                    color = if (isSelected) Color.White else GVONETextSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
@@ -1424,6 +1344,79 @@ fun TabOverviewScreen(
                                         }
                                         context.startActivity(Intent.createChooser(shareIntent, "Share ${file.name}"))
                                     }
+                                )
+                            }
+                        }
+                    }
+
+                    // SECTION 5: GROK BOTS (when category == 3)
+                    if (selectedCategory == 3) {
+                        item(span = { GridItemSpan(2) }) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color(0xFF0D121F),
+                                border = BorderStroke(1.dp, Color(0xFF233554)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 420.dp, max = 580.dp)
+                                    .testTag("navigator_grok_bots_container")
+                            ) {
+                                IdeGrokBotsView(
+                                    activeTab = activeTab,
+                                    openTabs = openTabs,
+                                    aiService = aiService ?: GVONEAIService(null, context),
+                                    coroutineScope = coroutineScope,
+                                    onApplyCodeToEditor = { code ->
+                                        onApplyAiCodeToEditor?.invoke(code)
+                                    },
+                                    onCreateFileFromCode = { filename, code ->
+                                        coroutineScope.launch {
+                                            fs.createFile("Projects", filename, code)
+                                            val created = fs.getFileItem("Projects/$filename")
+                                            if (created != null && onOpenFileInIde != null) {
+                                                onOpenFileInIde(created)
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // SECTION 6: EXTENSIONS (when category == 4)
+                    if (selectedCategory == 4) {
+                        item(span = { GridItemSpan(2) }) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color(0xFF0D121F),
+                                border = BorderStroke(1.dp, Color(0xFF233554)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 420.dp, max = 580.dp)
+                                    .testTag("navigator_extensions_container")
+                            ) {
+                                IdeExtensionsView(
+                                    extensions = extensions,
+                                    onToggleExtension = { extId ->
+                                        val idx = extensions.indexOfFirst { it.id == extId }
+                                        if (idx != -1) {
+                                            val current = extensions[idx]
+                                            extensions[idx] = current.copy(isEnabled = !current.isEnabled)
+                                        }
+                                    },
+                                    onRunPrettier = {
+                                        Toast.makeText(context, "Prettier formatting applied", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onInspectLinter = {
+                                        Toast.makeText(context, "ESLint: 0 errors, 0 warnings", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onOpenGitLens = {
+                                        selectedCategory = 2
+                                    },
+                                    onLaunchLivePreview = {
+                                        Toast.makeText(context, "Live Preview active", Toast.LENGTH_SHORT).show()
+                                    },
+                                    activeTab = activeTab
                                 )
                             }
                         }

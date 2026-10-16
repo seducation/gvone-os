@@ -463,6 +463,7 @@ fun TerminalScreen(
 
     // Collapsed user input commands in stream log (all expanded by default)
     var collapsedCommandIds by remember { mutableStateOf(setOf<String>()) }
+    var xcodeConsoleFilter by remember { mutableStateOf("All Output") }
 
     fun commitLines(newLines: List<TerminalLine>) {
         val linesToAdd = if (isLogMode) {
@@ -1089,15 +1090,96 @@ fun TerminalScreen(
                     )
                 }
 
+                // Xcode-Style Debug Console Filter Strip
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0F1523))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .background(Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF34D399))
+                        )
+                        Text(
+                            text = "Target: GVONE Process",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+
+                    val filters = listOf("All Output", "Target", "Errors", "Warnings")
+                    filters.forEach { filterName ->
+                        val isFilterActive = xcodeConsoleFilter == filterName
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isFilterActive) Color(0xFF0284C7).copy(alpha = 0.25f) else Color.Transparent,
+                            border = BorderStroke(
+                                0.5.dp,
+                                if (isFilterActive) Color(0xFF38BDF8) else Color(0xFF2C384D)
+                            ),
+                            modifier = Modifier
+                                .clickable { xcodeConsoleFilter = filterName }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = filterName,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (isFilterActive) Color(0xFF38BDF8) else Color(0xFF64748B),
+                                fontWeight = if (isFilterActive) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    IconButton(
+                        onClick = {
+                            sessions = sessions.map {
+                                if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
+                            }
+                            viewModel.clearTerminalLines()
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.DeleteSweep,
+                            contentDescription = "Clear Console",
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
+
                 // 2. MAIN CLI STREAM LOG (Grouped by User Input with Expandable/Collapsible Action Logs)
                 val treeTasks by conversationTreeManager.tasks.collectAsState()
                 val activeTaskIdTree by conversationTreeManager.activeTaskId.collectAsState()
 
-                val visibleLines = remember(activeSession.lines, isLogMode) {
-                    if (isLogMode) {
+                val visibleLines = remember(activeSession.lines, isLogMode, xcodeConsoleFilter) {
+                    val base = if (isLogMode) {
                         activeSession.lines
                     } else {
                         activeSession.lines.filterNot { viewModel.isVerboseLogLine(it) }
+                    }
+                    when (xcodeConsoleFilter) {
+                        "Errors" -> base.filter { it.type == TerminalLineType.ERROR }
+                        "Warnings" -> base.filter { it.type == TerminalLineType.WARNING }
+                        "Target" -> base.filter { it.type == TerminalLineType.OUTPUT || it.type == TerminalLineType.COMMAND || it.type == TerminalLineType.SUCCESS }
+                        else -> base
                     }
                 }
 

@@ -129,6 +129,7 @@ fun FloatingAddressBar(
     onOpenTerminalCommands: () -> Unit = onOpenCommandPalette,
     onCloseTerminalCommands: () -> Unit = onCloseCommandPalette,
     onWritingStateChanged: ((Boolean) -> Unit)? = null,
+    onInspectorClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -984,15 +985,11 @@ fun FloatingAddressBar(
                                     indication = null,
                                     enabled = !effectivelyCompact,
                                     onClick = {
-                                        onActionsMenuClick()
+                                        onInspectorClick?.invoke() ?: onActionsMenuClick()
                                     },
                                     onLongClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        if (effectivelyCompact) {
-                                            onExpand()
-                                        } else {
-                                            onContract()
-                                        }
+                                        onActionsMenuClick()
                                     }
                                 )
                                 .testTag("safari_more_actions_button"),

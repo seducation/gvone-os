@@ -22,6 +22,7 @@ import com.example.data.terminal.TerminalLineType
 import com.example.data.tor.*
 import com.example.ui.contextmenu.LinkContextMenuData
 import com.example.ui.contextmenu.PagePreviewData
+import com.example.ui.screens.ide.XcodeWorkspaceMode
 import com.example.data.webwidget.WebWidgetSelectionDraft
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -59,6 +60,7 @@ sealed interface ActiveSheet {
     object AgentDashboard : ActiveSheet
     object Permissions : ActiveSheet
     object Ide : ActiveSheet
+    object Inspector : ActiveSheet
 }
 
 enum class FileSelectionPurpose {
@@ -230,12 +232,28 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _pendingTerminalFile.value = null
     }
 
+    private val _workspaceMode = MutableStateFlow(XcodeWorkspaceMode.BROWSER)
+    val workspaceMode: StateFlow<XcodeWorkspaceMode> = _workspaceMode.asStateFlow()
+
+    fun setWorkspaceMode(mode: XcodeWorkspaceMode) {
+        _workspaceMode.value = mode
+    }
+
+    fun toggleWorkspaceMode() {
+        _workspaceMode.value = if (_workspaceMode.value == XcodeWorkspaceMode.BROWSER) {
+            XcodeWorkspaceMode.CODE_EDITOR
+        } else {
+            XcodeWorkspaceMode.BROWSER
+        }
+    }
+
     private val _pendingIdeFile = MutableStateFlow<com.example.data.files.GVONEFileItem?>(null)
     val pendingIdeFile: StateFlow<com.example.data.files.GVONEFileItem?> = _pendingIdeFile.asStateFlow()
 
     fun openIdeWithFile(file: com.example.data.files.GVONEFileItem) {
         _pendingIdeFile.value = file
-        openSheet(ActiveSheet.Ide)
+        _workspaceMode.value = XcodeWorkspaceMode.CODE_EDITOR
+        closeSheet()
     }
 
     fun clearPendingIdeFile() {
@@ -1059,7 +1077,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun openCommunicationHub() { openSheet(ActiveSheet.CommunicationHub) }
     fun openAgentDashboard() { openSheet(ActiveSheet.AgentDashboard) }
     fun openPermissions() { openSheet(ActiveSheet.Permissions) }
-    fun openIde() { openSheet(ActiveSheet.Ide) }
+    fun openIde() {
+        _workspaceMode.value = XcodeWorkspaceMode.CODE_EDITOR
+        closeSheet()
+    }
 
     fun saveCurrentPageToResearchWorkspace() {
         val tab = currentTab.value ?: return
@@ -1128,6 +1149,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             _isPrivateMode.value = tab.isPrivate
             _activeGroupId.value = tab.tabGroupId
             _addressBarInput.value = if (isInternalHomeUrl(tab.url)) "" else tab.url
+            _workspaceMode.value = XcodeWorkspaceMode.BROWSER
             persistTabsAndActiveState()
             closeSheet()
         }
@@ -1161,6 +1183,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             _currentTabId.value = newTab.id
             _activeGroupId.value = groupId
             _addressBarInput.value = if (isInternalHomeUrl(targetUrl)) "" else targetUrl
+            _workspaceMode.value = XcodeWorkspaceMode.BROWSER
             closeSheet()
         }
         persistTabsAndActiveState()

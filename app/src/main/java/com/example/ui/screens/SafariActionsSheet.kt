@@ -123,6 +123,7 @@ fun SafariActionsSheet(
     onOpenDataSaver: () -> Unit = {},
     onOpenCommunicationHub: () -> Unit = {},
     onOpenIde: () -> Unit = {},
+    onOpenInspector: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
     onNavigateForward: () -> Unit = {},
     onNavigateToUrl: (String) -> Unit = {},
@@ -925,6 +926,16 @@ fun SafariActionsSheet(
                                                 onClick = {
                                                     onClose()
                                                     onOpenIde()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.Search,
+                                                label = "Xcode Inspector Panel",
+                                                trailingText = "DOM • Security • CNS Rules",
+                                                onClick = {
+                                                    onClose()
+                                                    onOpenInspector()
                                                 }
                                             )
                                             HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)

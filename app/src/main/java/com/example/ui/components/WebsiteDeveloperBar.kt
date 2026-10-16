@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.BrowserTab
+import com.example.ui.screens.ide.XcodeWorkspaceMode
 import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -72,7 +73,12 @@ fun WebsiteDeveloperBar(
     isTorActive: Boolean,
     onToggleOff: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenIde: (() -> Unit)? = null
+    onOpenIde: (() -> Unit)? = null,
+    workspaceMode: XcodeWorkspaceMode = XcodeWorkspaceMode.BROWSER,
+    onToggleWorkspaceMode: ((XcodeWorkspaceMode) -> Unit)? = null,
+    activeFileName: String? = null,
+    onOpenInspector: (() -> Unit)? = null,
+    onOpenConsole: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isExpanded by remember { mutableStateOf(false) }
@@ -129,32 +135,33 @@ fun WebsiteDeveloperBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 // Left: File-developer-bar style Icon & Title/Subtitle
+                val isCodeMode = (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .weight(1f)
                         .clickable { isExpanded = !isExpanded },
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF38BDF8).copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
+                        color = if (isCodeMode) Color(0xFFA855F7).copy(alpha = 0.15f) else Color(0xFF38BDF8).copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, if (isCodeMode) Color(0xFFA855F7).copy(alpha = 0.4f) else Color(0xFF38BDF8).copy(alpha = 0.4f)),
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(34.dp)
                             .testTag("dev_bar_brand_badge")
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = Icons.Rounded.DeveloperMode,
-                                contentDescription = "Developer Tools",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(20.dp)
+                                imageVector = if (isCodeMode) Icons.Rounded.Code else Icons.Rounded.DeveloperMode,
+                                contentDescription = if (isCodeMode) "Xcode Code Studio" else "Developer Tools",
+                                tint = if (isCodeMode) Color(0xFFA855F7) else Color(0xFF38BDF8),
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -162,19 +169,19 @@ fun WebsiteDeveloperBar(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = tab.title.takeIf { it.isNotBlank() } ?: "Web Developer Tools",
+                                text = if (isCodeMode) (activeFileName ?: "Xcode Code Editor") else (tab.title.takeIf { it.isNotBlank() } ?: "Web Developer Tools"),
                                 color = Color.White,
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
                             Box(
                                 modifier = Modifier
-                                    .size(7.dp)
+                                    .size(6.dp)
                                     .clip(CircleShape)
-                                    .background(if (isTorActive) Color(0xFFC084FC) else Color(0xFF4ADE80))
+                                    .background(if (isCodeMode) Color(0xFFA855F7) else if (isTorActive) Color(0xFFC084FC) else Color(0xFF4ADE80))
                             )
                         }
                         Row(
@@ -182,15 +189,15 @@ fun WebsiteDeveloperBar(
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Icon(
-                                imageVector = if (isHttps) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                                imageVector = if (isCodeMode) Icons.Rounded.Terminal else if (isHttps) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
                                 contentDescription = null,
-                                tint = if (isHttps) Color(0xFF4ADE80) else Color(0xFFFBBF24),
-                                modifier = Modifier.size(11.dp)
+                                tint = if (isCodeMode) Color(0xFFA855F7) else if (isHttps) Color(0xFF4ADE80) else Color(0xFFFBBF24),
+                                modifier = Modifier.size(10.dp)
                             )
                             Text(
-                                text = hostDomain.ifBlank { "localhost" },
+                                text = if (isCodeMode) "GVONE Xcode IDE Engine" else hostDomain.ifBlank { "localhost" },
                                 color = Color(0xFF64748B),
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -198,43 +205,143 @@ fun WebsiteDeveloperBar(
                     }
                 }
 
-                // Right: Action buttons matching file developer bar
+                // Right: Action buttons
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    // Quick Hard Reload
-                    IconButton(
-                        onClick = {
-                            activeWebView?.clearCache(true)
-                            activeWebView?.reload()
-                            Toast.makeText(context, "Hard Reload (Cache Cleared)", Toast.LENGTH_SHORT).show()
-                        },
+                    // Segmented Workspace Mode Switcher: [Web | Code]
+                    Row(
                         modifier = Modifier
-                            .size(34.dp)
-                            .testTag("dev_bar_hard_reload_btn")
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF0B101C))
+                            .border(0.5.dp, Color(0xFF2C384D), RoundedCornerShape(14.dp))
+                            .padding(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = "Hard Reload",
-                            tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (workspaceMode == XcodeWorkspaceMode.BROWSER) Color(0xFF0284C7).copy(alpha = 0.35f) else Color.Transparent,
+                            modifier = Modifier
+                                .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER) }
+                                .testTag("dev_bar_mode_web_btn")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Public,
+                                    contentDescription = null,
+                                    tint = if (workspaceMode == XcodeWorkspaceMode.BROWSER) Color(0xFF38BDF8) else Color(0xFF64748B),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    "Web",
+                                    fontSize = 10.sp,
+                                    color = if (workspaceMode == XcodeWorkspaceMode.BROWSER) Color(0xFF38BDF8) else Color(0xFF64748B),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR) Color(0xFFA855F7).copy(alpha = 0.35f) else Color.Transparent,
+                            modifier = Modifier
+                                .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.CODE_EDITOR) }
+                                .testTag("dev_bar_mode_code_btn")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Code,
+                                    contentDescription = null,
+                                    tint = if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR) Color(0xFFC084FC) else Color(0xFF64748B),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    "Code",
+                                    fontSize = 10.sp,
+                                    color = if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR) Color(0xFFC084FC) else Color(0xFF64748B),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
 
-                    // Open Code Studio (VS Code IDE)
-                    if (onOpenIde != null) {
+                    // Run / Preview / Reload
+                    if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR) {
                         IconButton(
-                            onClick = onOpenIde,
+                            onClick = {
+                                onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER)
+                                Toast.makeText(context, "Running & Previewing in Web Browser", Toast.LENGTH_SHORT).show()
+                            },
                             modifier = Modifier
-                                .size(34.dp)
-                                .testTag("dev_bar_open_ide_btn")
+                                .size(32.dp)
+                                .testTag("dev_bar_run_preview_btn")
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Code,
-                                contentDescription = "Open Code Studio (VS Code)",
-                                tint = Color(0xFFA78BFA),
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = "Run & Preview",
+                                tint = Color(0xFF34D399),
                                 modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    } else {
+                        IconButton(
+                            onClick = {
+                                activeWebView?.clearCache(true)
+                                activeWebView?.reload()
+                                Toast.makeText(context, "Hard Reload (Cache Cleared)", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("dev_bar_hard_reload_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = "Hard Reload",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    // Open Xcode Inspector Panel
+                    if (onOpenInspector != null) {
+                        IconButton(
+                            onClick = onOpenInspector,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("dev_bar_inspector_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Search,
+                                contentDescription = "Inspector Panel",
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    // Open Xcode Debug Console
+                    if (onOpenConsole != null) {
+                        IconButton(
+                            onClick = onOpenConsole,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("dev_bar_console_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Terminal,
+                                contentDescription = "Debug Console",
+                                tint = Color(0xFF34D399),
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
@@ -244,7 +351,7 @@ fun WebsiteDeveloperBar(
                     IconButton(
                         onClick = { isExpanded = !isExpanded },
                         modifier = Modifier
-                            .size(34.dp)
+                            .size(32.dp)
                             .testTag("dev_bar_expand_toggle_btn")
                     ) {
                         Icon(
@@ -252,7 +359,7 @@ fun WebsiteDeveloperBar(
                             contentDescription = if (isExpanded) "Collapse Tools" else "Expand Tools",
                             tint = if (isExpanded) Color(0xFF38BDF8) else Color(0xFF94A3B8),
                             modifier = Modifier
-                                .size(20.dp)
+                                .size(18.dp)
                                 .rotate(rotation)
                         )
                     }
