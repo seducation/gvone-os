@@ -367,7 +367,8 @@ fun BrowserApp(
                                             activeWebView = viewModel.getActiveWebView(tab.id),
                                             isTorActive = settings.torEnabled,
                                             onToggleOff = { viewModel.toggleDeveloperBar() },
-                                            modifier = Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth(),
+                                            onOpenIde = { viewModel.openIde() }
                                         )
                                     }
                                     GVONEWebView(
@@ -605,6 +606,8 @@ fun BrowserApp(
                 currentEnvironment = currentEnvironment,
                 fileSystem = viewModel.fileSystem,
                 onOpenFileInTab = { file, inNewTab -> viewModel.openFileInTab(file, inNewTab) },
+                onOpenFileInIde = { file -> viewModel.openIdeWithFile(file) },
+                onOpenIde = { viewModel.openIde() },
                 onOpenFilesSheet = { viewModel.openFiles(false) },
                 onSelectEnvironment = { viewModel.switchEnvironment(it) },
                 onCreateEnvironment = { name, icon, theme, preset, initialLinkUrl, initialLinkTitle ->
@@ -782,6 +785,7 @@ fun BrowserApp(
                 onOpenResearchWorkspace = { viewModel.openResearchWorkspace() },
                 onOpenDataSaver = { viewModel.openDataSaver() },
                 onOpenCommunicationHub = { viewModel.openCommunicationHub() },
+                onOpenIde = { viewModel.openIde() },
                 onNavigateToUrl = { url -> viewModel.loadUrlInCurrentTab(url) },
                 onClearBrowsingData = { viewModel.clearBrowsingData() },
                 onClose = { viewModel.closeSheet() }
@@ -1076,6 +1080,15 @@ fun BrowserApp(
             PermissionsManagerSheet(
                 permissionSystem = com.example.agent.safety.PermissionSystem.global,
                 onClose = { viewModel.closeSheet() }
+            )
+        }
+
+        // Universal GVONE Code Studio (VS Code-style IDE)
+        if (activeSheet == ActiveSheet.Ide) {
+            com.example.ui.screens.ide.GVONEIdeScreen(
+                viewModel = viewModel,
+                fileSystem = viewModel.fileSystem,
+                onCloseIde = { viewModel.closeSheet() }
             )
         }
 

@@ -71,7 +71,8 @@ fun WebsiteDeveloperBar(
     activeWebView: WebView?,
     isTorActive: Boolean,
     onToggleOff: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenIde: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isExpanded by remember { mutableStateOf(false) }
@@ -219,6 +220,23 @@ fun WebsiteDeveloperBar(
                             tint = Color(0xFF94A3B8),
                             modifier = Modifier.size(18.dp)
                         )
+                    }
+
+                    // Open Code Studio (VS Code IDE)
+                    if (onOpenIde != null) {
+                        IconButton(
+                            onClick = onOpenIde,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .testTag("dev_bar_open_ide_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Code,
+                                contentDescription = "Open Code Studio (VS Code)",
+                                tint = Color(0xFFA78BFA),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
 
                     // Expand / Collapse Chevron

@@ -122,6 +122,7 @@ fun SafariActionsSheet(
     onOpenResearchWorkspace: () -> Unit = {},
     onOpenDataSaver: () -> Unit = {},
     onOpenCommunicationHub: () -> Unit = {},
+    onOpenIde: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
     onNavigateForward: () -> Unit = {},
     onNavigateToUrl: (String) -> Unit = {},
@@ -914,6 +915,16 @@ fun SafariActionsSheet(
                                                 onClick = {
                                                     onClose()
                                                     onOpenFiles()
+                                                }
+                                            )
+                                            HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+                                            SafariActionRow(
+                                                icon = Icons.Rounded.Code,
+                                                label = "Code Studio (VS Code)",
+                                                trailingText = "IDE • Git • Terminal",
+                                                onClick = {
+                                                    onClose()
+                                                    onOpenIde()
                                                 }
                                             )
                                             HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)

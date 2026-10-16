@@ -58,6 +58,7 @@ sealed interface ActiveSheet {
     object CommunicationHub : ActiveSheet
     object AgentDashboard : ActiveSheet
     object Permissions : ActiveSheet
+    object Ide : ActiveSheet
 }
 
 enum class FileSelectionPurpose {
@@ -227,6 +228,18 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearPendingTerminalFile() {
         _pendingTerminalFile.value = null
+    }
+
+    private val _pendingIdeFile = MutableStateFlow<com.example.data.files.GVONEFileItem?>(null)
+    val pendingIdeFile: StateFlow<com.example.data.files.GVONEFileItem?> = _pendingIdeFile.asStateFlow()
+
+    fun openIdeWithFile(file: com.example.data.files.GVONEFileItem) {
+        _pendingIdeFile.value = file
+        openSheet(ActiveSheet.Ide)
+    }
+
+    fun clearPendingIdeFile() {
+        _pendingIdeFile.value = null
     }
 
     // Bridge for Browser <-> GVONE Search/Chat Web App Communication
@@ -1046,6 +1059,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun openCommunicationHub() { openSheet(ActiveSheet.CommunicationHub) }
     fun openAgentDashboard() { openSheet(ActiveSheet.AgentDashboard) }
     fun openPermissions() { openSheet(ActiveSheet.Permissions) }
+    fun openIde() { openSheet(ActiveSheet.Ide) }
 
     fun saveCurrentPageToResearchWorkspace() {
         val tab = currentTab.value ?: return

@@ -81,6 +81,8 @@ fun TabOverviewScreen(
     currentEnvironment: Environment? = null,
     fileSystem: GVONEFileSystem? = null,
     onOpenFileInTab: ((GVONEFileItem, inNewTab: Boolean) -> Unit)? = null,
+    onOpenFileInIde: ((GVONEFileItem) -> Unit)? = null,
+    onOpenIde: (() -> Unit)? = null,
     onOpenFilesSheet: (() -> Unit)? = null,
     onSelectEnvironment: (String) -> Unit = {},
     onCreateEnvironment: (name: String, icon: String, theme: String, preset: String, initialLinkUrl: String?, initialLinkTitle: String?) -> Unit = { _, _, _, _, _, _ -> },
@@ -406,6 +408,7 @@ fun TabOverviewScreen(
                             initialTabsForNewGroup = emptyList()
                             showCreateGroupDialog = true
                         },
+                        onOpenIde = onOpenIde,
                         onCloseOverview = onCloseOverview
                     )
                 }
@@ -571,6 +574,41 @@ fun TabOverviewScreen(
                             )
                         }
                     }
+
+                    // Category 3: Code Studio (IDE)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(Color(0xFFA855F7), Color(0xFF7C3AED))
+                                )
+                            )
+                            .clickable { onOpenIde?.invoke() }
+                            .testTag("category_pill_ide"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Code,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = "IDE",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
             }
 
@@ -673,8 +711,12 @@ fun TabOverviewScreen(
                                     }
                                 },
                                 onClick = {
-                                    onOpenFileInTab?.invoke(file, false) ?: run {
-                                        fileToPreview = file
+                                    if (onOpenFileInIde != null) {
+                                        onOpenFileInIde(file)
+                                    } else {
+                                        onOpenFileInTab?.invoke(file, false) ?: run {
+                                            fileToPreview = file
+                                        }
                                     }
                                 },
                                 onOpenInNewTab = {
@@ -991,8 +1033,12 @@ fun TabOverviewScreen(
                                             }
                                         },
                                         onClick = {
-                                            onOpenFileInTab?.invoke(file, false) ?: run {
-                                                fileToPreview = file
+                                            if (onOpenFileInIde != null) {
+                                                onOpenFileInIde(file)
+                                            } else {
+                                                onOpenFileInTab?.invoke(file, false) ?: run {
+                                                    fileToPreview = file
+                                                }
                                             }
                                         },
                                         onOpenInNewTab = {
@@ -1273,6 +1319,24 @@ fun TabOverviewScreen(
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text("New File", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                     }
+                                    if (onOpenIde != null) {
+                                        Surface(
+                                            onClick = onOpenIde,
+                                            color = Color(0xFFA855F7).copy(alpha = 0.2f),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA855F7)),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.testTag("overview_open_ide_btn")
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Rounded.Code, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFA855F7))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Code Studio", color = Color(0xFFA855F7), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
                                     if (onOpenFilesSheet != null) {
                                         TextButton(
                                             onClick = onOpenFilesSheet,
@@ -1336,8 +1400,12 @@ fun TabOverviewScreen(
                                         }
                                     },
                                     onClick = {
-                                        onOpenFileInTab?.invoke(file, false) ?: run {
-                                            fileToPreview = file
+                                        if (onOpenFileInIde != null) {
+                                            onOpenFileInIde(file)
+                                        } else {
+                                            onOpenFileInTab?.invoke(file, false) ?: run {
+                                                fileToPreview = file
+                                            }
                                         }
                                     },
                                     onOpenInNewTab = {

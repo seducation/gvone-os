@@ -56,9 +56,10 @@ fun HorizontalActionCardsRow(
     onWebsiteClick: (() -> Unit)? = null,
     onConnectorsClick: (() -> Unit)? = null,
     onResearchClick: (() -> Unit)? = null,
-    onPinTerminalClick: (() -> Unit)? = null
+    onPinTerminalClick: (() -> Unit)? = null,
+    onIdeClick: (() -> Unit)? = null
 ) {
-    val items = remember(onPhotosClick, onCameraClick, onFilesClick, onWebsiteClick, onConnectorsClick, onResearchClick, onPinTerminalClick) {
+    val items = remember(onPhotosClick, onCameraClick, onFilesClick, onWebsiteClick, onConnectorsClick, onResearchClick, onPinTerminalClick, onIdeClick) {
         listOfNotNull(
             ActionMenuItem(
                 id = "photos",
@@ -114,6 +115,15 @@ fun HorizontalActionCardsRow(
                     icon = Icons.Rounded.PushPin,
                     testTag = "action_card_terminal",
                     onClick = onPinTerminalClick
+                )
+            } else null,
+            if (onIdeClick != null) {
+                ActionMenuItem(
+                    id = "ide",
+                    label = "Code Studio",
+                    icon = Icons.Rounded.Code,
+                    testTag = "action_card_ide",
+                    onClick = onIdeClick
                 )
             } else null
         )
@@ -221,6 +231,7 @@ fun ActionMenuBottomSheet(
     onConnectorsClick: (() -> Unit)? = null,
     onResearchClick: (() -> Unit)? = null,
     onPinTerminalClick: (() -> Unit)? = null,
+    onIdeClick: (() -> Unit)? = null,
     title: String = "Action & Command"
 ) {
     Surface(
@@ -327,6 +338,12 @@ fun ActionMenuBottomSheet(
                     }
                 },
                 onPinTerminalClick = onPinTerminalClick?.let { action ->
+                    {
+                        action()
+                        onDismiss()
+                    }
+                },
+                onIdeClick = onIdeClick?.let { action ->
                     {
                         action()
                         onDismiss()

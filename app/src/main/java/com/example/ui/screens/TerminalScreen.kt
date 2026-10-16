@@ -2159,6 +2159,10 @@ fun TerminalScreen(
                         )
                     )
                 },
+                onIdeClick = {
+                    showActionBottomSheet = false
+                    viewModel.openIde()
+                },
                 onDismiss = { showActionBottomSheet = false },
                 modifier = Modifier
                     .fillMaxWidth()
