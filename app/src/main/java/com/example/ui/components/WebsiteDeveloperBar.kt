@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -77,8 +79,19 @@ fun WebsiteDeveloperBar(
     workspaceMode: XcodeWorkspaceMode = XcodeWorkspaceMode.BROWSER,
     onToggleWorkspaceMode: ((XcodeWorkspaceMode) -> Unit)? = null,
     activeFileName: String? = null,
+    isFileDirty: Boolean = false,
     onOpenInspector: (() -> Unit)? = null,
-    onOpenConsole: (() -> Unit)? = null
+    onOpenConsole: (() -> Unit)? = null,
+    onOpenNavigator: (() -> Unit)? = null,
+    canGoBack: Boolean = false,
+    canGoForward: Boolean = false,
+    onGoBack: (() -> Unit)? = null,
+    onGoForward: (() -> Unit)? = null,
+    onReload: (() -> Unit)? = null,
+    onStop: (() -> Unit)? = null,
+    onSaveFile: (() -> Unit)? = null,
+    onFormatCode: (() -> Unit)? = null,
+    onAddressClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isExpanded by remember { mutableStateOf(false) }
@@ -131,185 +144,255 @@ fun WebsiteDeveloperBar(
         border = BorderStroke(1.dp, Color(0xFF1E293B))
     ) {
         Column {
-            // ================= TOP COMPACT BAR (Matching File Developer Bar) =================
+            // ================= TOP UNIVERSAL BAR (Browser + IDE Unified) =================
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Left: File-developer-bar style Icon & Title/Subtitle
                 val isCodeMode = (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR)
+
+                // 1. LEFT CONTROLS: Navigator & Mode-Specific Tools
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { isExpanded = !isExpanded },
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isCodeMode) Color(0xFFA855F7).copy(alpha = 0.15f) else Color(0xFF38BDF8).copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, if (isCodeMode) Color(0xFFA855F7).copy(alpha = 0.4f) else Color(0xFF38BDF8).copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .size(34.dp)
-                            .testTag("dev_bar_brand_badge")
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
+                    // Navigator Toggle (Opens Tabs, Projects, Files, Bots)
+                    if (onOpenNavigator != null) {
+                        IconButton(
+                            onClick = onOpenNavigator,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .testTag("dev_bar_navigator_btn")
+                        ) {
                             Icon(
-                                imageVector = if (isCodeMode) Icons.Rounded.Code else Icons.Rounded.DeveloperMode,
-                                contentDescription = if (isCodeMode) "Xcode Code Studio" else "Developer Tools",
-                                tint = if (isCodeMode) Color(0xFFA855F7) else Color(0xFF38BDF8),
-                                modifier = Modifier.size(18.dp)
+                                imageVector = Icons.Rounded.ViewSidebar,
+                                contentDescription = "Navigator Panel (Tabs & Files)",
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(17.dp)
                             )
                         }
                     }
 
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (isCodeMode) (activeFileName ?: "Xcode Code Editor") else (tab.title.takeIf { it.isNotBlank() } ?: "Web Developer Tools"),
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isCodeMode) Color(0xFFA855F7) else if (isTorActive) Color(0xFFC084FC) else Color(0xFF4ADE80))
-                            )
-                        }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    if (isCodeMode) {
+                        // Code Mode: Save & Format buttons
+                        IconButton(
+                            onClick = { onSaveFile?.invoke() },
+                            modifier = Modifier
+                                .size(30.dp)
+                                .testTag("dev_bar_save_file_btn")
                         ) {
                             Icon(
-                                imageVector = if (isCodeMode) Icons.Rounded.Terminal else if (isHttps) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
-                                contentDescription = null,
-                                tint = if (isCodeMode) Color(0xFFA855F7) else if (isHttps) Color(0xFF4ADE80) else Color(0xFFFBBF24),
-                                modifier = Modifier.size(10.dp)
+                                imageVector = Icons.Rounded.Save,
+                                contentDescription = "Save File",
+                                tint = if (isFileDirty) Color(0xFFF59E0B) else Color(0xFF94A3B8),
+                                modifier = Modifier.size(16.dp)
                             )
-                            Text(
-                                text = if (isCodeMode) "GVONE Xcode IDE Engine" else hostDomain.ifBlank { "localhost" },
-                                color = Color(0xFF64748B),
-                                fontSize = 10.5.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                        }
+
+                        if (onFormatCode != null) {
+                            IconButton(
+                                onClick = onFormatCode,
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_format_code_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.FormatPaint,
+                                    contentDescription = "Format Code",
+                                    tint = Color(0xFFA78BFA),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        // Browser Mode: Back, Forward, Reload
+                        IconButton(
+                            onClick = { onGoBack?.invoke() ?: run { if (activeWebView?.canGoBack() == true) activeWebView.goBack() } },
+                            enabled = canGoBack || activeWebView?.canGoBack() == true,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .testTag("dev_bar_back_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Back",
+                                tint = if (canGoBack || activeWebView?.canGoBack() == true) Color(0xFFE2E8F0) else Color(0xFF475569),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { onGoForward?.invoke() ?: run { if (activeWebView?.canGoForward() == true) activeWebView.goForward() } },
+                            enabled = canGoForward || activeWebView?.canGoForward() == true,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .testTag("dev_bar_forward_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                contentDescription = "Forward",
+                                tint = if (canGoForward || activeWebView?.canGoForward() == true) Color(0xFFE2E8F0) else Color(0xFF475569),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { onReload?.invoke() ?: activeWebView?.reload() },
+                            modifier = Modifier
+                                .size(30.dp)
+                                .testTag("dev_bar_reload_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = "Reload",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
                 }
 
-                // Right: Action buttons
+                // 2. CENTER CAPSULE: Target Scheme / Active File Pill
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF0F1523),
+                    border = BorderStroke(1.dp, if (isCodeMode) Color(0xFFA855F7).copy(alpha = 0.4f) else Color(0xFF2C384D)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 4.dp)
+                        .height(34.dp)
+                        .clickable { onAddressClick?.invoke() ?: run { isExpanded = !isExpanded } }
+                        .testTag("dev_bar_scheme_pill")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isCodeMode) Color(0xFFA855F7).copy(alpha = 0.2f) else Color(0xFF38BDF8).copy(alpha = 0.2f),
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isCodeMode) Icons.Rounded.Code else if (isHttps) Icons.Rounded.Lock else Icons.Rounded.Public,
+                                    contentDescription = null,
+                                    tint = if (isCodeMode) Color(0xFFA855F7) else if (isHttps) Color(0xFF4ADE80) else Color(0xFF38BDF8),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+
+                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (isCodeMode) (activeFileName ?: "Xcode Editor") else (tab.title.takeIf { it.isNotBlank() } ?: "Web Workspace"),
+                                    color = Color.White,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (isCodeMode && isFileDirty) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFF59E0B))
+                                    )
+                                }
+                                if (isTorActive) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFC084FC))
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 3. RIGHT CONTROLS: Mode Switcher, Execution, Inspector, Console, Chevron
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     // Segmented Workspace Mode Switcher: [Web | Code]
                     Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(12.dp))
                             .background(Color(0xFF0B101C))
-                            .border(0.5.dp, Color(0xFF2C384D), RoundedCornerShape(14.dp))
+                            .border(0.5.dp, Color(0xFF2C384D), RoundedCornerShape(12.dp))
                             .padding(2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (workspaceMode == XcodeWorkspaceMode.BROWSER) Color(0xFF0284C7).copy(alpha = 0.35f) else Color.Transparent,
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (!isCodeMode) Color(0xFF0284C7).copy(alpha = 0.35f) else Color.Transparent,
                             modifier = Modifier
                                 .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER) }
                                 .testTag("dev_bar_mode_web_btn")
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Public,
-                                    contentDescription = null,
-                                    tint = if (workspaceMode == XcodeWorkspaceMode.BROWSER) Color(0xFF38BDF8) else Color(0xFF64748B),
-                                    modifier = Modifier.size(11.dp)
-                                )
-                                Text(
-                                    "Web",
-                                    fontSize = 10.sp,
-                                    color = if (workspaceMode == XcodeWorkspaceMode.BROWSER) Color(0xFF38BDF8) else Color(0xFF64748B),
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                            Text(
+                                "WEB",
+                                fontSize = 9.sp,
+                                color = if (!isCodeMode) Color(0xFF38BDF8) else Color(0xFF64748B),
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
                         }
 
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR) Color(0xFFA855F7).copy(alpha = 0.35f) else Color.Transparent,
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isCodeMode) Color(0xFFA855F7).copy(alpha = 0.35f) else Color.Transparent,
                             modifier = Modifier
                                 .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.CODE_EDITOR) }
                                 .testTag("dev_bar_mode_code_btn")
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Code,
-                                    contentDescription = null,
-                                    tint = if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR) Color(0xFFC084FC) else Color(0xFF64748B),
-                                    modifier = Modifier.size(11.dp)
-                                )
-                                Text(
-                                    "Code",
-                                    fontSize = 10.sp,
-                                    color = if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR) Color(0xFFC084FC) else Color(0xFF64748B),
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                            Text(
+                                "CODE",
+                                fontSize = 9.sp,
+                                color = if (isCodeMode) Color(0xFFC084FC) else Color(0xFF64748B),
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
                         }
                     }
 
-                    // Run / Preview / Reload
-                    if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR) {
-                        IconButton(
-                            onClick = {
+                    // Run / Preview Action Button
+                    IconButton(
+                        onClick = {
+                            if (isCodeMode) {
                                 onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER)
                                 Toast.makeText(context, "Running & Previewing in Web Browser", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier
-                                .size(32.dp)
-                                .testTag("dev_bar_run_preview_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.PlayArrow,
-                                contentDescription = "Run & Preview",
-                                tint = Color(0xFF34D399),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    } else {
-                        IconButton(
-                            onClick = {
-                                activeWebView?.clearCache(true)
-                                activeWebView?.reload()
-                                Toast.makeText(context, "Hard Reload (Cache Cleared)", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier
-                                .size(32.dp)
-                                .testTag("dev_bar_hard_reload_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Refresh,
-                                contentDescription = "Hard Reload",
-                                tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                            } else {
+                                onReload?.invoke() ?: run {
+                                    activeWebView?.clearCache(true)
+                                    activeWebView?.reload()
+                                }
+                                Toast.makeText(context, "Reloading Web App", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier
+                            .size(30.dp)
+                            .testTag("dev_bar_run_action_btn")
+                    ) {
+                        Icon(
+                            imageVector = if (isCodeMode) Icons.Rounded.PlayArrow else Icons.Rounded.Refresh,
+                            contentDescription = if (isCodeMode) "Run & Preview in Browser" else "Reload Web App",
+                            tint = if (isCodeMode) Color(0xFF34D399) else Color(0xFF38BDF8),
+                            modifier = Modifier.size(17.dp)
+                        )
                     }
 
                     // Open Xcode Inspector Panel
@@ -317,24 +400,24 @@ fun WebsiteDeveloperBar(
                         IconButton(
                             onClick = onOpenInspector,
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(30.dp)
                                 .testTag("dev_bar_inspector_btn")
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Search,
+                                imageVector = Icons.Rounded.Info,
                                 contentDescription = "Inspector Panel",
-                                tint = Color(0xFF38BDF8),
+                                tint = Color(0xFFF59E0B),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
                     }
 
-                    // Open Xcode Debug Console
+                    // Open Xcode Debug Console / Terminal
                     if (onOpenConsole != null) {
                         IconButton(
                             onClick = onOpenConsole,
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(30.dp)
                                 .testTag("dev_bar_console_btn")
                         ) {
                             Icon(
@@ -346,12 +429,12 @@ fun WebsiteDeveloperBar(
                         }
                     }
 
-                    // Expand / Collapse Chevron
+                    // Expand / Collapse Live DevTools Drawer
                     val rotation by animateFloatAsState(targetValue = if (isExpanded) 180f else 0f, label = "chevron")
                     IconButton(
                         onClick = { isExpanded = !isExpanded },
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(28.dp)
                             .testTag("dev_bar_expand_toggle_btn")
                     ) {
                         Icon(
@@ -359,14 +442,14 @@ fun WebsiteDeveloperBar(
                             contentDescription = if (isExpanded) "Collapse Tools" else "Expand Tools",
                             tint = if (isExpanded) Color(0xFF38BDF8) else Color(0xFF94A3B8),
                             modifier = Modifier
-                                .size(18.dp)
+                                .size(17.dp)
                                 .rotate(rotation)
                         )
                     }
 
-                    // Prominent ON / OFF Button
+                    // DEV ON/OFF Toggle
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(6.dp),
                         color = Color(0xFF064E3B),
                         border = BorderStroke(1.dp, Color(0xFF10B981)),
                         modifier = Modifier
@@ -374,27 +457,21 @@ fun WebsiteDeveloperBar(
                             .testTag("dev_bar_toggle_off_btn")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(7.dp)
+                                    .size(6.dp)
                                     .background(Color(0xFF34D399), CircleShape)
                             )
                             Text(
-                                text = "DEV ON",
-                                fontSize = 11.sp,
+                                text = "DEV",
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 color = Color(0xFF34D399)
-                            )
-                            Icon(
-                                imageVector = Icons.Rounded.PowerSettingsNew,
-                                contentDescription = "Turn Developer Bar OFF",
-                                tint = Color(0xFF34D399),
-                                modifier = Modifier.size(13.dp)
                             )
                         }
                     }

@@ -285,7 +285,7 @@ fun XcodeInspectorPanel(
 }
 
 @Composable
-private fun AttributesInspectorView(
+fun AttributesInspectorView(
     currentTab: BrowserTab?,
     activeEditorTab: IdeTab?,
     workspaceMode: XcodeWorkspaceMode
@@ -330,7 +330,7 @@ private fun AttributesInspectorView(
 }
 
 @Composable
-private fun DomInspectorView(
+fun DomInspectorView(
     currentTab: BrowserTab?,
     outlinesEnabled: Boolean,
     onToggleOutlines: () -> Unit,
@@ -421,7 +421,7 @@ private fun DomInspectorView(
 }
 
 @Composable
-private fun NetworkSecurityInspectorView(
+fun NetworkSecurityInspectorView(
     currentTab: BrowserTab?,
     isTorActive: Boolean,
     onClearSiteData: () -> Unit
@@ -506,7 +506,7 @@ private fun SafetyRulesInspectorView() {
 }
 
 @Composable
-private fun InspectorAttributeRow(label: String, value: String) {
+fun InspectorAttributeRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,

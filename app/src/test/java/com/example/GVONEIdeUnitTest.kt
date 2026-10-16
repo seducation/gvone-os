@@ -67,10 +67,11 @@ class GVONEIdeUnitTest {
     @Test
     fun testIdeEnumsAndCommands() {
         // Activity tabs
-        assertEquals(4, IdeActivityTab.values().size)
+        assertEquals(5, IdeActivityTab.values().size)
         assertTrue(IdeActivityTab.values().any { it == IdeActivityTab.EXPLORER })
         assertTrue(IdeActivityTab.values().any { it == IdeActivityTab.SEARCH })
         assertTrue(IdeActivityTab.values().any { it == IdeActivityTab.SOURCE_CONTROL })
+        assertTrue(IdeActivityTab.values().any { it == IdeActivityTab.EXTENSIONS })
         assertTrue(IdeActivityTab.values().any { it == IdeActivityTab.AI_ASSISTANT })
 
         // Bottom tabs

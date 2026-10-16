@@ -1253,7 +1253,7 @@ fun TabOverviewScreen(
                                             ) {
                                                 Icon(Icons.Rounded.Code, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFA855F7))
                                                 Spacer(modifier = Modifier.width(4.dp))
-                                                Text("Code Studio", color = Color(0xFFA855F7), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                Text("Xcode Editor", color = Color(0xFFA855F7), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
@@ -2835,6 +2835,14 @@ fun TabFileCard(
                 .background(Color(0xFF1B2230))
                 .border(1.dp, Color(0xFF303A4E), RoundedCornerShape(12.dp))
         ) {
+            DropdownMenuItem(
+                text = { Text("Edit in Xcode Editor", color = Color(0xFFA855F7), fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
+                leadingIcon = { Icon(Icons.Rounded.Code, contentDescription = null, tint = Color(0xFFA855F7), modifier = Modifier.size(18.dp)) },
+                onClick = {
+                    showContextMenu = false
+                    onClick()
+                }
+            )
             DropdownMenuItem(
                 text = { Text("Open in Tab", color = GVONETextPrimary, fontSize = 13.sp) },
                 leadingIcon = { Icon(Icons.Rounded.OpenInBrowser, contentDescription = null, tint = GVONEPrimary, modifier = Modifier.size(18.dp)) },

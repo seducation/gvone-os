@@ -985,7 +985,7 @@ fun FloatingAddressBar(
                                     indication = null,
                                     enabled = !effectivelyCompact,
                                     onClick = {
-                                        onInspectorClick?.invoke() ?: onActionsMenuClick()
+                                        onActionsMenuClick()
                                     },
                                     onLongClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)

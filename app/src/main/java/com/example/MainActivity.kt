@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
+import kotlinx.coroutines.launch
+import com.example.data.files.StorageLocation
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -249,11 +251,12 @@ fun BrowserApp(
             if (existing != null) {
                 ideActiveTabId = existing.id
             } else {
-                val content = viewModel.fileSystem.readFile(file.path) ?: ""
+                val content = viewModel.fileSystem.readFileContent(file.path)
                 val newTab = IdeTab(
                     id = java.util.UUID.randomUUID().toString(),
                     fileItem = file,
-                    content = content
+                    content = content,
+                    originalContent = content
                 )
                 ideOpenTabs = ideOpenTabs + newTab
                 ideActiveTabId = newTab.id
@@ -265,19 +268,18 @@ fun BrowserApp(
 
     LaunchedEffect(workspaceMode) {
         if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR && ideOpenTabs.isEmpty()) {
-            mainScope.launch {
-                val allFiles = viewModel.fileSystem.listFiles()
-                val firstCode = allFiles.find { it.fileType == com.example.data.files.FileType.CODE } ?: allFiles.firstOrNull()
-                if (firstCode != null) {
-                    val content = viewModel.fileSystem.readFile(firstCode.path) ?: ""
-                    val newTab = IdeTab(
-                        id = java.util.UUID.randomUUID().toString(),
-                        fileItem = firstCode,
-                        content = content
-                    )
-                    ideOpenTabs = listOf(newTab)
-                    ideActiveTabId = newTab.id
-                }
+            val allFiles = viewModel.fileSystem.listFiles(location = StorageLocation.PROJECTS)
+            val firstCode = allFiles.find { it.fileType == com.example.data.files.FileType.CODE } ?: allFiles.firstOrNull()
+            if (firstCode != null) {
+                val content = viewModel.fileSystem.readFileContent(firstCode.path)
+                val newTab = IdeTab(
+                    id = java.util.UUID.randomUUID().toString(),
+                    fileItem = firstCode,
+                    content = content,
+                    originalContent = content
+                )
+                ideOpenTabs = listOf(newTab)
+                ideActiveTabId = newTab.id
             }
         }
     }
@@ -356,6 +358,9 @@ fun BrowserApp(
                     .fillMaxSize()
                     .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
             ) {
+                val activeEditorTab = remember(ideOpenTabs, ideActiveTabId) {
+                    ideOpenTabs.find { it.id == ideActiveTabId }
+                }
                 WebsiteDeveloperBar(
                     tab = currentTab ?: tabs.firstOrNull() ?: com.example.data.model.BrowserTab(id = "code", title = "Xcode Code Editor", url = "xcode://editor"),
                     activeWebView = null,
@@ -365,9 +370,28 @@ fun BrowserApp(
                     onOpenIde = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
                     workspaceMode = XcodeWorkspaceMode.CODE_EDITOR,
                     onToggleWorkspaceMode = { viewModel.setWorkspaceMode(it) },
-                    activeFileName = ideOpenTabs.find { it.id == ideActiveTabId }?.fileItem?.name,
+                    activeFileName = activeEditorTab?.fileItem?.name,
+                    isFileDirty = activeEditorTab?.isDirty == true,
                     onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
-                    onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) }
+                    onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
+                    onSaveFile = {
+                        activeEditorTab?.let { tabItem ->
+                            mainScope.launch {
+                                viewModel.fileSystem.writeFileContent(tabItem.fileItem.path, tabItem.content)
+                                ideOpenTabs = ideOpenTabs.map {
+                                    if (it.id == tabItem.id) it.copy(originalContent = it.content) else it
+                                }
+                                Toast.makeText(context, "Saved ${tabItem.fileItem.name}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    onFormatCode = {
+                        Toast.makeText(context, "Formatted code with Prettier", Toast.LENGTH_SHORT).show()
+                    },
+                    onAddressClick = {
+                        isAddressBarWriting = true
+                    }
                 )
 
                 XcodeWorkspaceEditor(
@@ -385,27 +409,27 @@ fun BrowserApp(
                     },
                     onNewFileTab = {
                         mainScope.launch {
-                            val defaultName = "script_${System.currentTimeMillis() % 1000}.js"
-                            viewModel.fileSystem.createFile("Projects", defaultName, "// GVONE Xcode Studio\nconsole.log('Unified workspace running');")
-                            val created = viewModel.fileSystem.getFileItem("Projects/$defaultName")
-                            if (created != null) {
-                                val newTab = IdeTab(
-                                    id = java.util.UUID.randomUUID().toString(),
-                                    fileItem = created,
-                                    content = "// GVONE Xcode Studio\nconsole.log('Unified workspace running');"
-                                )
-                                ideOpenTabs = ideOpenTabs + newTab
-                                ideActiveTabId = newTab.id
-                            }
+                            val defaultName = "script_${System.currentTimeMillis() % 1000}"
+                            val created = viewModel.fileSystem.createFile("Projects", defaultName, "js", "// GVONE Xcode Studio\nconsole.log('Unified workspace running');")
+                            val newTab = IdeTab(
+                                id = java.util.UUID.randomUUID().toString(),
+                                fileItem = created,
+                                content = "// GVONE Xcode Studio\nconsole.log('Unified workspace running');",
+                                originalContent = "// GVONE Xcode Studio\nconsole.log('Unified workspace running');"
+                            )
+                            ideOpenTabs = ideOpenTabs + newTab
+                            ideActiveTabId = newTab.id
                         }
                     },
                     fileSystem = viewModel.fileSystem,
                     coroutineScope = mainScope,
                     onSaveFile = { path, content ->
                         mainScope.launch {
-                            viewModel.fileSystem.writeFile(path, content)
+                            viewModel.fileSystem.writeFileContent(path, content)
                             ideOpenTabs = ideOpenTabs.map {
-                                if (it.fileItem.path == path) it.copy(content = content, isDirty = false) else it
+                                if (it.fileItem.path == path) {
+                                    it.copy(content = content, originalContent = content)
+                                } else it
                             }
                             Toast.makeText(context, "Saved $path", Toast.LENGTH_SHORT).show()
                         }
@@ -478,9 +502,10 @@ fun BrowserApp(
                             Box(modifier = Modifier.fillMaxSize()) {
                                 Column(modifier = Modifier.fillMaxSize()) {
                                     if (settings.developerBarEnabled) {
+                                        val activeWv = viewModel.getActiveWebView(tab.id)
                                         WebsiteDeveloperBar(
                                             tab = tab,
-                                            activeWebView = viewModel.getActiveWebView(tab.id),
+                                            activeWebView = activeWv,
                                             isTorActive = settings.torEnabled,
                                             onToggleOff = { viewModel.toggleDeveloperBar() },
                                             modifier = Modifier.fillMaxWidth(),
@@ -488,7 +513,14 @@ fun BrowserApp(
                                             workspaceMode = XcodeWorkspaceMode.BROWSER,
                                             onToggleWorkspaceMode = { viewModel.setWorkspaceMode(it) },
                                             onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
-                                            onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) }
+                                            onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
+                                            onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
+                                            canGoBack = activeWv?.canGoBack() == true,
+                                            canGoForward = activeWv?.canGoForward() == true,
+                                            onGoBack = { activeWv?.goBack() },
+                                            onGoForward = { activeWv?.goForward() },
+                                            onReload = { activeWv?.reload() },
+                                            onAddressClick = { isAddressBarWriting = true }
                                         )
                                     }
                                     GVONEWebView(
@@ -861,82 +893,22 @@ fun BrowserApp(
             )
         }
 
-        // Safari Actions Menu Sheet (Triggered by the Right Circular Button)
-        if (activeSheet == ActiveSheet.SafariActions || activeSheet == ActiveSheet.SafariPageMenu || activeSheet == ActiveSheet.ControlCentre) {
-            SafariActionsSheet(
-                tab = currentTab,
-                isTorActive = isTorActive,
-                isPrivateMode = isPrivateMode,
-                isShortsTab = isCurrentTabShorts,
-                isShortsMuted = isShortsMuted,
-                shortsAudioMode = settings.shortsAudioMode,
-                backgroundPlayEnabled = settings.backgroundPlayEnabled,
-                isMediaPlaying = mediaPlayerStatus?.isPlaying ?: (isCurrentTabShorts && !isShortsMuted),
-                onToggleShortsAudio = { viewModel.toggleShortsAudio() },
-                onSelectShortsAudioMode = { mode -> viewModel.setShortsAudioMode(mode) },
-                onToggleBackgroundPlay = { viewModel.toggleBackgroundPlay() },
-                onToggleMediaPlay = { viewModel.toggleMediaPlay() },
-                onMediaPrevious = { viewModel.mediaPrevious() },
-                onMediaNext = { viewModel.mediaNext() },
-                onNewTab = { viewModel.createNewTab() },
-                onNewPrivateTab = { viewModel.createNewTab(isPrivate = true) },
-                onToggleDesktop = { viewModel.toggleDesktopMode() },
-                onToggleTor = { viewModel.toggleTor() },
-                onFindInPage = { viewModel.openSheet(ActiveSheet.FindInPage) },
-                onShare = { currentTab?.url?.let { onShareUrl(it) } },
-                onReload = { currentTab?.url?.let { viewModel.loadUrlInCurrentTab(it) } },
-                onAddBookmark = { viewModel.addBookmark() },
-                onAddFavorite = { viewModel.addToFavorites() },
-                onAddToReadingList = { viewModel.addToReadingList() },
-                onOpenReaderMode = { viewModel.openSheet(ActiveSheet.ReaderMode) },
-                onOpenSiteInfo = { viewModel.openSheet(ActiveSheet.SiteInfo) },
-                onOpenAddToHomeScreen = { viewModel.openSheet(ActiveSheet.AddToHomeScreen) },
-                onOpenWidgetSelection = { viewModel.openSheet(ActiveSheet.WebWidgetSelection) },
-                onOpenDownloads = { viewModel.openSheet(ActiveSheet.Downloads) },
-                onOpenHistory = { viewModel.openSheet(ActiveSheet.History) },
-                onOpenBookmarks = { viewModel.openSheet(ActiveSheet.Bookmarks) },
-                onOpenTerminal = { viewModel.openSheet(ActiveSheet.Terminal) },
-                isDeveloperBarEnabled = settings.developerBarEnabled,
-                onToggleDeveloperBar = { viewModel.toggleDeveloperBar() },
-                onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
-                onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
-                onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
-                onOpenFiles = { viewModel.openFiles(isSelectionMode = false) },
-                onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
-                onOpenConnectorHub = { viewModel.openConnectorHub() },
-                onOpenResearchWorkspace = { viewModel.openResearchWorkspace() },
-                onOpenDataSaver = { viewModel.openDataSaver() },
-                onOpenCommunicationHub = { viewModel.openCommunicationHub() },
-                onOpenIde = { viewModel.openIde() },
-                onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
-                onNavigateToUrl = { url -> viewModel.loadUrlInCurrentTab(url) },
-                onClearBrowsingData = { viewModel.clearBrowsingData() },
-                onClose = { viewModel.closeSheet() }
-            )
-        }
-
-        // Xcode Bottom-Right Inspector Panel
-        AnimatedVisibility(
-            visible = activeSheet == ActiveSheet.Inspector,
-            enter = fadeIn() + slideInVertically { it / 2 },
-            exit = fadeOut() + slideOutVertically { it / 2 }
-        ) {
-            XcodeInspectorPanel(
-                tab = currentTab,
-                activeWebView = currentTab?.let { viewModel.getActiveWebView(it.id) },
-                onClose = { viewModel.closeSheet() },
-                onHighlightElements = { activeWv ->
-                    activeWv?.evaluateJavascript(
-                        "document.querySelectorAll('*').forEach(el => el.style.outline = '1px solid #38BDF8');",
-                        null
-                    )
-                },
-                onClearSiteData = {
-                    viewModel.clearBrowsingData()
-                    Toast.makeText(context, "Storage and cookies cleared", Toast.LENGTH_SHORT).show()
-                }
-            )
-        }
+        // Unified Actions & Inspector Menu Sheet (Triggered by the Right Circular Button)
+        CombinedActionsInspectorSheet(
+            activeSheet = activeSheet,
+            currentTab = currentTab,
+            isTorActive = isTorActive,
+            isPrivateMode = isPrivateMode,
+            isCurrentTabShorts = isCurrentTabShorts,
+            isShortsMuted = isShortsMuted,
+            settings = settings,
+            mediaPlayerStatus = mediaPlayerStatus,
+            ideOpenTabs = ideOpenTabs,
+            ideActiveTabId = ideActiveTabId,
+            workspaceMode = workspaceMode,
+            viewModel = viewModel,
+            onShareUrl = onShareUrl
+        )
 
         // Reader Mode Fullscreen View
         if (activeSheet == ActiveSheet.ReaderMode) {

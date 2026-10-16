@@ -42,8 +42,23 @@ import com.example.ui.components.SafariShortcutsCard
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
+import android.webkit.WebView
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import com.example.ui.screens.ide.IdeTab
+import com.example.ui.screens.ide.XcodeWorkspaceMode
+import com.example.ui.screens.ide.AttributesInspectorView
+import com.example.ui.screens.ide.DomInspectorView
+import com.example.ui.screens.ide.NetworkSecurityInspectorView
+
 enum class SafariActionTab(val label: String, val icon: ImageVector) {
     MAIN("Main", Icons.Rounded.Dashboard),
+    ATTRIBUTES("Attributes", Icons.Rounded.Tune),
+    DOM_INSPECT("DOM", Icons.Rounded.Code),
+    SECURITY("Security", Icons.Rounded.Security),
     ABOUT("About", Icons.Rounded.Info),
     INFO("Info", Icons.Rounded.Insights),
     GIT("Git", Icons.Rounded.Source),
@@ -128,6 +143,10 @@ fun SafariActionsSheet(
     onNavigateForward: () -> Unit = {},
     onNavigateToUrl: (String) -> Unit = {},
     onClearBrowsingData: () -> Unit = {},
+    activeEditorTab: IdeTab? = null,
+    workspaceMode: XcodeWorkspaceMode = XcodeWorkspaceMode.BROWSER,
+    activeWebView: WebView? = null,
+    initialTab: SafariActionTab = SafariActionTab.MAIN,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -137,7 +156,7 @@ fun SafariActionsSheet(
     var showSignInDialog by remember { mutableStateOf(false) }
     var zoomPercentage by remember { mutableIntStateOf(100) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
-    var selectedTab by remember { mutableStateOf(SafariActionTab.MAIN) }
+    var selectedTab by remember { mutableStateOf(initialTab) }
 
     // Extension toggles
     var adBlockerActive by remember { mutableStateOf(true) }
@@ -921,8 +940,8 @@ fun SafariActionsSheet(
                                             HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
                                             SafariActionRow(
                                                 icon = Icons.Rounded.Code,
-                                                label = "Code Studio (VS Code)",
-                                                trailingText = "IDE • Git • Terminal",
+                                                label = "Xcode Code Editor",
+                                                trailingText = "Unified Workspace • Code",
                                                 onClick = {
                                                     onClose()
                                                     onOpenIde()
@@ -1220,6 +1239,129 @@ fun SafariActionsSheet(
                         }
                     )
                 }
+            }
+        }
+
+        SafariActionTab.ATTRIBUTES -> {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 450.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                color = Color.Transparent
+            ) {
+                AttributesInspectorView(
+                    currentTab = tab,
+                    activeEditorTab = activeEditorTab,
+                    workspaceMode = workspaceMode
+                )
+            }
+        }
+
+        SafariActionTab.DOM_INSPECT -> {
+            var outlinesEnabled by remember { mutableStateOf(false) }
+            var clickInspectorEnabled by remember { mutableStateOf(false) }
+            val sheetContext = LocalContext.current
+            val executeJs = { code: String, onResult: ((String) -> Unit)? ->
+                if (activeWebView != null) {
+                    activeWebView.evaluateJavascript(code) { res ->
+                        onResult?.invoke(res?.trim() ?: "undefined")
+                    }
+                } else {
+                    Toast.makeText(sheetContext, "WebView not active", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 450.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                color = Color.Transparent
+            ) {
+                DomInspectorView(
+                    currentTab = tab,
+                    outlinesEnabled = outlinesEnabled,
+                    onToggleOutlines = {
+                        outlinesEnabled = !outlinesEnabled
+                        val script = if (outlinesEnabled) {
+                            "(function(){var s=document.createElement('style');s.id='__xcode_dev_outlines__';s.innerHTML='* { outline: 1px dashed rgba(245,158,11,0.7) !important; }';document.head.appendChild(s);return 'Outlines Active';})()"
+                        } else {
+                            "(function(){var s=document.getElementById('__xcode_dev_outlines__');if(s)s.remove();return 'Outlines Removed';})()"
+                        }
+                        executeJs(script) {
+                            Toast.makeText(sheetContext, if (outlinesEnabled) "Visual Outlines Active" else "Visual Outlines Disabled", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    clickInspectorEnabled = clickInspectorEnabled,
+                    onToggleClickInspector = {
+                        clickInspectorEnabled = !clickInspectorEnabled
+                        val script = if (clickInspectorEnabled) {
+                            """
+                            (function(){
+                                window.__xcode_inspect_fn__ = function(e){
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    var el = e.target;
+                                    var info = '<' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + '> ' + Math.round(el.offsetWidth) + 'x' + Math.round(el.offsetHeight) + 'px';
+                                    alert('Element: ' + info);
+                                };
+                                window.addEventListener('click', window.__xcode_inspect_fn__, true);
+                                return 'Inspector On';
+                            })()
+                            """.trimIndent()
+                        } else {
+                            """
+                            (function(){
+                                if (window.__xcode_inspect_fn__) {
+                                    window.removeEventListener('click', window.__xcode_inspect_fn__, true);
+                                    window.__xcode_inspect_fn__ = null;
+                                }
+                                return 'Inspector Off';
+                            })()
+                            """.trimIndent()
+                        }
+                        executeJs(script) {
+                            Toast.makeText(sheetContext, if (clickInspectorEnabled) "Click Inspector ON: Tap element to inspect tag" else "Click Inspector OFF", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onCopyHtml = {
+                        executeJs("document.documentElement.outerHTML") { html ->
+                            val clipboard = sheetContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("HTML", html.removePrefix("\"").removeSuffix("\"").replace("\\n", "\n").replace("\\\"", "\"")))
+                            Toast.makeText(sheetContext, "OuterHTML copied to clipboard", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
+        }
+
+        SafariActionTab.SECURITY -> {
+            val sheetContext = LocalContext.current
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 450.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                color = Color.Transparent
+            ) {
+                NetworkSecurityInspectorView(
+                    currentTab = tab,
+                    isTorActive = isTorActive,
+                    onClearSiteData = {
+                        if (activeWebView != null) {
+                            activeWebView.evaluateJavascript("localStorage.clear(); sessionStorage.clear(); 'Storage Cleared';") {
+                                Toast.makeText(sheetContext, "Storage and cookies wiped", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            onClearBrowsingData()
+                            Toast.makeText(sheetContext, "Browsing data cleared", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
             }
         }
 
