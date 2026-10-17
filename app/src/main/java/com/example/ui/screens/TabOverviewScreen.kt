@@ -57,6 +57,7 @@ import androidx.core.content.FileProvider
 import com.example.data.files.*
 import com.example.data.model.BrowserTab
 import com.example.data.model.Environment
+import com.example.data.model.QuickMenuProject
 import com.example.data.model.TabGroup
 import com.example.data.model.TabSortOption
 import com.example.data.model.isInternalHomeUrl
@@ -127,6 +128,7 @@ fun TabOverviewScreen(
 
     // Navigation state: null = Root All Tabs (Folders + Ungrouped), non-null = Viewing specific Folder
     var currentFolderId by remember { mutableStateOf<String?>(null) }
+    var activeProject by remember { mutableStateOf<QuickMenuProject?>(null) }
 
     // Search and filter state
     var searchQuery by remember { mutableStateOf("") }
@@ -193,17 +195,36 @@ fun TabOverviewScreen(
                 allFiles = rootFiles
                 if (currentFolderId != null) {
                     val group = tabGroups.find { it.id == currentFolderId }
-                    val groupFolderName = group?.name ?: ""
+                    val groupFolderName = group?.name ?: activeProject?.name ?: ""
                     val directGroupFiles = if (groupFolderName.isNotEmpty()) {
                         fs.listFiles(StorageLocation.MY_FILES, currentFolder = groupFolderName)
                     } else {
                         emptyList()
                     }
-                    folderFiles = if (directGroupFiles.isNotEmpty()) {
+                    val matchedFsFiles = if (directGroupFiles.isNotEmpty()) {
                         directGroupFiles
                     } else {
                         rootFiles.filter { it.path.contains(groupFolderName, ignoreCase = true) || it.name.contains(groupFolderName, ignoreCase = true) }
                     }
+
+                    val projectFiles = if (activeProject != null && (activeProject?.id == currentFolderId || currentFolder?.name.equals(activeProject?.name, ignoreCase = true))) {
+                        activeProject!!.files.mapIndexed { idx, fileName ->
+                            rootFiles.find { it.name.equals(fileName, ignoreCase = true) }
+                                ?: fs.getFileItem(fileName)
+                                ?: GVONEFileItem(
+                                    id = "proj_file_${activeProject!!.id}_$idx",
+                                    name = fileName,
+                                    path = "/${activeProject!!.name}/$fileName",
+                                    size = (1024L + idx * 512L),
+                                    lastModified = System.currentTimeMillis() - (idx * 1800_000L),
+                                    location = StorageLocation.MY_FILES
+                                )
+                        }
+                    } else {
+                        emptyList()
+                    }
+
+                    folderFiles = (matchedFsFiles + projectFiles).distinctBy { it.name }
                 } else {
                     folderFiles = emptyList()
                 }
@@ -216,7 +237,7 @@ fun TabOverviewScreen(
         }
     }
 
-    LaunchedEffect(currentFolderId, tabGroups) {
+    LaunchedEffect(currentFolderId, tabGroups, activeProject) {
         reloadFiles()
     }
 
@@ -231,7 +252,10 @@ fun TabOverviewScreen(
                 selectedChatIds = emptySet()
                 selectedFileIds = emptySet()
             }
-            currentFolderId != null -> currentFolderId = null
+            currentFolderId != null -> {
+                currentFolderId = null
+                activeProject = null
+            }
         }
     }
 
@@ -240,23 +264,73 @@ fun TabOverviewScreen(
         tabs.filter { it.isPrivate == isPrivateMode }
     }
 
-    // Active Folder object if viewing a folder
-    val currentFolder = remember(tabGroups, currentFolderId) {
-        tabGroups.find { it.id == currentFolderId }
+    // Active Folder object if viewing a folder (supports both standard TabGroup and QuickMenuProject)
+    val currentFolder = remember(tabGroups, currentFolderId, activeProject) {
+        if (currentFolderId == null) null
+        else {
+            tabGroups.find { it.id == currentFolderId }
+                ?: tabGroups.find { it.name.equals(activeProject?.name, ignoreCase = true) }
+                ?: activeProject?.let { proj ->
+                    if (proj.id == currentFolderId || currentFolderId == "proj_${proj.id}") {
+                        TabGroup(
+                            id = proj.id,
+                            name = proj.name,
+                            colorHex = "#38BDF8"
+                        )
+                    } else null
+                }
+        }
     }
 
-    // Filtered tabs for active folder view
-    val folderTabs = remember(modeTabs, currentFolderId) {
+    // Filtered tabs for active folder view (including project tabs)
+    val folderTabs = remember(modeTabs, currentFolderId, activeProject, currentFolder) {
         if (currentFolderId != null) {
-            modeTabs.filter { it.tabGroupId == currentFolderId }
+            val matchingTabs = modeTabs.filter {
+                it.tabGroupId == currentFolderId || (currentFolder != null && it.tabGroupId == currentFolder.id)
+            }
+            if (matchingTabs.isNotEmpty()) {
+                matchingTabs
+            } else if (activeProject != null && (activeProject?.id == currentFolderId || currentFolder?.name.equals(activeProject?.name, ignoreCase = true))) {
+                activeProject!!.tabs.mapIndexed { index, tabTitle ->
+                    val url = when {
+                        tabTitle.contains("Google", ignoreCase = true) -> "https://www.google.com"
+                        tabTitle.contains("GitHub", ignoreCase = true) -> "https://github.com"
+                        tabTitle.contains("Kotlin", ignoreCase = true) -> "https://kotlinlang.org/docs/home.html"
+                        tabTitle.contains("Android", ignoreCase = true) -> "https://developer.android.com"
+                        tabTitle.contains("Figma", ignoreCase = true) -> "https://www.figma.com"
+                        tabTitle.contains("NPM", ignoreCase = true) -> "https://www.npmjs.com"
+                        tabTitle.contains("Vite", ignoreCase = true) -> "http://localhost:5173"
+                        tabTitle.contains("http://") || tabTitle.contains("https://") -> tabTitle
+                        else -> "gvone://${tabTitle.lowercase().replace(" ", "_")}"
+                    }
+                    BrowserTab(
+                        id = "proj_tab_${activeProject!!.id}_$index",
+                        title = tabTitle,
+                        url = url,
+                        tabGroupId = currentFolderId
+                    )
+                }
+            } else {
+                emptyList()
+            }
         } else {
             emptyList()
         }
     }
 
-    // Filtered chats for active folder view
-    val folderChats = remember {
-        emptyList<TerminalSession>()
+    // Filtered chats for active folder view (including project chats)
+    val folderChats = remember(activeProject, currentFolderId, currentFolder) {
+        if (activeProject != null && (activeProject?.id == currentFolderId || currentFolder?.name.equals(activeProject?.name, ignoreCase = true))) {
+            activeProject!!.chats.mapIndexed { index, chatTitle ->
+                TerminalSession(
+                    id = "proj_chat_${activeProject!!.id}_$index",
+                    title = chatTitle,
+                    createdAt = System.currentTimeMillis() - (index * 3600_000L)
+                )
+            }
+        } else {
+            emptyList<TerminalSession>()
+        }
     }
 
     // Ungrouped tabs for root view
@@ -372,7 +446,10 @@ fun TabOverviewScreen(
                         tabCount = folderTabs.size,
                         chatCount = folderChats.size,
                         fileCount = folderFiles.size,
-                        onBack = { currentFolderId = null },
+                        onBack = {
+                            currentFolderId = null
+                            activeProject = null
+                        },
                         onAddTab = { onNewTab(currentFolder.id) },
                         onAddFile = { showCreateFileDialog = true },
                         onRename = { groupToRename = currentFolder },
@@ -454,6 +531,26 @@ fun TabOverviewScreen(
                         testTagPrefix = "overview_shortcut",
                         expanded = isShortcutsExpanded,
                         onExpandedChange = { isShortcutsExpanded = it }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Quick Menu vertical list card (Projects & Schedule)
+                    QuickMenuCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("overview_quick_menu_card"),
+                        onOpenProject = { project ->
+                            activeProject = project
+                            val existingGroup = tabGroups.find { it.id == project.id || it.name.equals(project.name, ignoreCase = true) }
+                            if (existingGroup != null) {
+                                currentFolderId = existingGroup.id
+                            } else {
+                                onCreateGroup(project.name, "#38BDF8", emptyList())
+                                currentFolderId = project.id
+                            }
+                            selectedCategory = 0 // Open in Tabs category
+                        }
                     )
                 }
             }
