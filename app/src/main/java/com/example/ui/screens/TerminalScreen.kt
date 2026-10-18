@@ -179,14 +179,6 @@ fun TerminalScreen(
     val isAgenticMode by viewModel.terminalCommandExecutor.isAgenticMode.collectAsStateWithLifecycle()
     var currentCwd by remember { mutableStateOf(shellEngine.promptPath) }
     var activePersona by remember { mutableStateOf(agentEngine.activePersona) }
-    val persistedTargetDir by viewModel.terminalTargetDirectory.collectAsStateWithLifecycle()
-    var workspaceProjectsList by remember { mutableStateOf<List<String>>(listOf("Projects", "Projects/KotlinCalculator", "Documents", "Downloads", "Images")) }
-
-    LaunchedEffect(persistedTargetDir) {
-        shellEngine.changeDirectory(persistedTargetDir)
-        currentCwd = shellEngine.promptPath
-        workspaceProjectsList = viewModel.getWorkspaceProjectsAndSubfolders()
-    }
 
     // Unified GVONE Runtime Mode & Task Lifecycle
     val runtimeStateManager = remember { RuntimeStateManager.global }
@@ -836,21 +828,6 @@ fun TerminalScreen(
                                 try {
                                     focusRequester.requestFocus()
                                 } catch (_: Throwable) {}
-                            },
-                            targetDirectory = persistedTargetDir,
-                            workspaceDirectories = workspaceProjectsList,
-                            onSelectTargetDirectory = { chosenDir ->
-                                viewModel.setTerminalTargetDirectory(chosenDir)
-                                coroutineScope.launch {
-                                    shellEngine.changeDirectory(chosenDir)
-                                    currentCwd = shellEngine.promptPath
-                                    val feedbackLine = TerminalLine("📁 Target project/directory set to: $chosenDir (AI tasks will target this directory)", TerminalLineType.SUCCESS)
-                                    val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
-                                    if (activeSess != null) {
-                                        val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
-                                        sessions = sessions.map { if (it.id == activeSess.id) updated else it }
-                                    }
-                                }
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -2097,21 +2074,6 @@ fun TerminalScreen(
                             try {
                                 focusRequester.requestFocus()
                             } catch (_: Throwable) {}
-                        },
-                        targetDirectory = persistedTargetDir,
-                        workspaceDirectories = workspaceProjectsList,
-                        onSelectTargetDirectory = { chosenDir ->
-                            viewModel.setTerminalTargetDirectory(chosenDir)
-                            coroutineScope.launch {
-                                shellEngine.changeDirectory(chosenDir)
-                                currentCwd = shellEngine.promptPath
-                                val feedbackLine = TerminalLine("📁 Target project/directory set to: $chosenDir (AI tasks will target this directory)", TerminalLineType.SUCCESS)
-                                val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
-                                if (activeSess != null) {
-                                    val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
-                                    sessions = sessions.map { if (it.id == activeSess.id) updated else it }
-                                }
-                            }
                         },
                         modifier = Modifier.fillMaxWidth()
                     )

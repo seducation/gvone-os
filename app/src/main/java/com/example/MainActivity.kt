@@ -27,7 +27,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import kotlinx.coroutines.launch
 import com.example.data.files.StorageLocation
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -241,8 +240,6 @@ fun BrowserApp(
     }
 
     val workspaceMode by viewModel.workspaceMode.collectAsStateWithLifecycle()
-    val activeBotPersona by viewModel.activeBotPersona.collectAsStateWithLifecycle()
-    val terminalTargetDir by viewModel.terminalTargetDirectory.collectAsStateWithLifecycle()
     val pendingIdeFile by viewModel.pendingIdeFile.collectAsStateWithLifecycle()
     var ideOpenTabs by remember { mutableStateOf<List<IdeTab>>(emptyList()) }
     var ideActiveTabId by remember { mutableStateOf<String?>(null) }
@@ -444,74 +441,6 @@ fun BrowserApp(
                     onSwitchToBrowser = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
                     modifier = Modifier.fillMaxSize()
                 )
-            }
-        } else if (workspaceMode == XcodeWorkspaceMode.BOT_CHAT) {
-            // Dedicated, full-featured Bot Chat tab in the central workspace stage
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
-            ) {
-                WebsiteDeveloperBar(
-                    tab = currentTab ?: tabs.firstOrNull() ?: com.example.data.model.BrowserTab(id = "bot", title = "AI Copilot", url = "xcode://bots"),
-                    activeWebView = null,
-                    isTorActive = settings.torEnabled,
-                    onToggleOff = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
-                    modifier = Modifier.fillMaxWidth(),
-                    onOpenIde = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.CODE_EDITOR) },
-                    workspaceMode = XcodeWorkspaceMode.BOT_CHAT,
-                    onToggleWorkspaceMode = { viewModel.setWorkspaceMode(it) },
-                    activeFileName = "Bot Chat: ${activeBotPersona.displayName}",
-                    isFileDirty = false,
-                    onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
-                    onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
-                    onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onAddressClick = { isAddressBarWriting = true }
-                )
-
-                // Dedicated Bot Chat Workspace Stage
-                Surface(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("workspace_bot_chat_stage"),
-                    color = Color(0xFF0D121F)
-                ) {
-                    val activeEditorTab = remember(ideOpenTabs, ideActiveTabId) {
-                        ideOpenTabs.find { it.id == ideActiveTabId }
-                    }
-                    IdeGrokBotsView(
-                        activeTab = activeEditorTab,
-                        openTabs = ideOpenTabs,
-                        aiService = viewModel.aiService,
-                        coroutineScope = mainScope,
-                        initialPersona = activeBotPersona,
-                        onPersonaChange = { viewModel.setActiveBotPersona(it) },
-                        targetDirectory = terminalTargetDir,
-                        onApplyCodeToEditor = { code ->
-                            activeEditorTab?.let { tabItem ->
-                                ideOpenTabs = ideOpenTabs.map {
-                                    if (it.id == tabItem.id) it.copy(content = code) else it
-                                }
-                                Toast.makeText(context, "Applied AI code to ${tabItem.fileItem.name}", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        onCreateFileFromCode = { filename, code ->
-                            mainScope.launch {
-                                val created = viewModel.fileSystem.createFile(terminalTargetDir, filename, code)
-                                val newTab = IdeTab(
-                                    id = java.util.UUID.randomUUID().toString(),
-                                    fileItem = created,
-                                    content = code,
-                                    originalContent = code
-                                )
-                                ideOpenTabs = ideOpenTabs + newTab
-                                ideActiveTabId = newTab.id
-                                Toast.makeText(context, "Created $filename in $terminalTargetDir", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
             }
         } else {
             // Main Browser View Area (All tabs kept alive for seamless background playback & instant tab switching)
@@ -834,7 +763,6 @@ fun BrowserApp(
                 onOpenFileInIde = { file -> viewModel.openIdeWithFile(file) },
                 onOpenIde = { viewModel.openIde() },
                 onOpenFilesSheet = { viewModel.openFiles(false) },
-                onOpenBotChat = { persona -> viewModel.openBotChat(persona) },
                 onSelectEnvironment = { viewModel.switchEnvironment(it) },
                 onCreateEnvironment = { name, icon, theme, preset, initialLinkUrl, initialLinkTitle ->
                     viewModel.createEnvironment(name, icon, theme, preset, initialLinkUrl, initialLinkTitle)

@@ -45,13 +45,10 @@ fun IdeGrokBotsView(
     coroutineScope: CoroutineScope,
     onApplyCodeToEditor: (String) -> Unit,
     onCreateFileFromCode: (filename: String, code: String) -> Unit,
-    initialPersona: GrokBotPersona = GrokBotPersona.GROK_CODER,
-    onPersonaChange: ((GrokBotPersona) -> Unit)? = null,
-    targetDirectory: String = "Projects",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var selectedPersona by remember(initialPersona) { mutableStateOf(initialPersona) }
+    var selectedPersona by remember { mutableStateOf(GrokBotPersona.GROK_CODER) }
     var promptInput by remember { mutableStateOf("") }
     var isThinking by remember { mutableStateOf(false) }
 
@@ -105,7 +102,6 @@ fun IdeGrokBotsView(
                         ${selectedPersona.systemRole}
                         
                         Workspace Context:
-                        Target Project/Directory: $targetDirectory
                         $fileContext
                         $tabsContext
                         
@@ -175,10 +171,7 @@ fun IdeGrokBotsView(
                         else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                     ),
                     modifier = Modifier
-                        .clickable {
-                            selectedPersona = persona
-                            onPersonaChange?.invoke(persona)
-                        }
+                        .clickable { selectedPersona = persona }
                         .testTag("grok_bot_picker_${persona.id}")
                 ) {
                     Row(

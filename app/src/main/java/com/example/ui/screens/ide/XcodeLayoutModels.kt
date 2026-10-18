@@ -11,8 +11,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
  */
 enum class XcodeWorkspaceMode(val label: String, val icon: ImageVector) {
     BROWSER("Web Browser", Icons.Rounded.Public),
-    CODE_EDITOR("Code Studio", Icons.Rounded.Code),
-    BOT_CHAT("Bot Chat", Icons.Rounded.AutoAwesome)
+    CODE_EDITOR("Code Studio", Icons.Rounded.Code)
 }
 
 /**

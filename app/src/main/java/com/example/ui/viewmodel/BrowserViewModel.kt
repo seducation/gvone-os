@@ -23,7 +23,6 @@ import com.example.data.tor.*
 import com.example.ui.contextmenu.LinkContextMenuData
 import com.example.ui.contextmenu.PagePreviewData
 import com.example.ui.screens.ide.XcodeWorkspaceMode
-import com.example.ui.screens.ide.GrokBotPersona
 import com.example.data.webwidget.WebWidgetSelectionDraft
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -308,50 +307,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearPendingIdeFile() {
         _pendingIdeFile.value = null
-    }
-
-    // Terminal Target Directory (persists in state and SharedPreferences)
-    private val _terminalTargetDirectory = MutableStateFlow(prefs.getString("terminal_target_dir", "Projects") ?: "Projects")
-    val terminalTargetDirectory: StateFlow<String> = _terminalTargetDirectory.asStateFlow()
-
-    fun setTerminalTargetDirectory(dir: String) {
-        val sanitized = dir.trim().removePrefix("/").ifBlank { "Projects" }
-        _terminalTargetDirectory.value = sanitized
-        prefs.edit().putString("terminal_target_dir", sanitized).apply()
-        viewModelScope.launch {
-            shellEngine.changeDirectory(sanitized)
-        }
-    }
-
-    // Active Bot Persona for Workspace Bot Chat tab
-    private val _activeBotPersona = MutableStateFlow(GrokBotPersona.GROK_CODER)
-    val activeBotPersona: StateFlow<GrokBotPersona> = _activeBotPersona.asStateFlow()
-
-    fun openBotChat(persona: GrokBotPersona) {
-        _activeBotPersona.value = persona
-        _workspaceMode.value = XcodeWorkspaceMode.BOT_CHAT
-        closeSheet()
-    }
-
-    fun setActiveBotPersona(persona: GrokBotPersona) {
-        _activeBotPersona.value = persona
-    }
-
-    suspend fun getWorkspaceProjectsAndSubfolders(): List<String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val folders = mutableListOf<String>()
-        folders.add("Projects")
-        try {
-            val repos = fileSystem.gitManager.listProjects()
-            repos.forEach { repo ->
-                if (repo.projectPath.isNotBlank()) {
-                    folders.add(repo.projectPath)
-                }
-            }
-        } catch (_: Exception) {}
-        folders.add("Documents")
-        folders.add("Downloads")
-        folders.add("Images")
-        folders.distinct().sorted()
     }
 
     // Bridge for Browser <-> GVONE Search/Chat Web App Communication
