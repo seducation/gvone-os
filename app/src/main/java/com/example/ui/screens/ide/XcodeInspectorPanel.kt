@@ -45,11 +45,20 @@ fun XcodeInspectorPanel(
     workspaceMode: XcodeWorkspaceMode,
     activeWebView: WebView?,
     isTorActive: Boolean,
+    webConsoleLogs: List<com.example.ui.components.DevConsoleLog> = emptyList(),
+    ideExecutionLogs: List<String> = emptyList(),
+    terminalLines: List<com.example.data.terminal.TerminalLine> = emptyList(),
+    onClearWebConsoleLogs: () -> Unit = {},
+    onClearIdeLogs: () -> Unit = {},
+    onExecuteTerminalCommand: (String) -> Unit = {},
+    onAppendIdeLog: (String) -> Unit = {},
+    onAppendWebConsoleLog: (com.example.ui.components.DevConsoleLog) -> Unit = {},
+    initialTab: XcodeInspectorTab = XcodeInspectorTab.ATTRIBUTES,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var selectedTab by remember { mutableStateOf(XcodeInspectorTab.ATTRIBUTES) }
+    var selectedTab by remember { mutableStateOf(initialTab) }
 
     // Visual Outlines and Click Inspector state
     var outlinesEnabled by remember { mutableStateOf(false) }
@@ -206,6 +215,22 @@ fun XcodeInspectorPanel(
                             currentTab = currentTab,
                             activeEditorTab = activeEditorTab,
                             workspaceMode = workspaceMode
+                        )
+                    }
+                    XcodeInspectorTab.CONSOLE -> {
+                        UnifiedDebugConsoleView(
+                            workspaceMode = workspaceMode,
+                            currentTab = currentTab,
+                            activeEditorTab = activeEditorTab,
+                            activeWebView = activeWebView,
+                            webConsoleLogs = webConsoleLogs,
+                            ideExecutionLogs = ideExecutionLogs,
+                            terminalLines = terminalLines,
+                            onClearWebConsoleLogs = onClearWebConsoleLogs,
+                            onClearIdeLogs = onClearIdeLogs,
+                            onExecuteTerminalCommand = onExecuteTerminalCommand,
+                            onAppendIdeLog = onAppendIdeLog,
+                            onAppendWebConsoleLog = onAppendWebConsoleLog
                         )
                     }
                     XcodeInspectorTab.DOM_INSPECT -> {

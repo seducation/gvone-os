@@ -23,9 +23,11 @@ import com.example.data.tor.*
 import com.example.ui.contextmenu.LinkContextMenuData
 import com.example.ui.contextmenu.PagePreviewData
 import com.example.ui.screens.ide.XcodeWorkspaceMode
+import com.example.ui.screens.ide.GrokBotPersona
 import com.example.data.webwidget.WebWidgetSelectionDraft
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import com.example.ui.components.DevConsoleLog
 import java.lang.ref.WeakReference
 import java.util.UUID
 
@@ -232,6 +234,54 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _pendingTerminalFile.value = null
     }
 
+    // Global Web Console Logs buffer for browser sessions
+    private val _webConsoleLogs = MutableStateFlow<List<DevConsoleLog>>(emptyList())
+    val webConsoleLogs: StateFlow<List<DevConsoleLog>> = _webConsoleLogs.asStateFlow()
+
+    fun addWebConsoleLog(log: DevConsoleLog) {
+        val current = _webConsoleLogs.value.toMutableList()
+        current.add(log)
+        while (current.size > 250) {
+            current.removeAt(0)
+        }
+        _webConsoleLogs.value = current
+    }
+
+    fun clearWebConsoleLogs() {
+        _webConsoleLogs.value = emptyList()
+    }
+
+    // IDE build and execution output buffer
+    private val _ideExecutionLogs = MutableStateFlow<List<String>>(
+        listOf(
+            "GVONE Studio Build System initialized.",
+            "Workspace target: Ready for compilation and execution."
+        )
+    )
+    val ideExecutionLogs: StateFlow<List<String>> = _ideExecutionLogs.asStateFlow()
+
+    fun appendIdeLog(log: String) {
+        val current = _ideExecutionLogs.value.toMutableList()
+        current.add(log)
+        while (current.size > 250) {
+            current.removeAt(0)
+        }
+        _ideExecutionLogs.value = current
+    }
+
+    fun clearIdeLogs() {
+        _ideExecutionLogs.value = emptyList()
+    }
+
+    // Inspector initial tab request (e.g. "CONSOLE", "ATTRIBUTES", "MAIN")
+    private val _inspectorRequestedTab = MutableStateFlow<String?>("MAIN")
+    val inspectorRequestedTab: StateFlow<String?> = _inspectorRequestedTab.asStateFlow()
+
+    fun openInspectorWithTab(tabKey: String) {
+        _inspectorRequestedTab.value = tabKey
+        openSheet(ActiveSheet.Inspector)
+    }
+
     private val _workspaceMode = MutableStateFlow(XcodeWorkspaceMode.BROWSER)
     val workspaceMode: StateFlow<XcodeWorkspaceMode> = _workspaceMode.asStateFlow()
 
@@ -258,6 +308,50 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearPendingIdeFile() {
         _pendingIdeFile.value = null
+    }
+
+    // Terminal Target Directory (persists in state and SharedPreferences)
+    private val _terminalTargetDirectory = MutableStateFlow(prefs.getString("terminal_target_dir", "Projects") ?: "Projects")
+    val terminalTargetDirectory: StateFlow<String> = _terminalTargetDirectory.asStateFlow()
+
+    fun setTerminalTargetDirectory(dir: String) {
+        val sanitized = dir.trim().removePrefix("/").ifBlank { "Projects" }
+        _terminalTargetDirectory.value = sanitized
+        prefs.edit().putString("terminal_target_dir", sanitized).apply()
+        viewModelScope.launch {
+            shellEngine.changeDirectory(sanitized)
+        }
+    }
+
+    // Active Bot Persona for Workspace Bot Chat tab
+    private val _activeBotPersona = MutableStateFlow(GrokBotPersona.GROK_CODER)
+    val activeBotPersona: StateFlow<GrokBotPersona> = _activeBotPersona.asStateFlow()
+
+    fun openBotChat(persona: GrokBotPersona) {
+        _activeBotPersona.value = persona
+        _workspaceMode.value = XcodeWorkspaceMode.BOT_CHAT
+        closeSheet()
+    }
+
+    fun setActiveBotPersona(persona: GrokBotPersona) {
+        _activeBotPersona.value = persona
+    }
+
+    suspend fun getWorkspaceProjectsAndSubfolders(): List<String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val folders = mutableListOf<String>()
+        folders.add("Projects")
+        try {
+            val repos = fileSystem.gitManager.listProjects()
+            repos.forEach { repo ->
+                if (repo.projectPath.isNotBlank()) {
+                    folders.add(repo.projectPath)
+                }
+            }
+        } catch (_: Exception) {}
+        folders.add("Documents")
+        folders.add("Downloads")
+        folders.add("Images")
+        folders.distinct().sorted()
     }
 
     // Bridge for Browser <-> GVONE Search/Chat Web App Communication

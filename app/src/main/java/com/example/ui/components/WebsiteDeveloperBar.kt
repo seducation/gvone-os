@@ -276,14 +276,26 @@ fun WebsiteDeveloperBar(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = if (isCodeMode) Color(0xFFA855F7).copy(alpha = 0.2f) else Color(0xFF38BDF8).copy(alpha = 0.2f),
+                            color = when (workspaceMode) {
+                                XcodeWorkspaceMode.CODE_EDITOR -> Color(0xFFA855F7).copy(alpha = 0.2f)
+                                XcodeWorkspaceMode.BOT_CHAT -> Color(0xFF10B981).copy(alpha = 0.2f)
+                                else -> Color(0xFF38BDF8).copy(alpha = 0.2f)
+                            },
                             modifier = Modifier.size(20.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = if (isCodeMode) Icons.Rounded.Code else if (isHttps) Icons.Rounded.Lock else Icons.Rounded.Public,
+                                    imageVector = when (workspaceMode) {
+                                        XcodeWorkspaceMode.CODE_EDITOR -> Icons.Rounded.Code
+                                        XcodeWorkspaceMode.BOT_CHAT -> Icons.Rounded.AutoAwesome
+                                        else -> if (isHttps) Icons.Rounded.Lock else Icons.Rounded.Public
+                                    },
                                     contentDescription = null,
-                                    tint = if (isCodeMode) Color(0xFFA855F7) else if (isHttps) Color(0xFF4ADE80) else Color(0xFF38BDF8),
+                                    tint = when (workspaceMode) {
+                                        XcodeWorkspaceMode.CODE_EDITOR -> Color(0xFFA855F7)
+                                        XcodeWorkspaceMode.BOT_CHAT -> Color(0xFF34D399)
+                                        else -> if (isHttps) Color(0xFF4ADE80) else Color(0xFF38BDF8)
+                                    },
                                     modifier = Modifier.size(12.dp)
                                 )
                             }
@@ -292,7 +304,11 @@ fun WebsiteDeveloperBar(
                         Column(modifier = Modifier.weight(1f, fill = false)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = if (isCodeMode) (activeFileName ?: "Xcode Editor") else (tab.title.takeIf { it.isNotBlank() } ?: "Web Workspace"),
+                                    text = when (workspaceMode) {
+                                        XcodeWorkspaceMode.CODE_EDITOR -> (activeFileName ?: "Xcode Editor")
+                                        XcodeWorkspaceMode.BOT_CHAT -> (activeFileName ?: "Bot Chat Copilot")
+                                        else -> (tab.title.takeIf { it.isNotBlank() } ?: "Web Workspace")
+                                    },
                                     color = Color.White,
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
@@ -327,7 +343,7 @@ fun WebsiteDeveloperBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    // Segmented Workspace Mode Switcher: [Web | Code]
+                    // Segmented Workspace Mode Switcher: [Web | Code | Bots]
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
@@ -336,9 +352,13 @@ fun WebsiteDeveloperBar(
                             .padding(2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val isWeb = (workspaceMode == XcodeWorkspaceMode.BROWSER)
+                        val isCode = (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR)
+                        val isBot = (workspaceMode == XcodeWorkspaceMode.BOT_CHAT)
+
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = if (!isCodeMode) Color(0xFF0284C7).copy(alpha = 0.35f) else Color.Transparent,
+                            color = if (isWeb) Color(0xFF0284C7).copy(alpha = 0.35f) else Color.Transparent,
                             modifier = Modifier
                                 .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER) }
                                 .testTag("dev_bar_mode_web_btn")
@@ -346,15 +366,15 @@ fun WebsiteDeveloperBar(
                             Text(
                                 "WEB",
                                 fontSize = 9.sp,
-                                color = if (!isCodeMode) Color(0xFF38BDF8) else Color(0xFF64748B),
+                                color = if (isWeb) Color(0xFF38BDF8) else Color(0xFF64748B),
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                             )
                         }
 
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = if (isCodeMode) Color(0xFFA855F7).copy(alpha = 0.35f) else Color.Transparent,
+                            color = if (isCode) Color(0xFFA855F7).copy(alpha = 0.35f) else Color.Transparent,
                             modifier = Modifier
                                 .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.CODE_EDITOR) }
                                 .testTag("dev_bar_mode_code_btn")
@@ -362,9 +382,25 @@ fun WebsiteDeveloperBar(
                             Text(
                                 "CODE",
                                 fontSize = 9.sp,
-                                color = if (isCodeMode) Color(0xFFC084FC) else Color(0xFF64748B),
+                                color = if (isCode) Color(0xFFC084FC) else Color(0xFF64748B),
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isBot) Color(0xFF10B981).copy(alpha = 0.35f) else Color.Transparent,
+                            modifier = Modifier
+                                .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BOT_CHAT) }
+                                .testTag("dev_bar_mode_bots_btn")
+                        ) {
+                            Text(
+                                "BOTS",
+                                fontSize = 9.sp,
+                                color = if (isBot) Color(0xFF34D399) else Color(0xFF64748B),
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                             )
                         }
                     }

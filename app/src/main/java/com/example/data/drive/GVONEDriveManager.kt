@@ -6,6 +6,8 @@ import com.example.data.files.GVONEFileItem
 import com.example.data.files.GVONEFileSystem
 import com.example.data.model.BrowserTab
 import com.example.data.model.QuickMenuProject
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
 import com.example.ui.screens.ide.IdeExtension
 import org.json.JSONArray
 import org.json.JSONObject
@@ -143,9 +145,9 @@ class GVONEDriveManager(
             extensionsDir.mkdirs()
 
             val sampleExtensions = if (extensions.isNotEmpty()) extensions else listOf(
-                IdeExtension("prettier", "Prettier Formatter", "v3.2.0", "Prettier", "Code formatter", null, true, "Formatters"),
-                IdeExtension("eslint", "ESLint Linter", "v8.56.0", "OpenJS", "Linter and error checker", null, true, "Linters"),
-                IdeExtension("gitlens", "GitLens Cloud", "v14.0.0", "GitKraken", "Drive cloud commit blame", null, true, "Git")
+                IdeExtension("prettier", "Prettier Formatter", "v3.2.0", "Prettier", "Code formatter", Icons.Rounded.Code, true, "Formatters"),
+                IdeExtension("eslint", "ESLint Linter", "v8.56.0", "OpenJS", "Linter and error checker", Icons.Rounded.CheckCircle, true, "Linters"),
+                IdeExtension("gitlens", "GitLens Cloud", "v14.0.0", "GitKraken", "Drive cloud commit blame", Icons.Rounded.Source, true, "Git")
             )
 
             sampleExtensions.forEach { ext ->
@@ -156,10 +158,10 @@ class GVONEDriveManager(
                     put("id", ext.id)
                     put("name", ext.name)
                     put("version", ext.version)
-                    put("author", ext.author)
+                    put("author", ext.publisher)
                     put("description", ext.description)
                     put("category", ext.category)
-                    put("enabled", ext.enabled)
+                    put("enabled", ext.isEnabled)
                     put("driveSyncedAt", formattedDate)
                 }
                 File(extSubdir, "manifest.json").writeText(manifest.toString(2))

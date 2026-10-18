@@ -93,6 +93,7 @@ fun TabOverviewScreen(
     onOpenFileInIde: ((GVONEFileItem) -> Unit)? = null,
     onOpenIde: (() -> Unit)? = null,
     onOpenFilesSheet: (() -> Unit)? = null,
+    onOpenBotChat: ((GrokBotPersona) -> Unit)? = null,
     onSelectEnvironment: (String) -> Unit = {},
     onCreateEnvironment: (name: String, icon: String, theme: String, preset: String, initialLinkUrl: String?, initialLinkTitle: String?) -> Unit = { _, _, _, _, _, _ -> },
     onDuplicateEnvironment: (String) -> Unit = {},
@@ -1614,36 +1615,91 @@ fun TabOverviewScreen(
                         }
                     }
 
-                    // SECTION 5: GROK BOTS (when category == 3)
+                    // SECTION 5: CLEAN BOT NAME ITEMS (when category == 3)
                     if (selectedCategory == 3) {
-                        item(span = { GridItemSpan(2) }) {
+                        val bots = GrokBotPersona.values()
+                        items(bots, key = { it.id }, span = { GridItemSpan(2) }) { bot ->
                             Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = Color(0xFF0D121F),
-                                border = BorderStroke(1.dp, Color(0xFF233554)),
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color(0xFF131A26),
+                                border = BorderStroke(1.dp, Color(0xFF233248)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 420.dp, max = 580.dp)
-                                    .testTag("navigator_grok_bots_container")
-                            ) {
-                                IdeGrokBotsView(
-                                    activeTab = activeTab,
-                                    openTabs = openTabs,
-                                    aiService = aiService ?: GVONEAIService(null, context),
-                                    coroutineScope = coroutineScope,
-                                    onApplyCodeToEditor = { code ->
-                                        onApplyAiCodeToEditor?.invoke(code)
-                                    },
-                                    onCreateFileFromCode = { filename, code ->
-                                        coroutineScope.launch {
-                                            fs.createFile("Projects", filename, code)
-                                            val created = fs.getFileItem("Projects/$filename")
-                                            if (created != null && onOpenFileInIde != null) {
-                                                onOpenFileInIde(created)
-                                            }
+                                    .clickable {
+                                        onOpenBotChat?.invoke(bot) ?: run {
+                                            onCloseOverview()
                                         }
                                     }
-                                )
+                                    .testTag("navigator_bot_item_${bot.id}")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(bot.avatarColorHex).copy(alpha = 0.2f))
+                                                .border(1.dp, Color(bot.avatarColorHex), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = bot.icon,
+                                                contentDescription = bot.displayName,
+                                                tint = Color(bot.avatarColorHex),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = bot.displayName,
+                                                color = Color.White,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = bot.tagline,
+                                                color = Color(0xFF94A3B8),
+                                                fontSize = 11.5.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(bot.avatarColorHex).copy(alpha = 0.15f),
+                                        border = BorderStroke(0.5.dp, Color(bot.avatarColorHex).copy(alpha = 0.4f))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "Open Tab",
+                                                color = Color(bot.avatarColorHex),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Rounded.ArrowForward,
+                                                contentDescription = null,
+                                                tint = Color(bot.avatarColorHex),
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

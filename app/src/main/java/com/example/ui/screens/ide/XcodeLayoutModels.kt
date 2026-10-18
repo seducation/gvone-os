@@ -11,7 +11,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
  */
 enum class XcodeWorkspaceMode(val label: String, val icon: ImageVector) {
     BROWSER("Web Browser", Icons.Rounded.Public),
-    CODE_EDITOR("Code Studio", Icons.Rounded.Code)
+    CODE_EDITOR("Code Studio", Icons.Rounded.Code),
+    BOT_CHAT("Bot Chat", Icons.Rounded.AutoAwesome)
 }
 
 /**
@@ -40,6 +41,7 @@ enum class XcodeInspectorTab(
     val description: String
 ) {
     ATTRIBUTES("Attributes", Icons.Rounded.Info, "Identity, title, URL, size and metadata"),
+    CONSOLE("Debug Console", Icons.Rounded.Terminal, "Unified web console logs, IDE build & execution output"),
     DOM_INSPECT("DOM & Elements", Icons.Rounded.Code, "Visual outlines, inspect element, and tag tree"),
     NETWORK_SECURITY("Security", Icons.Rounded.Security, "HTTPS TLS status, Tor proxy, and cookies"),
     SAFETY_RULES("CNS Rules", Icons.Rounded.Shield, "Autonomous agent firewall and permission checks")

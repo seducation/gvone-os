@@ -53,10 +53,14 @@ import com.example.ui.screens.ide.XcodeWorkspaceMode
 import com.example.ui.screens.ide.AttributesInspectorView
 import com.example.ui.screens.ide.DomInspectorView
 import com.example.ui.screens.ide.NetworkSecurityInspectorView
+import com.example.ui.screens.ide.UnifiedDebugConsoleView
+import com.example.ui.components.DevConsoleLog
+import com.example.data.terminal.TerminalLine
 
 enum class SafariActionTab(val label: String, val icon: ImageVector) {
     MAIN("Main", Icons.Rounded.Dashboard),
     ATTRIBUTES("Attributes", Icons.Rounded.Tune),
+    CONSOLE("Console", Icons.Rounded.Terminal),
     DOM_INSPECT("DOM", Icons.Rounded.Code),
     SECURITY("Security", Icons.Rounded.Security),
     ABOUT("About", Icons.Rounded.Info),
@@ -146,6 +150,14 @@ fun SafariActionsSheet(
     activeEditorTab: IdeTab? = null,
     workspaceMode: XcodeWorkspaceMode = XcodeWorkspaceMode.BROWSER,
     activeWebView: WebView? = null,
+    webConsoleLogs: List<DevConsoleLog> = emptyList(),
+    ideExecutionLogs: List<String> = emptyList(),
+    terminalLines: List<TerminalLine> = emptyList(),
+    onClearWebConsoleLogs: () -> Unit = {},
+    onClearIdeLogs: () -> Unit = {},
+    onExecuteTerminalCommand: (String) -> Unit = {},
+    onAppendIdeLog: (String) -> Unit = {},
+    onAppendWebConsoleLog: (DevConsoleLog) -> Unit = {},
     initialTab: SafariActionTab = SafariActionTab.MAIN,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
@@ -1255,6 +1267,32 @@ fun SafariActionsSheet(
                     currentTab = tab,
                     activeEditorTab = activeEditorTab,
                     workspaceMode = workspaceMode
+                )
+            }
+        }
+
+        SafariActionTab.CONSOLE -> {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                color = Color.Transparent
+            ) {
+                UnifiedDebugConsoleView(
+                    workspaceMode = workspaceMode,
+                    currentTab = tab,
+                    activeEditorTab = activeEditorTab,
+                    activeWebView = activeWebView,
+                    webConsoleLogs = webConsoleLogs,
+                    ideExecutionLogs = ideExecutionLogs,
+                    terminalLines = terminalLines,
+                    onClearWebConsoleLogs = onClearWebConsoleLogs,
+                    onClearIdeLogs = onClearIdeLogs,
+                    onExecuteTerminalCommand = onExecuteTerminalCommand,
+                    onAppendIdeLog = onAppendIdeLog,
+                    onAppendWebConsoleLog = onAppendWebConsoleLog
                 )
             }
         }

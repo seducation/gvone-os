@@ -358,16 +358,16 @@ fun GVONEFileBrowserSheet(
                                     coroutineScope.launch {
                                         try {
                                             val dm = com.example.data.drive.GVONEDriveManager(context, fileSystem)
-                                            val currentProjectName = if (currentPath.isNotBlank()) currentPath.split("/").first() else "Projects"
+                                            val currentProjectName = if (projectName.isNotBlank()) projectName else "Projects"
                                             val result = dm.sendProjectToDrive(
                                                 projectName = currentProjectName,
                                                 project = null,
                                                 tabs = emptyList(),
-                                                files = currentItems,
+                                                files = fileItems,
                                                 extensions = emptyList()
                                             )
                                             Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
-                                            loadFiles()
+                                            refreshList()
                                         } catch (e: Exception) {
                                             Toast.makeText(context, "Drive sync: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
