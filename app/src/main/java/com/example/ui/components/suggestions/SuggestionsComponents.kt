@@ -696,6 +696,9 @@ fun SuggestionChipsBar(
     onAttachFile: (() -> Unit)? = null,
     onAttachResearch: (() -> Unit)? = null,
     onAttachWebsite: (() -> Unit)? = null,
+    targetDirectory: String? = null,
+    workspaceDirectories: List<String> = emptyList(),
+    onSelectTargetDirectory: ((String) -> Unit)? = null,
     onClose: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -806,6 +809,112 @@ fun SuggestionChipsBar(
                     item = item,
                     onClose = { onRemoveSelectedItem(item) }
                 )
+            }
+
+            // Prominent Terminal Project/Directory Target Suggestion Chip
+            if (onSelectTargetDirectory != null) {
+                var isTargetDropdownOpen by remember { mutableStateOf(false) }
+                val cleanDisplayTarget = targetDirectory?.ifBlank { "Root (~)" } ?: "Projects"
+
+                Box {
+                    Surface(
+                        modifier = Modifier
+                            .height(34.dp)
+                            .shadow(elevation = 6.dp, shape = RoundedCornerShape(17.dp), spotColor = Color(0xFF00E5FF).copy(alpha = 0.3f))
+                            .clip(RoundedCornerShape(17.dp))
+                            .clickable { isTargetDropdownOpen = true }
+                            .testTag("terminal_target_directory_chip"),
+                        shape = RoundedCornerShape(17.dp),
+                        color = Color(0xFF162032),
+                        border = BorderStroke(1.2.dp, Color(0xFF38BDF8).copy(alpha = 0.7f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.FolderOpen,
+                                contentDescription = "Target Directory",
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Target: $cleanDisplayTarget",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFF1F5F9),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Icon(
+                                imageVector = Icons.Rounded.ArrowDropDown,
+                                contentDescription = "Select Target Directory",
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = isTargetDropdownOpen,
+                        onDismissRequest = { isTargetDropdownOpen = false },
+                        modifier = Modifier
+                            .background(Color(0xFF0D131F))
+                            .border(BorderStroke(1.dp, Color(0xFF233554)), RoundedCornerShape(12.dp))
+                            .widthIn(min = 220.dp, max = 320.dp)
+                    ) {
+                        Text(
+                            text = "SELECT TARGET DIRECTORY",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                        HorizontalDivider(color = Color(0xFF233554), thickness = 0.5.dp)
+
+                        val directories = if (workspaceDirectories.isNotEmpty()) workspaceDirectories else listOf("Projects", "Projects/KotlinCalculator", "Documents", "Downloads", "Images")
+                        directories.forEach { dir ->
+                            val isCurrent = (dir.equals(targetDirectory, ignoreCase = true) || (dir == "Projects" && targetDirectory.isNullOrBlank()))
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = if (dir.startsWith("Projects", ignoreCase = true)) Icons.Rounded.FolderSpecial else Icons.Rounded.Folder,
+                                            contentDescription = null,
+                                            tint = if (isCurrent) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = dir,
+                                            color = if (isCurrent) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
+                                            fontSize = 12.5.sp,
+                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (isCurrent) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Check,
+                                                contentDescription = "Selected",
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    isTargetDropdownOpen = false
+                                    onSelectTargetDirectory.invoke(dir)
+                                },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
             }
 
             // Quick Attachment action chips directly in horizontal suggestion chips

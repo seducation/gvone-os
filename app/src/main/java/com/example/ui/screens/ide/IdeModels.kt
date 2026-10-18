@@ -151,7 +151,7 @@ enum class GrokBotPersona(
     ),
     TEST_SPECIALIST(
         "test_specialist",
-        "Test & Refactor",
+        "Test Specialist",
         "TDD master & clean refactorings",
         "You are Test Specialist, an expert in Test-Driven Development (TDD). You generate comprehensive unit test suites, mock cases, and elegant code refactorings.",
         0xFF10B981,
@@ -159,7 +159,7 @@ enum class GrokBotPersona(
     ),
     WEB_SCRAPER(
         "web_scraper",
-        "Web Scraper Bot",
+        "Web Scraper",
         "DOM extractor & website content analyzer",
         "You are Web Scraper Bot, an expert web crawling and DOM extraction agent. You extract JSON data, HTML structure, meta tags, and interactive elements from web pages.",
         0xFFF59E0B,
