@@ -207,17 +207,31 @@ fun TabOverviewScreen(
                         rootFiles.filter { it.path.contains(groupFolderName, ignoreCase = true) || it.name.contains(groupFolderName, ignoreCase = true) }
                     }
 
-                    val projectFiles = if (activeProject != null && (activeProject?.id == currentFolderId || currentFolder?.name.equals(activeProject?.name, ignoreCase = true))) {
+                    val projectFiles = if (activeProject != null && (activeProject?.id == currentFolderId || groupFolderName.equals(activeProject?.name, ignoreCase = true))) {
                         activeProject!!.files.mapIndexed { idx, fileName ->
                             rootFiles.find { it.name.equals(fileName, ignoreCase = true) }
                                 ?: fs.getFileItem(fileName)
                                 ?: GVONEFileItem(
                                     id = "proj_file_${activeProject!!.id}_$idx",
                                     name = fileName,
-                                    path = "/${activeProject!!.name}/$fileName",
+                                    path = "${activeProject!!.name}/$fileName",
+                                    absolutePath = "",
+                                    parentPath = activeProject!!.name,
+                                    isDirectory = false,
                                     size = (1024L + idx * 512L),
+                                    formattedSize = "1.5 KB",
                                     lastModified = System.currentTimeMillis() - (idx * 1800_000L),
-                                    location = StorageLocation.MY_FILES
+                                    formattedDate = "Today",
+                                    extension = fileName.substringAfterLast('.', "txt"),
+                                    fileType = when (fileName.substringAfterLast('.', "").lowercase()) {
+                                        "md" -> FileType.MARKDOWN
+                                        "txt" -> FileType.TEXT
+                                        "json" -> FileType.JSON
+                                        "pdf" -> FileType.PDF
+                                        "png", "jpg", "jpeg", "webp" -> FileType.IMAGE
+                                        "zip", "tar", "gz" -> FileType.ARCHIVE
+                                        else -> FileType.CODE
+                                    }
                                 )
                         }
                     } else {
@@ -343,6 +357,44 @@ fun TabOverviewScreen(
         emptyList<TerminalSession>()
     }
 
+    // Direct HTML runner for projects and folders
+    val runProjectHtml: (QuickMenuProject?, TabGroup?) -> Unit = { project, folderGroup ->
+        val projectName = project?.name ?: folderGroup?.name ?: "Project"
+        val projectFolder = project?.name ?: folderGroup?.name ?: ""
+
+        val existingHtmlFile = folderFiles.find { it.name.endsWith(".html", ignoreCase = true) || it.name.endsWith(".htm", ignoreCase = true) }
+            ?: allFiles.find {
+                (it.name.endsWith(".html", ignoreCase = true) || it.name.endsWith(".htm", ignoreCase = true)) &&
+                (it.path.contains(projectName, ignoreCase = true) || it.parentPath.contains(projectName, ignoreCase = true))
+            }
+
+        val htmlContent = if (existingHtmlFile != null) {
+            val read = try {
+                val f = if (existingHtmlFile.absolutePath.isNotBlank()) File(existingHtmlFile.absolutePath) else fs.getFile(existingHtmlFile.path)
+                if (f.exists()) f.readText() else ""
+            } catch (_: Exception) { "" }
+            if (read.isNotBlank()) read else generateProjectHtmlPreview(projectName, project)
+        } else {
+            val generated = generateProjectHtmlPreview(projectName, project)
+            try {
+                val savePath = if (projectFolder.isNotBlank()) "$projectFolder/index.html" else "index.html"
+                val f = fs.getFile(savePath)
+                f.parentFile?.mkdirs()
+                f.writeText(generated)
+                reloadFiles()
+            } catch (_: Exception) {}
+            generated
+        }
+
+        val dataUrl = "data:text/html;charset=utf-8," + Uri.encode(htmlContent)
+        if (onNavigateToUrl != null) {
+            onNavigateToUrl(dataUrl)
+        } else {
+            onNewTab(folderGroup?.id ?: project?.id)
+        }
+        Toast.makeText(context, "Running $projectName (Live HTML)", Toast.LENGTH_SHORT).show()
+    }
+
     // Search results across all tabs, chats, and files
     val isSearching = searchQuery.isNotBlank()
     val searchResultsTabs = remember(modeTabs, tabGroups, searchQuery) {
@@ -450,6 +502,7 @@ fun TabOverviewScreen(
                             currentFolderId = null
                             activeProject = null
                         },
+                        onRunHtml = { runProjectHtml(activeProject, currentFolder) },
                         onAddTab = { onNewTab(currentFolder.id) },
                         onAddFile = { showCreateFileDialog = true },
                         onRename = { groupToRename = currentFolder },
@@ -550,6 +603,9 @@ fun TabOverviewScreen(
                                 currentFolderId = project.id
                             }
                             selectedCategory = 0 // Open in Tabs category
+                        },
+                        onRunProject = { project ->
+                            runProjectHtml(project, null)
                         }
                     )
                 }
@@ -893,7 +949,11 @@ fun TabOverviewScreen(
                                                     selectedTabIds + tab.id
                                                 }
                                             } else {
-                                                onTabSelected(tab.id)
+                                                if (tabs.any { it.id == tab.id }) {
+                                                    onTabSelected(tab.id)
+                                                } else {
+                                                    onNavigateToUrl?.invoke(tab.url) ?: onTabSelected(tab.id)
+                                                }
                                             }
                                         },
                                         onClose = { onTabClose(tab.id) },
@@ -929,38 +989,131 @@ fun TabOverviewScreen(
                             }
                         }
 
-                        // SECTION 1: Chats in this group
+                        // SECTION 1: Chats in this group (Interactive Bot & Terminal Sessions)
                         if (selectedCategory == 1) {
                             item(span = { GridItemSpan(2) }) {
-                                Box(
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 48.dp),
-                                    contentAlignment = Alignment.Center
+                                        .padding(top = 4.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                                        modifier = Modifier.padding(24.dp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Terminal,
-                                            contentDescription = null,
-                                            tint = Color(0xFF38BDF8),
-                                            modifier = Modifier.size(48.dp)
-                                        )
-                                        Text(
-                                            text = "Terminal Chats",
-                                            color = GVONETextPrimary,
-                                            fontSize = 16.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Text(
-                                            text = "Terminal sessions are managed locally within the Terminal Screen.",
-                                            color = GVONETextSecondary,
-                                            fontSize = 13.sp,
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                        )
+                                        Icon(Icons.Rounded.Chat, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(16.dp))
+                                        Text("Chats in ${currentFolder.name} (${folderChats.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    TextButton(
+                                        onClick = { onNewChat(currentFolder.id) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFA78BFA))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("New Chat", color = Color(0xFFA78BFA), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+
+                            if (folderChats.isEmpty()) {
+                                item(span = { GridItemSpan(2) }) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 48.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier.padding(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Terminal,
+                                                contentDescription = null,
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(48.dp)
+                                            )
+                                            Text(
+                                                text = "No chats in ${currentFolder.name}",
+                                                color = GVONETextPrimary,
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = "Start AI bot and terminal chats for this project to write scripts and automate workflows.",
+                                                color = GVONETextSecondary,
+                                                fontSize = 13.sp,
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                            )
+                                            Button(
+                                                onClick = { onNewChat(currentFolder.id) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA78BFA)),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ) {
+                                                Icon(Icons.Rounded.AddComment, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Start Chat", fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                items(folderChats, key = { "folder_chat_${it.id}" }, span = { GridItemSpan(2) }) { chatSession ->
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .border(1.dp, Color(0xFF2A203F), RoundedCornerShape(12.dp))
+                                            .clickable { onSelectChat(chatSession.id) }
+                                            .testTag("folder_chat_item_${chatSession.id}"),
+                                        color = Color(0xFF191428)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0x33A78BFA)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.SmartToy,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFFA78BFA),
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = chatSession.title,
+                                                    color = GVONETextPrimary,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "AI Grok Bot & Terminal Session",
+                                                    color = GVONETextSecondary,
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                            Icon(
+                                                imageVector = Icons.Rounded.ChevronRight,
+                                                contentDescription = "Open Chat",
+                                                tint = Color(0xFF94A3B8),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -983,7 +1136,22 @@ fun TabOverviewScreen(
                                         Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
                                         Text("Files in ${currentFolder.name} (${folderFiles.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Button(
+                                            onClick = { runProjectHtml(activeProject, currentFolder) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF065F46)),
+                                            border = BorderStroke(1.dp, Color(0xFF059669)),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                            modifier = Modifier
+                                                .height(32.dp)
+                                                .testTag("folder_files_run_html_btn")
+                                        ) {
+                                            Icon(Icons.Rounded.PlayArrow, contentDescription = "Run .html", modifier = Modifier.size(14.dp), tint = Color(0xFF6EE7B7))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("Run .html", color = Color(0xFFECFDF5), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+
                                         TextButton(
                                             onClick = { showCreateFileDialog = true },
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
@@ -2280,6 +2448,7 @@ private fun FolderViewHeader(
     chatCount: Int = 0,
     fileCount: Int = 0,
     onBack: () -> Unit,
+    onRunHtml: (() -> Unit)? = null,
     onAddTab: () -> Unit,
     onAddChat: () -> Unit = {},
     onAddFile: () -> Unit = {},
@@ -2362,11 +2531,41 @@ private fun FolderViewHeader(
             )
         }
 
-        // Action Buttons: [+] Add Tab, [Terminal] Add Chat, [NoteAdd] Add File, [⋮] Folder Options
+        // Action Buttons: [Run .html], [+] Add Tab, [Terminal] Add Chat, [NoteAdd] Add File, [⋮] Folder Options
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            if (onRunHtml != null) {
+                Surface(
+                    onClick = onRunHtml,
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF065F46),
+                    border = BorderStroke(1.dp, Color(0xFF059669)),
+                    modifier = Modifier
+                        .height(36.dp)
+                        .testTag("folder_header_run_html_btn")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayArrow,
+                            contentDescription = "Run .html",
+                            tint = Color(0xFF6EE7B7),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Run .html",
+                            color = Color(0xFFECFDF5),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
             IconButton(
                 onClick = onAddTab,
                 modifier = Modifier
@@ -2419,6 +2618,17 @@ private fun FolderViewHeader(
                         .background(Color(0xFF1B2230))
                         .border(1.dp, Color(0xFF303A4E), RoundedCornerShape(12.dp))
                 ) {
+                    if (onRunHtml != null) {
+                        DropdownMenuItem(
+                            text = { Text("Run .html in Browser", color = Color(0xFF6EE7B7), fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
+                            leadingIcon = { Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp)) },
+                            onClick = {
+                                showMenu = false
+                                onRunHtml()
+                            }
+                        )
+                        HorizontalDivider(color = Color(0xFF2C384D), thickness = 0.8.dp)
+                    }
                     DropdownMenuItem(
                         text = { Text("Rename Group", color = GVONETextPrimary, fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null, tint = GVONEPrimary, modifier = Modifier.size(18.dp)) },
@@ -3269,6 +3479,256 @@ fun formatFileSize(bytes: Long): String {
     val size = bytes / Math.pow(1024.0, digitGroups.toDouble())
     return String.format("%.1f %s", size, units[digitGroups.coerceAtMost(units.size - 1)])
 }
+
+private fun generateProjectHtmlPreview(projectName: String, project: QuickMenuProject?): String {
+    val desc = project?.description?.ifBlank { "Universal workspace application and interactive preview" }
+        ?: "Universal workspace application and interactive preview"
+    val files = project?.files ?: emptyList()
+    val tabs = project?.tabs ?: emptyList()
+    val chats = project?.chats ?: emptyList()
+
+    val filesHtml = if (files.isNotEmpty()) {
+        files.joinToString("") { "<div class=\"tag-chip file-chip\">📄 $it</div>" }
+    } else {
+        "<div class=\"tag-chip file-chip\">📄 index.html</div><div class=\"tag-chip file-chip\">📄 main.js</div><div class=\"tag-chip file-chip\">📄 style.css</div>"
+    }
+
+    val tabsHtml = if (tabs.isNotEmpty()) {
+        tabs.joinToString("") { "<div class=\"tag-chip tab-chip\">🌐 $it</div>" }
+    } else {
+        "<div class=\"tag-chip tab-chip\">🌐 Localhost Preview</div>"
+    }
+
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>$projectName - Live HTML</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #141b2a;
+      --border: #232e42;
+      --primary: #38bdf8;
+      --accent: #10b981;
+      --purple: #a855f7;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    .container {
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .header-card {
+      background: linear-gradient(135deg, #131c31 0%, #0d1527 100%);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      position: relative;
+      overflow: hidden;
+    }
+    .header-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--primary), var(--accent), var(--purple));
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+    h1 {
+      margin: 0 0 6px 0;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .section-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .chips-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .tag-chip {
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+    }
+    .file-chip {
+      background: rgba(16, 185, 129, 0.12);
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .tab-chip {
+      background: rgba(56, 189, 248, 0.12);
+      color: #7dd3fc;
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+    .interactive-demo {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .counter-display {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--accent);
+      text-align: center;
+      padding: 12px;
+      background: #0d121c;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .btn-row {
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      flex: 1;
+      padding: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #032313;
+    }
+    .btn-primary:active {
+      transform: scale(0.98);
+      background: #059669;
+    }
+    .btn-secondary {
+      background: #1e293b;
+      color: var(--text);
+      border: 1px solid #334155;
+    }
+    .btn-secondary:active {
+      transform: scale(0.98);
+      background: #334155;
+    }
+    .log-box {
+      background: #070a10;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #38bdf8;
+      max-height: 80px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header-card">
+      <div class="badge">⚡ Running Project Live</div>
+      <h1>$projectName</h1>
+      <p>$desc</p>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title">✨ Interactive Web App Preview</div>
+      <div class="interactive-demo">
+        <div class="counter-display" id="counter">0</div>
+        <div class="btn-row">
+          <button class="btn-primary" onclick="increment()">Click to Interact (+1)</button>
+          <button class="btn-secondary" onclick="reset()">Reset</button>
+        </div>
+        <div class="log-box" id="logs">> Project index.html running live in browser tab.<br>> Web engine loaded successfully.</div>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title">📂 Project Files</div>
+      <div class="chips-container">$filesHtml</div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title">🌐 Connected Tabs</div>
+      <div class="chips-container">$tabsHtml</div>
+    </div>
+  </div>
+
+  <script>
+    let count = 0;
+    const counterEl = document.getElementById('counter');
+    const logsEl = document.getElementById('logs');
+
+    function log(msg) {
+      logsEl.innerHTML += '<br>> ' + msg;
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+
+    function increment() {
+      count++;
+      counterEl.textContent = count;
+      log('Incremented counter to ' + count);
+    }
+
+    function reset() {
+      count = 0;
+      counterEl.textContent = count;
+      log('Counter reset');
+    }
+  </script>
+</body>
+</html>
+    """.trimIndent()
+}
+
 
 
 

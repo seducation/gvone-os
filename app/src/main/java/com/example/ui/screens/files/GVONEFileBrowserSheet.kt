@@ -307,9 +307,9 @@ fun GVONEFileBrowserSheet(
                                     .padding(vertical = 1.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.AccountTree,
-                                    contentDescription = "Branch",
-                                    tint = Color(0xFF94A3B8),
+                                    imageVector = Icons.Rounded.CloudSync,
+                                    contentDescription = "Branch & Drive Sync",
+                                    tint = Color(0xFF38BDF8),
                                     modifier = Modifier.size(13.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -349,6 +349,33 @@ fun GVONEFileBrowserSheet(
                                 .border(BorderStroke(1.dp, Color(0xFF283955)), RoundedCornerShape(8.dp))
                         ) {
                             DropdownMenuItem(
+                                text = { Text("Sync to Google Drive", color = Color(0xFF7DD3FC), fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.CloudSync, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    showRepoMenu = false
+                                    coroutineScope.launch {
+                                        try {
+                                            val dm = com.example.data.drive.GVONEDriveManager(context, fileSystem)
+                                            val currentProjectName = if (currentPath.isNotBlank()) currentPath.split("/").first() else "Projects"
+                                            val result = dm.sendProjectToDrive(
+                                                projectName = currentProjectName,
+                                                project = null,
+                                                tabs = emptyList(),
+                                                files = currentItems,
+                                                extensions = emptyList()
+                                            )
+                                            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                            loadFiles()
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Drive sync: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            )
+                            HorizontalDivider(color = Color(0xFF283955))
+                            DropdownMenuItem(
                                 text = { Text("Switch Project / Workspace", color = Color.White, fontSize = 13.sp) },
                                 leadingIcon = {
                                     Icon(Icons.Rounded.SwapHoriz, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
@@ -381,7 +408,7 @@ fun GVONEFileBrowserSheet(
                             DropdownMenuItem(
                                 text = { Text("Switch Branch ($currentBranch)", color = Color.White, fontSize = 13.sp) },
                                 leadingIcon = {
-                                    Icon(Icons.Rounded.AccountTree, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Rounded.FolderShared, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(18.dp))
                                 },
                                 onClick = {
                                     showRepoMenu = false
@@ -548,9 +575,9 @@ fun GVONEFileBrowserSheet(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.AccountTree,
-                                    contentDescription = "Branches",
-                                    tint = Color(0xFF34D399),
+                                    imageVector = Icons.Rounded.CloudSync,
+                                    contentDescription = "Branches & Cloud Sync",
+                                    tint = Color(0xFF38BDF8),
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))

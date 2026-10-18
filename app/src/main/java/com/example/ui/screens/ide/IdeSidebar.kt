@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.ai.GVONEAIService
+import com.example.data.drive.GVONEDriveManager
 import com.example.data.files.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,7 +86,7 @@ fun IdeSidebar(
         mutableStateListOf(
             IdeExtension("prettier", "Prettier - Code Formatter", "v3.2.0", "Prettier Team", "Opinionated code formatter for Kotlin, Python, JS, HTML, CSS, JSON", Icons.Rounded.FormatPaint, true, "Formatters"),
             IdeExtension("eslint", "ESLint & Code Linter", "v8.56.0", "OpenJS Foundation", "Identifies syntax errors, code smells, and TODO/FIXME markers", Icons.Rounded.Rule, true, "Linters"),
-            IdeExtension("gitlens", "GitLens - Git supercharged", "v14.0.0", "GitKraken", "Supercharge Git with blame annotations, commit history, and diff navigation", Icons.Rounded.AccountTree, true, "Git"),
+            IdeExtension("gitlens", "Git & Drive Cloud Lens", "v14.0.0", "GitKraken", "Cloud Drive commit tracking, Git blame, and diff history", Icons.Rounded.CloudSync, true, "Drive & Git"),
             IdeExtension("live_server", "Live Preview Web Server", "v0.4.0", "Microsoft", "Instant local live preview server for HTML, CSS, and JS web projects", Icons.Rounded.Preview, true, "Preview"),
             IdeExtension("language_tools", "Language Tools Pack", "v2.1.0", "GVONE Team", "Enhanced autocomplete snippets and syntax support for Kotlin, Python, JS", Icons.Rounded.Code, true, "Languages")
         )
@@ -444,12 +445,18 @@ fun IdeSidebar(
                                 )
                             }
                             IdeActivityTab.SOURCE_CONTROL -> {
+                                val driveManager = remember { GVONEDriveManager(context, fileSystem) }
+                                var lastDriveSyncText by remember { mutableStateOf(driveManager.getLastSyncLabel("Projects")) }
+                                var isSyncingToDrive by remember { mutableStateOf(false) }
+
                                 SourceControlView(
                                     branch = gitBranch,
                                     changedFiles = gitChangedFiles,
                                     commitMessage = gitCommitMessage,
                                     onCommitMessageChange = { gitCommitMessage = it },
                                     isCommitting = isCommitting,
+                                    isSyncingToDrive = isSyncingToDrive,
+                                    lastDriveSyncText = lastDriveSyncText,
                                     onCommit = {
                                         if (gitCommitMessage.isBlank()) {
                                             Toast.makeText(context, "Please enter a commit message", Toast.LENGTH_SHORT).show()
@@ -469,6 +476,55 @@ fun IdeSidebar(
                                                 Toast.makeText(context, "Commit recorded", Toast.LENGTH_SHORT).show()
                                             } finally {
                                                 isCommitting = false
+                                            }
+                                        }
+                                    },
+                                    onSyncAllToDrive = {
+                                        isSyncingToDrive = true
+                                        coroutineScope.launch {
+                                            try {
+                                                if (gitCommitMessage.isNotBlank()) {
+                                                    try {
+                                                        fileSystem.gitManager.commitChanges("Projects", gitCommitMessage)
+                                                        gitCommitMessage = ""
+                                                    } catch (_: Exception) {}
+                                                }
+                                                val syncRes = driveManager.sendProjectToDrive(
+                                                    projectName = "Projects",
+                                                    project = null,
+                                                    tabs = emptyList(),
+                                                    files = gitChangedFiles,
+                                                    extensions = extensions
+                                                )
+                                                lastDriveSyncText = driveManager.getLastSyncLabel("Projects")
+                                                refreshGit()
+                                                refreshFiles()
+                                                Toast.makeText(context, syncRes.message, Toast.LENGTH_LONG).show()
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "Drive sync failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            } finally {
+                                                isSyncingToDrive = false
+                                            }
+                                        }
+                                    },
+                                    onExportExtensionsToDrive = {
+                                        isSyncingToDrive = true
+                                        coroutineScope.launch {
+                                            try {
+                                                driveManager.sendProjectToDrive(
+                                                    projectName = "Projects",
+                                                    project = null,
+                                                    tabs = emptyList(),
+                                                    files = emptyList(),
+                                                    extensions = extensions
+                                                )
+                                                lastDriveSyncText = driveManager.getLastSyncLabel("Projects")
+                                                refreshFiles()
+                                                Toast.makeText(context, "Extension code exported to Google Drive (Cloud/GVONE_Drive/Projects/extensions/)!", Toast.LENGTH_SHORT).show()
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            } finally {
+                                                isSyncingToDrive = false
                                             }
                                         }
                                     },
@@ -837,7 +893,7 @@ private fun SearchView(
 }
 
 /**
- * Git Source Control View
+ * Git & Drive Cloud Control View
  */
 @Composable
 private fun SourceControlView(
@@ -846,7 +902,11 @@ private fun SourceControlView(
     commitMessage: String,
     onCommitMessageChange: (String) -> Unit,
     isCommitting: Boolean,
+    isSyncingToDrive: Boolean = false,
+    lastDriveSyncText: String? = null,
     onCommit: () -> Unit,
+    onSyncAllToDrive: () -> Unit = {},
+    onExportExtensionsToDrive: () -> Unit = {},
     onOpenFile: (GVONEFileItem) -> Unit
 ) {
     Column(
@@ -854,28 +914,57 @@ private fun SourceControlView(
             .fillMaxSize()
             .padding(12.dp)
     ) {
-        // Branch Badge
+        // Drive & Branch Badge
         Surface(
             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-            shape = RoundedCornerShape(6.dp),
+            shape = RoundedCornerShape(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Rounded.AltRoute,
-                    contentDescription = "Branch",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = branch,
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+            Column(modifier = Modifier.padding(10.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.CloudSync,
+                        contentDescription = "Google Drive Sync",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Drive: Cloud/GVONE_Drive/Projects",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.FolderShared,
+                        contentDescription = "Branch",
+                        tint = Color(0xFF34D399),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "Branch: $branch",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
+                    if (lastDriveSyncText != null) {
+                        Text(
+                            text = "• Synced: $lastDriveSyncText",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF7DD3FC),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
         }
 
@@ -885,15 +974,16 @@ private fun SourceControlView(
         OutlinedTextField(
             value = commitMessage,
             onValueChange = onCommitMessageChange,
-            placeholder = { Text("Message (Ctrl+Enter to commit)", fontSize = 12.sp) },
+            placeholder = { Text("Commit message (Ctrl+Enter to commit)", fontSize = 12.sp) },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(85.dp)
+                .height(80.dp)
                 .testTag("ide_git_commit_msg")
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Button 1: Commit Changes locally
         Button(
             onClick = onCommit,
             enabled = !isCommitting && commitMessage.isNotBlank(),
@@ -911,7 +1001,45 @@ private fun SourceControlView(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Button 2: Sync All to Google Drive (Commits, Tabs, Extensions, Files)
+        Button(
+            onClick = onSyncAllToDrive,
+            enabled = !isSyncingToDrive,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F2B48)),
+            border = BorderStroke(1.dp, Color(0xFF0284C7)),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("ide_drive_sync_all_button")
+        ) {
+            if (isSyncingToDrive) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF38BDF8))
+            } else {
+                Icon(Icons.Rounded.CloudSync, contentDescription = "Drive Sync", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Sync All to Google Drive", color = Color(0xFFF0F9FF), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Button 3: Export Extension Code to Drive
+        OutlinedButton(
+            onClick = onExportExtensionsToDrive,
+            enabled = !isSyncingToDrive,
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("ide_drive_export_extensions_button")
+        ) {
+            Icon(Icons.Rounded.Extension, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Export Extension Code to Drive", fontSize = 11.sp)
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         Text(
             text = "CHANGES (${changedFiles.size})",

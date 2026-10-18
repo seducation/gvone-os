@@ -31,7 +31,7 @@ enum class IdeActivityTab(
 ) {
     EXPLORER("Explorer", Icons.Rounded.FolderOpen, "Files and project workspace tree"),
     SEARCH("Search", Icons.Rounded.Search, "Global search and replace in workspace"),
-    SOURCE_CONTROL("Source Control", Icons.Rounded.Source, "Git staging, diffs, and commits"),
+    SOURCE_CONTROL("Drive & Git Control", Icons.Rounded.CloudSync, "Drive cloud sync, Git commits, tabs & extension code"),
     EXTENSIONS("Extensions", Icons.Rounded.Extension, "Install and configure editor extensions"),
     AI_ASSISTANT("Grok Bots", Icons.Rounded.AutoAwesome, "Grok-style multi-bot AI Copilots")
 }
