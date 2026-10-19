@@ -10,6 +10,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,8 +47,21 @@ fun ControlCentreSheet(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+
+    fun safeAction(action: () -> Unit) {
+        scope.launch {
+            try {
+                sheetState.hide()
+            } catch (_: Throwable) {}
+            action()
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onClose,
+        sheetState = sheetState,
         containerColor = Color(0xFF141923),
         dragHandle = {
             Box(
@@ -105,22 +120,22 @@ fun ControlCentreSheet(
                 ControlActionTile(
                     icon = Icons.Rounded.History,
                     label = "History",
-                    onClick = onOpenHistory
+                    onClick = { safeAction(onOpenHistory) }
                 )
                 ControlActionTile(
                     icon = Icons.Rounded.BookmarkBorder,
                     label = "Bookmarks",
-                    onClick = onOpenBookmarks
+                    onClick = { safeAction(onOpenBookmarks) }
                 )
                 ControlActionTile(
                     icon = Icons.Rounded.Terminal,
                     label = "Terminal",
-                    onClick = onOpenTerminal
+                    onClick = { safeAction(onOpenTerminal) }
                 )
                 ControlActionTile(
                     icon = Icons.Rounded.Download,
                     label = "Downloads",
-                    onClick = onOpenDownloads
+                    onClick = { safeAction(onOpenDownloads) }
                 )
             }
 
@@ -139,12 +154,12 @@ fun ControlCentreSheet(
                 ControlActionTile(
                     icon = Icons.Rounded.FindInPage,
                     label = "Find in Page",
-                    onClick = onFindInPage
+                    onClick = { safeAction(onFindInPage) }
                 )
                 ControlActionTile(
                     icon = Icons.Rounded.Security,
                     label = "Private Tab",
-                    onClick = onNewPrivateTab
+                    onClick = { safeAction(onNewPrivateTab) }
                 )
                 ControlActionTile(
                     icon = Icons.Rounded.VpnKey,
@@ -161,7 +176,7 @@ fun ControlCentreSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .clickable { onOpenPermissions() }
+                    .clickable { safeAction(onOpenPermissions) }
                     .testTag("open_permissions_button"),
                 color = Color(0xFF1E2636),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E3B50))
@@ -210,7 +225,7 @@ fun ControlCentreSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .clickable { onOpenSettings() }
+                    .clickable { safeAction(onOpenSettings) }
                     .testTag("open_settings_button"),
                 color = Color(0xFF1E2636),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E3B50))

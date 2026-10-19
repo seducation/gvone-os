@@ -852,8 +852,16 @@ class TerminalCommandExecutor(
                         setAgenticMode(true)
                         commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                         scope.launch {
-                            agentEngine.runAgenticWorkflow(queryArg, shellEngine.currentDirectory) { line ->
-                                viewModel.appendTerminalLine(line)
+                            val lower = queryArg.lowercase()
+                            val isMultiFile = lower.contains("create") || lower.contains("landing page") ||
+                                lower.contains("website") || lower.contains("html") || lower.contains("dashboard") ||
+                                lower.contains("build") || lower.contains("generate") || lower.contains(".kt") || lower.contains(".js")
+                            if (isMultiFile) {
+                                viewModel.triggerAgentMultiFileGeneration(queryArg, shellEngine.currentDirectory)
+                            } else {
+                                agentEngine.runAgenticWorkflow(queryArg, shellEngine.currentDirectory) { line ->
+                                    viewModel.appendTerminalLine(line)
+                                }
                             }
                         }
                         return
@@ -2000,8 +2008,16 @@ class TerminalCommandExecutor(
         if (_isAgenticMode.value) {
             commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
             scope.launch {
-                agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
-                    viewModel.appendTerminalLine(line)
+                val lower = trimmed.lowercase()
+                val isMultiFile = lower.contains("create") || lower.contains("landing page") ||
+                    lower.contains("website") || lower.contains("html") || lower.contains("dashboard") ||
+                    lower.contains("build") || lower.contains("generate") || lower.contains(".kt") || lower.contains(".js")
+                if (isMultiFile) {
+                    viewModel.triggerAgentMultiFileGeneration(trimmed, shellEngine.currentDirectory)
+                } else {
+                    agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
+                        viewModel.appendTerminalLine(line)
+                    }
                 }
             }
             return

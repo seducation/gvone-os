@@ -245,8 +245,18 @@ fun TerminalScreen(
         }
     }
 
-    // Active input state
-    var inputText by remember { mutableStateOf(TextFieldValue("")) }
+    val addressBarInput by viewModel.addressBarInput.collectAsStateWithLifecycle()
+    // Active input state synchronized with floating address bar
+    var inputText by remember { mutableStateOf(TextFieldValue(addressBarInput)) }
+
+    LaunchedEffect(addressBarInput) {
+        if (inputText.text != addressBarInput) {
+            inputText = TextFieldValue(
+                text = addressBarInput,
+                selection = androidx.compose.ui.text.TextRange(addressBarInput.length)
+            )
+        }
+    }
 
     // Selected items (Photos, Files, Websites, Prompts) displayed near the terminal prompt
     var selectedItems by remember { mutableStateOf<List<QuickPrompt>>(emptyList()) }
@@ -1821,7 +1831,10 @@ fun TerminalScreen(
                         }
                         BasicTextField(
                             value = inputText,
-                            onValueChange = { inputText = it },
+                            onValueChange = {
+                                inputText = it
+                                viewModel.setAddressBarInput(it.text)
+                            },
                             textStyle = TextStyle(
                                 color = TermTextPrimary,
                                 fontFamily = FontFamily.Monospace,

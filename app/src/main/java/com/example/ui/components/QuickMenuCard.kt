@@ -39,8 +39,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.drive.GVONEDriveManager
-import com.example.data.files.GVONEFileSystem
+import androidx.compose.ui.window.Dialog
 import com.example.data.model.QuickMenuProject
 import com.example.data.model.QuickMenuScheduleItem
 import com.example.data.model.QuickMenuStorage
@@ -258,26 +257,8 @@ fun QuickMenuCard(
                                 onOpenProject?.invoke(proj)
                                 Toast.makeText(context, "Opened: ${proj.name}", Toast.LENGTH_SHORT).show()
                             },
-                            onRunProject = { proj ->
-                                onRunProject?.invoke(proj)
-                                Toast.makeText(context, "Running ${proj.name} .html...", Toast.LENGTH_SHORT).show()
-                            },
-                            onSendToDrive = { proj ->
-                                if (onSendToDrive != null) {
-                                    onSendToDrive(proj)
-                                } else {
-                                    val fs = GVONEFileSystem(context)
-                                    val dm = GVONEDriveManager(context, fs)
-                                    val res = dm.sendProjectToDrive(
-                                        projectName = proj.name,
-                                        project = proj,
-                                        tabs = emptyList(),
-                                        files = emptyList(),
-                                        extensions = emptyList()
-                                    )
-                                    Toast.makeText(context, res.message, Toast.LENGTH_LONG).show()
-                                }
-                            },
+                            onRunProject = onRunProject,
+                            onSendToDrive = onSendToDrive,
                             onNewProjectClick = { showNewProjectDialog = true },
                             onEditProject = { projectToEdit = it },
                             onDeleteProject = { toDelete ->
@@ -617,36 +598,6 @@ fun ProjectsInlineView(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
-                                // Run .html button (>= 44dp touch target)
-                                IconButton(
-                                    onClick = { onRunProject?.invoke(project) },
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .testTag("quick_menu_project_quick_run_${project.id}")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.PlayArrow,
-                                        contentDescription = "Run .html",
-                                        tint = Color(0xFF10B981),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-
-                                // Drive icon instead of git - Send git, tabs, files, extensions to Drive (>= 44dp touch target)
-                                IconButton(
-                                    onClick = { onSendToDrive?.invoke(project) },
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .testTag("quick_menu_project_drive_sync_${project.id}")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.CloudSync,
-                                        contentDescription = "Send Git & Extensions to Drive",
-                                        tint = Color(0xFF38BDF8),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-
                                 // Edit button (>= 44dp touch target)
                                 IconButton(
                                     onClick = { onEditProject(project) },
@@ -698,11 +649,6 @@ fun ProjectsInlineView(
                                 text = "${project.chats.size} chats",
                                 color = Color(0xFFA78BFA)
                             )
-                            CountBadge(
-                                icon = Icons.Rounded.CloudSync,
-                                text = "Drive Folder",
-                                color = Color(0xFF38BDF8)
-                            )
 
                             // Toggle preview chips button
                             Text(
@@ -736,72 +682,18 @@ fun ProjectsInlineView(
                             }
                         }
 
-                        // Action Buttons: Run .html + Open Project Group (Touch target >= 44dp)
+                        // Open / Select Project Button (Touch target >= 44dp)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Run .html Button
-                            Button(
-                                onClick = { onRunProject?.invoke(project) },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF065F46)),
-                                border = BorderStroke(1.dp, Color(0xFF059669)),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 44.dp)
-                                    .testTag("quick_menu_run_project_btn_${project.id}")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.PlayArrow,
-                                    contentDescription = "Run .html",
-                                    tint = Color(0xFF6EE7B7),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Run .html",
-                                    fontSize = 11.5.sp,
-                                    color = Color(0xFFECFDF5),
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-
-                            // Drive Sync Button (Touch target >= 44dp)
-                            Button(
-                                onClick = { onSendToDrive?.invoke(project) },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F2B48)),
-                                border = BorderStroke(1.dp, Color(0xFF0284C7)),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier
-                                    .weight(1.05f)
-                                    .heightIn(min = 44.dp)
-                                    .testTag("quick_menu_drive_sync_btn_${project.id}")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.CloudSync,
-                                    contentDescription = "Drive Sync",
-                                    tint = Color(0xFF38BDF8),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Drive Sync",
-                                    fontSize = 11.5.sp,
-                                    color = Color(0xFFF0F9FF),
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-
-                            // Open Project Group Button
                             Button(
                                 onClick = { onOpenProject(project) },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                                 border = BorderStroke(1.dp, Color(0xFF334155)),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier
-                                    .weight(1.1f)
+                                    .weight(1f)
                                     .heightIn(min = 44.dp)
                                     .testTag("quick_menu_open_project_btn_${project.id}")
                             ) {
@@ -811,13 +703,51 @@ fun ProjectsInlineView(
                                     tint = Color(0xFF38BDF8),
                                     modifier = Modifier.size(16.dp)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Open Group",
                                     fontSize = 12.sp,
                                     color = Color(0xFFF1F5F9),
                                     fontWeight = FontWeight.Medium
                                 )
+                            }
+
+                            if (onRunProject != null) {
+                                FilledTonalIconButton(
+                                    onClick = { onRunProject(project) },
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .testTag("quick_menu_run_project_${project.id}"),
+                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                        containerColor = Color(0xFF0F3B26),
+                                        contentColor = Color(0xFF4ADE80)
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.PlayArrow,
+                                        contentDescription = "Run Project Preview",
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            if (onSendToDrive != null) {
+                                FilledTonalIconButton(
+                                    onClick = { onSendToDrive(project) },
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .testTag("quick_menu_drive_project_${project.id}"),
+                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                        containerColor = Color(0xFF1E2638),
+                                        contentColor = Color(0xFF60A5FA)
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CloudUpload,
+                                        contentDescription = "Send to GVONE Drive",
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     }

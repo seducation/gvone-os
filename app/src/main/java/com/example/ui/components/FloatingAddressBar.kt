@@ -130,6 +130,15 @@ fun FloatingAddressBar(
     onCloseTerminalCommands: () -> Unit = onCloseCommandPalette,
     onWritingStateChanged: ((Boolean) -> Unit)? = null,
     onInspectorClick: (() -> Unit)? = null,
+    executionStatus: TerminalExecutionStatus = TerminalExecutionStatus.IDLE,
+    executionStatusMessage: String = "",
+    targetDirectory: String = "workspace",
+    workspaceDirectories: List<String> = emptyList(),
+    onSelectTargetDirectory: ((String) -> Unit)? = null,
+    onOpenBuildPanel: (() -> Unit)? = null,
+    onRunPreview: (() -> Unit)? = null,
+    isBuildPanelExpanded: Boolean = false,
+    onExecuteTerminalCommand: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -182,7 +191,7 @@ fun FloatingAddressBar(
 
     // Synchronize with external address bar input stream (e.g. from Terminal CLI)
     LaunchedEffect(addressBarInput) {
-        if (addressBarInput != inputText && (isFocused || isTerminalOpen || addressBarInput.startsWith("/"))) {
+        if (addressBarInput != inputText) {
             inputText = addressBarInput
         }
     }
@@ -453,6 +462,10 @@ fun FloatingAddressBar(
                             onCloseTerminalCommands()
                             onCloseCommandPalette()
                         },
+                        targetDirectory = targetDirectory,
+                        workspaceDirectories = workspaceDirectories,
+                        onSelectTargetDirectory = onSelectTargetDirectory,
+                        onRunPreview = onRunPreview,
                         onClose = {
                             onCloseSuggestionChips()
                             onCloseSuggestions()
@@ -718,6 +731,29 @@ fun FloatingAddressBar(
                                     )
                                 }
 
+                                IconButton(
+                                    onClick = { onOpenBuildPanel?.invoke() },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .testTag("address_bar_build_toggle_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Build,
+                                        contentDescription = "Build & Agent IDE Panel",
+                                        tint = if (isBuildPanelExpanded || executionStatus == TerminalExecutionStatus.AWAITING_APPROVAL) Color(0xFFFFB74D) else if (executionStatus == TerminalExecutionStatus.RUNNING) Color(0xFF38BDF8) else Color(0xFF8E9BAE),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+
+                                if (executionStatus != TerminalExecutionStatus.IDLE || isTerminalOpen) {
+                                    ExecutionStatusPill(
+                                        status = executionStatus,
+                                        message = executionStatusMessage,
+                                        onClick = { onOpenBuildPanel?.invoke() },
+                                        modifier = Modifier.padding(end = 4.dp)
+                                    )
+                                }
+
                                 Spacer(modifier = Modifier.width(4.dp))
 
                                 Box(
@@ -783,7 +819,11 @@ fun FloatingAddressBar(
                                                 onWritingStateChanged?.invoke(false)
                                                 focusManager.clearFocus()
                                                 if (query.isNotEmpty()) {
-                                                    onNavigate(query)
+                                                    if (query.startsWith("/") || isTerminalOpen || (onExecuteTerminalCommand != null && (query.startsWith("create", true) || query.startsWith("build", true) || query.contains(".html") || query.contains(".kt") || query.contains(".js")))) {
+                                                        onExecuteTerminalCommand?.invoke(query) ?: onNavigate(query)
+                                                    } else {
+                                                        onNavigate(query)
+                                                    }
                                                 }
                                             },
                                             onSend = {
@@ -792,7 +832,11 @@ fun FloatingAddressBar(
                                                 onWritingStateChanged?.invoke(false)
                                                 focusManager.clearFocus()
                                                 if (query.isNotEmpty()) {
-                                                    onNavigate(query)
+                                                    if (query.startsWith("/") || isTerminalOpen || (onExecuteTerminalCommand != null && (query.startsWith("create", true) || query.startsWith("build", true) || query.contains(".html") || query.contains(".kt") || query.contains(".js")))) {
+                                                        onExecuteTerminalCommand?.invoke(query) ?: onNavigate(query)
+                                                    } else {
+                                                        onNavigate(query)
+                                                    }
                                                 }
                                             },
                                             onGo = {
@@ -801,7 +845,11 @@ fun FloatingAddressBar(
                                                 onWritingStateChanged?.invoke(false)
                                                 focusManager.clearFocus()
                                                 if (query.isNotEmpty()) {
-                                                    onNavigate(query)
+                                                    if (query.startsWith("/") || isTerminalOpen || (onExecuteTerminalCommand != null && (query.startsWith("create", true) || query.startsWith("build", true) || query.contains(".html") || query.contains(".kt") || query.contains(".js")))) {
+                                                        onExecuteTerminalCommand?.invoke(query) ?: onNavigate(query)
+                                                    } else {
+                                                        onNavigate(query)
+                                                    }
                                                 }
                                             },
                                             onDone = {
@@ -810,7 +858,11 @@ fun FloatingAddressBar(
                                                 onWritingStateChanged?.invoke(false)
                                                 focusManager.clearFocus()
                                                 if (query.isNotEmpty()) {
-                                                    onNavigate(query)
+                                                    if (query.startsWith("/") || isTerminalOpen || (onExecuteTerminalCommand != null && (query.startsWith("create", true) || query.startsWith("build", true) || query.contains(".html") || query.contains(".kt") || query.contains(".js")))) {
+                                                        onExecuteTerminalCommand?.invoke(query) ?: onNavigate(query)
+                                                    } else {
+                                                        onNavigate(query)
+                                                    }
                                                 }
                                             }
                                         ),
@@ -1038,6 +1090,10 @@ fun FloatingAddressBar(
                         onCloseTerminalCommands()
                         onCloseCommandPalette()
                     },
+                    targetDirectory = targetDirectory,
+                    workspaceDirectories = workspaceDirectories,
+                    onSelectTargetDirectory = onSelectTargetDirectory,
+                    onRunPreview = onRunPreview,
                     onClose = {
                         onCloseSuggestionChips()
                         onCloseSuggestions()

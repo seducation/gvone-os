@@ -679,14 +679,14 @@ fun GVONEIdeScreen(
                     // Left items: Git Branch, Problems
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Rounded.CloudSync,
-                            contentDescription = "Drive Cloud Sync",
-                            tint = Color(0xFF38BDF8),
+                            Icons.Rounded.AltRoute,
+                            contentDescription = "Git Branch",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(13.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Drive: main (Synced)",
+                            text = "main*",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -836,12 +836,7 @@ fun GVONEIdeScreen(
                                 activeBottomTab = IdeBottomTab.TERMINAL
                                 isCommandPaletteOpen = false
                             },
-                            IdeCommand("drive_sync", "Drive: Sync Project to Google Drive", "Drive", "Ctrl+Shift+D", Icons.Rounded.CloudSync) {
-                                activeActivityTab = IdeActivityTab.SOURCE_CONTROL
-                                isSidebarOpen = true
-                                isCommandPaletteOpen = false
-                            },
-                            IdeCommand("git_status", "Drive: Open Drive & Git Control", "Drive", "Ctrl+Shift+G", Icons.Rounded.CloudSync) {
+                            IdeCommand("git_status", "Git: Open Source Control", "Git", "Ctrl+Shift+G", Icons.Rounded.Source) {
                                 activeActivityTab = IdeActivityTab.SOURCE_CONTROL
                                 isSidebarOpen = true
                                 isCommandPaletteOpen = false
