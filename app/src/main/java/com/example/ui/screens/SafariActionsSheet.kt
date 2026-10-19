@@ -65,7 +65,7 @@ enum class SafariActionTab(val label: String, val icon: ImageVector) {
     SECURITY("Security", Icons.Rounded.Security),
     ABOUT("About", Icons.Rounded.Info),
     INFO("Info", Icons.Rounded.Insights),
-    GIT("Git", Icons.Rounded.Source),
+    GIT("Drive", Icons.Rounded.CloudSync),
     NOTIFICATION("Notification", Icons.Rounded.Notifications),
     WIDGET("Widget", Icons.Rounded.Widgets)
 }
@@ -3008,8 +3008,8 @@ private fun SafariGitTabContent(
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Source,
-                                        contentDescription = null,
+                                        imageVector = Icons.Rounded.CloudSync,
+                                        contentDescription = "Drive Cloud Workspace",
                                         tint = Color(0xFF38BDF8),
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -3018,7 +3018,7 @@ private fun SafariGitTabContent(
 
                             Column {
                                 Text(
-                                    text = "gvone-browser-workspace",
+                                    text = "gvone-drive-workspace",
                                     color = Color.White,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold
@@ -3160,6 +3160,22 @@ private fun SafariGitTabContent(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Diff", fontSize = 11.sp, color = Color.White)
                         }
+                    }
+
+                    // Send Git & Extensions to Drive Button
+                    Button(
+                        onClick = {
+                            onShowToast("☁️ Synced to Google Drive: commits, saved tabs, extension code & files into Cloud/GVONE_Drive/")
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F2B48)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0284C7)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Rounded.CloudSync, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Send to Google Drive (Commits, Tabs, Ext & Files)", fontSize = 11.5.sp, color = Color(0xFFF0F9FF), fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

@@ -67,6 +67,7 @@ import com.example.ui.screens.canvas.CreateEnvironmentDialog
 import com.example.ui.screens.canvas.EnvironmentSwitchSheet
 import com.example.ui.screens.canvas.getIconForName
 import com.example.data.ai.GVONEAIService
+import com.example.data.drive.GVONEDriveManager
 import com.example.ui.screens.ide.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
@@ -126,6 +127,7 @@ fun TabOverviewScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val fs = remember(fileSystem) { fileSystem ?: GVONEFileSystem(context) }
+    val driveManager = remember(context, fs) { GVONEDriveManager(context, fs) }
 
     // Navigation state: null = Root All Tabs (Folders + Ungrouped), non-null = Viewing specific Folder
     var currentFolderId by remember { mutableStateOf<String?>(null) }
@@ -141,7 +143,7 @@ fun TabOverviewScreen(
         mutableStateListOf(
             IdeExtension("prettier", "Prettier Formatter", "v3.2.0", "Prettier", "Opinionated code formatter for Kotlin, Python, JS, HTML, CSS, JSON", Icons.Rounded.FormatPaint, true, "Formatters"),
             IdeExtension("eslint", "ESLint Linter", "v8.56.0", "OpenJS", "Identifies syntax errors, code smells, and TODO markers", Icons.Rounded.Rule, true, "Linters"),
-            IdeExtension("gitlens", "GitLens Supercharged", "v14.0.0", "GitKraken", "Blame annotations, commit history, and diff navigation", Icons.Rounded.AccountTree, true, "Git"),
+            IdeExtension("gitlens", "Git & Drive Cloud Lens", "v14.0.0", "GitKraken", "Cloud Drive commit tracking, Git blame, and diff history", Icons.Rounded.CloudSync, true, "Drive & Git"),
             IdeExtension("live_server", "Live Preview Server", "v0.4.0", "Microsoft", "Local preview server for HTML, CSS, and JS web projects", Icons.Rounded.Preview, true, "Preview"),
             IdeExtension("language_tools", "Language Tools Pack", "v2.1.0", "GVONE", "Enhanced autocomplete snippets for Kotlin, Python, JS", Icons.Rounded.Code, true, "Languages")
         )
@@ -504,6 +506,16 @@ fun TabOverviewScreen(
                             activeProject = null
                         },
                         onRunHtml = { runProjectHtml(activeProject, currentFolder) },
+                        onSendToDrive = {
+                            val res = driveManager.sendProjectToDrive(
+                                projectName = currentFolder.name,
+                                project = activeProject,
+                                tabs = folderTabs,
+                                files = folderFiles,
+                                extensions = extensions
+                            )
+                            Toast.makeText(context, "☁️ ${res.message}", Toast.LENGTH_LONG).show()
+                        },
                         onAddTab = { onNewTab(currentFolder.id) },
                         onAddFile = { showCreateFileDialog = true },
                         onRename = { groupToRename = currentFolder },
@@ -607,6 +619,18 @@ fun TabOverviewScreen(
                         },
                         onRunProject = { project ->
                             runProjectHtml(project, null)
+                        },
+                        onSendToDrive = { project ->
+                            val projectTabs = tabs.filter { it.tabGroupId == project.id || project.tabs.contains(it.title) }
+                            val projectFiles = allFiles.filter { it.parentPath == project.name || project.files.contains(it.name) }
+                            val res = driveManager.sendProjectToDrive(
+                                projectName = project.name,
+                                project = project,
+                                tabs = projectTabs,
+                                files = projectFiles,
+                                extensions = extensions
+                            )
+                            Toast.makeText(context, "☁️ ${res.message}", Toast.LENGTH_LONG).show()
                         }
                     )
                 }
@@ -2505,6 +2529,7 @@ private fun FolderViewHeader(
     fileCount: Int = 0,
     onBack: () -> Unit,
     onRunHtml: (() -> Unit)? = null,
+    onSendToDrive: (() -> Unit)? = null,
     onAddTab: () -> Unit,
     onAddChat: () -> Unit = {},
     onAddFile: () -> Unit = {},
@@ -2622,6 +2647,36 @@ private fun FolderViewHeader(
                     }
                 }
             }
+            if (onSendToDrive != null) {
+                Surface(
+                    onClick = onSendToDrive,
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF0F2B48),
+                    border = BorderStroke(1.dp, Color(0xFF0284C7)),
+                    modifier = Modifier
+                        .height(36.dp)
+                        .testTag("folder_header_drive_sync_btn")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CloudSync,
+                            contentDescription = "Send to Google Drive",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Drive Sync",
+                            color = Color(0xFFF0F9FF),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
             IconButton(
                 onClick = onAddTab,
                 modifier = Modifier
@@ -2681,6 +2736,17 @@ private fun FolderViewHeader(
                             onClick = {
                                 showMenu = false
                                 onRunHtml()
+                            }
+                        )
+                        HorizontalDivider(color = Color(0xFF2C384D), thickness = 0.8.dp)
+                    }
+                    if (onSendToDrive != null) {
+                        DropdownMenuItem(
+                            text = { Text("Sync to Google Drive", color = Color(0xFF7DD3FC), fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
+                            leadingIcon = { Icon(Icons.Rounded.CloudSync, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp)) },
+                            onClick = {
+                                showMenu = false
+                                onSendToDrive()
                             }
                         )
                         HorizontalDivider(color = Color(0xFF2C384D), thickness = 0.8.dp)

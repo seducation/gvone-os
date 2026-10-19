@@ -147,7 +147,7 @@ class GVONEDriveManager(
             val sampleExtensions = if (extensions.isNotEmpty()) extensions else listOf(
                 IdeExtension("prettier", "Prettier Formatter", "v3.2.0", "Prettier", "Code formatter", Icons.Rounded.Code, true, "Formatters"),
                 IdeExtension("eslint", "ESLint Linter", "v8.56.0", "OpenJS", "Linter and error checker", Icons.Rounded.CheckCircle, true, "Linters"),
-                IdeExtension("gitlens", "GitLens Cloud", "v14.0.0", "GitKraken", "Drive cloud commit blame", Icons.Rounded.Source, true, "Git")
+                IdeExtension("gitlens", "Git & Drive Cloud Lens", "v14.0.0", "GitKraken", "Drive cloud commit blame & diff tracking", Icons.Rounded.CloudSync, true, "Drive & Git")
             )
 
             sampleExtensions.forEach { ext ->

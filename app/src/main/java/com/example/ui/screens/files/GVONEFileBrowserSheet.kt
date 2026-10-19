@@ -3007,14 +3007,14 @@ fun GitHubBranchDialog(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Rounded.AccountTree,
+                    imageVector = Icons.Rounded.CloudSync,
                     contentDescription = null,
                     tint = Color(0xFF38BDF8),
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
-                    Text("Branches", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("Branches & Cloud Sync", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     Text("$projectName", fontSize = 11.sp, color = Color(0xFF94A3B8))
                 }
             }
@@ -3053,7 +3053,7 @@ fun GitHubBranchDialog(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = Icons.Rounded.AccountTree,
+                                        imageVector = Icons.Rounded.CloudSync,
                                         contentDescription = null,
                                         tint = if (isCurrent) Color(0xFF38BDF8) else Color(0xFF64748B),
                                         modifier = Modifier.size(16.dp)
@@ -3551,8 +3551,8 @@ fun ProjectSwitcherDialog(
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Rounded.AccountTree,
-                                                    contentDescription = null,
+                                                    imageVector = Icons.Rounded.CloudSync,
+                                                    contentDescription = "Drive Branch",
                                                     tint = Color(0xFF38BDF8),
                                                     modifier = Modifier.size(11.dp)
                                                 )
