@@ -719,55 +719,38 @@ fun TerminalScreen(
             )
         }
 
+        val isFullyExpanded = isFullScreen || terminalHeightFraction >= 0.96f
+        val effectiveBottomPadding = if (isAddressBarBottom && isAtBottom && !isFullyExpanded) {
+            addressBarBottomPadding
+        } else {
+            0.dp
+        }
+
         // Terminal Panel (Docked on top of address bar / bottom bar, Half-Screen Pinned, or Fullscreen)
         Surface(
             color = TermBgColor,
-            shape = if (isFullScreen) {
+            shape = if (isFullyExpanded) {
                 RoundedCornerShape(0.dp)
             } else if (isAtTop) {
                 RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
             } else {
                 RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
             },
-            border = if (isFullScreen) null else BorderStroke(1.dp, TermBorderColor),
+            border = if (isFullyExpanded) null else BorderStroke(1.dp, TermBorderColor),
             shadowElevation = 16.dp,
             modifier = Modifier
                 .align(if (isAtTop) Alignment.TopCenter else Alignment.BottomCenter)
                 .fillMaxWidth()
                 .then(
-                    if (isFullScreen) {
+                    if (isFullyExpanded) {
                         Modifier
                             .fillMaxSize()
                             .statusBarsPadding()
                             .imePadding()
-                    } else if (isPinnedToScreen) {
-                        if (isAtTop) {
-                            Modifier
-                                .statusBarsPadding()
-                                .fillMaxHeight(terminalHeightFraction.coerceIn(0.20f, 0.85f))
-                        } else {
-                            Modifier
-                                .navigationBarsPadding()
-                                .imePadding()
-                                .fillMaxHeight(terminalHeightFraction.coerceIn(0.20f, 0.85f))
-                        }
-                    } else if (isAddressBarWriting) {
-                        Modifier
-                            .statusBarsPadding()
-                            .padding(
-                                bottom = if (isAddressBarBottom) addressBarBottomPadding else 0.dp
-                            )
-                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.18f, 0.70f))
                     } else {
                         Modifier
                             .statusBarsPadding()
-                            .padding(
-                                bottom = if (isAddressBarBottom && isAtBottom) {
-                                    addressBarBottomPadding
-                                } else {
-                                    0.dp
-                                }
-                            )
+                            .padding(bottom = effectiveBottomPadding)
                             .then(
                                 if (!isAddressBarBottom || isAtTop) {
                                     Modifier
@@ -777,7 +760,7 @@ fun TerminalScreen(
                                     Modifier
                                 }
                             )
-                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.25f, 0.98f))
+                            .fillMaxHeight(terminalHeightFraction.coerceIn(0.20f, 1.0f))
                     }
                 )
         ) {
@@ -802,9 +785,9 @@ fun TerminalScreen(
                                         isDraggingHeight = false
                                         if (kotlin.math.abs(totalDragDelta) < 8f) {
                                             val next = when {
-                                                terminalHeightFraction < 0.50f -> 0.70f
-                                                terminalHeightFraction < 0.82f -> 0.92f
-                                                else -> 0.38f
+                                                terminalHeightFraction < 0.45f -> 0.70f
+                                                terminalHeightFraction < 0.85f -> 1.0f
+                                                else -> 0.35f
                                             }
                                             terminalHeightFraction = next
                                             viewModel.updateTerminalHeightFraction(next)
@@ -820,8 +803,8 @@ fun TerminalScreen(
                                         change.consume()
                                         totalDragDelta += dragAmount
                                         val deltaFraction = -dragAmount / totalHeightPx
-                                        val minH = if (isAddressBarWriting) 0.18f else 0.22f
-                                        val maxH = 0.95f
+                                        val minH = 0.20f
+                                        val maxH = 1.0f
                                         val candidate = (terminalHeightFraction + deltaFraction).coerceIn(minH, maxH)
                                         terminalHeightFraction = candidate
                                     }
@@ -941,13 +924,14 @@ fun TerminalScreen(
                     terminalHeightFraction = terminalHeightFraction,
                     onAdjustHeight = {
                         val next = when {
-                            terminalHeightFraction < 0.50f -> 0.70f
-                            terminalHeightFraction < 0.82f -> 0.92f
-                            else -> 0.38f
+                            terminalHeightFraction < 0.45f -> 0.70f
+                            terminalHeightFraction < 0.85f -> 1.0f
+                            else -> 0.35f
                         }
                         terminalHeightFraction = next
                         viewModel.updateTerminalHeightFraction(next)
-                        Toast.makeText(context, "Terminal height: ${(next * 100).toInt()}%", Toast.LENGTH_SHORT).show()
+                        val label = if (next >= 0.98f) "100% (Full Screen)" else "${(next * 100).toInt()}%"
+                        Toast.makeText(context, "Terminal height: $label", Toast.LENGTH_SHORT).show()
                     },
                     onToggleFullScreen = { onToggleFullScreen(!isFullScreen) },
                     isSwappedPosition = isSwappedPosition,
@@ -2004,9 +1988,9 @@ fun TerminalScreen(
                                     isDraggingHeight = false
                                     if (kotlin.math.abs(totalDragDeltaBottom) < 8f) {
                                         val next = when {
-                                            terminalHeightFraction < 0.50f -> 0.70f
-                                            terminalHeightFraction < 0.82f -> 0.92f
-                                            else -> 0.38f
+                                            terminalHeightFraction < 0.45f -> 0.70f
+                                            terminalHeightFraction < 0.85f -> 1.0f
+                                            else -> 0.35f
                                         }
                                         terminalHeightFraction = next
                                         viewModel.updateTerminalHeightFraction(next)
@@ -2022,8 +2006,8 @@ fun TerminalScreen(
                                     change.consume()
                                     totalDragDeltaBottom += dragAmount
                                     val deltaFraction = dragAmount / totalHeightPx
-                                    val minH = if (isAddressBarWriting) 0.18f else 0.22f
-                                    val maxH = 0.95f
+                                    val minH = 0.20f
+                                    val maxH = 1.0f
                                     val candidate = (terminalHeightFraction + deltaFraction).coerceIn(minH, maxH)
                                     terminalHeightFraction = candidate
                                 }

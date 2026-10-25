@@ -1187,7 +1187,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateTerminalHeightFraction(fraction: Float) {
-        val clamped = fraction.coerceIn(0.20f, 0.95f)
+        val clamped = fraction.coerceIn(0.20f, 1.0f)
         updateSettings(_settings.value.copy(terminalHeightFraction = clamped))
     }
 
