@@ -109,11 +109,9 @@ fun IdeSidebar(
         coroutineScope.launch {
             try {
                 val combined = if (currentFolder.isEmpty()) {
-                    val projects = fileSystem.listFiles(StorageLocation.PROJECTS, "")
-                    val docs = fileSystem.listFiles(StorageLocation.MY_FILES, "Documents")
-                    (projects + docs).distinctBy { it.path }
+                    fileSystem.listFiles(StorageLocation.PROJECTS, "")
                 } else {
-                    fileSystem.listFiles(StorageLocation.MY_FILES, currentFolder)
+                    fileSystem.listFiles(StorageLocation.PROJECTS, currentFolder)
                 }
 
                 val rootNodes = combined.map { item ->
@@ -426,8 +424,7 @@ fun IdeSidebar(
                                             coroutineScope.launch {
                                                 try {
                                                     val results = mutableListOf<IdeSearchResult>()
-                                                    val allFiles = fileSystem.listFiles(StorageLocation.PROJECTS, "") +
-                                                            fileSystem.listFiles(StorageLocation.MY_FILES, "Documents")
+                                                    val allFiles = fileSystem.listFiles(StorageLocation.PROJECTS, "")
                                                     for (file in allFiles) {
                                                         if (!file.isDirectory) {
                                                             val content = fileSystem.readFileContent(file.path)

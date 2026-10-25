@@ -922,8 +922,7 @@ fun GVONEIdeScreen(
                         // File quick jump search
                         var workspaceFiles by remember { mutableStateOf<List<GVONEFileItem>>(emptyList()) }
                         LaunchedEffect(Unit) {
-                            val files = fileSystem.listFiles(StorageLocation.PROJECTS, "") +
-                                    fileSystem.listFiles(StorageLocation.MY_FILES, "Documents")
+                            val files = fileSystem.listFiles(StorageLocation.PROJECTS, "")
                             workspaceFiles = files.filterNot { it.isDirectory }
                         }
 
