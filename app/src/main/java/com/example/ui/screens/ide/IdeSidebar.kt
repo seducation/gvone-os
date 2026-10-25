@@ -14,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -67,7 +69,12 @@ fun IdeSidebar(
     var showNewFileDialog by remember { mutableStateOf(false) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var newItemName by remember { mutableStateOf("") }
+    var currentFolder by remember { mutableStateOf("") }
     var selectedTargetFolder by remember { mutableStateOf("Projects") }
+
+    LaunchedEffect(currentFolder) {
+        selectedTargetFolder = if (currentFolder.isNotEmpty()) currentFolder else "Projects"
+    }
 
     // Global Search state
     var searchQuery by remember { mutableStateOf("") }
@@ -96,20 +103,24 @@ fun IdeSidebar(
     var aiResponse by remember { mutableStateOf("") }
     var isAiGenerating by remember { mutableStateOf(false) }
 
-    // Load project directory tree
+    // Load project directory tree (supports root and subfolder navigation)
     val refreshFiles: () -> Unit = {
         isLoadingFiles = true
         coroutineScope.launch {
             try {
-                val projects = fileSystem.listFiles(StorageLocation.PROJECTS, "")
-                val docs = fileSystem.listFiles(StorageLocation.MY_FILES, "Documents")
-                val combined = (projects + docs).distinctBy { it.path }
+                val combined = if (currentFolder.isEmpty()) {
+                    val projects = fileSystem.listFiles(StorageLocation.PROJECTS, "")
+                    val docs = fileSystem.listFiles(StorageLocation.MY_FILES, "Documents")
+                    (projects + docs).distinctBy { it.path }
+                } else {
+                    fileSystem.listFiles(StorageLocation.MY_FILES, currentFolder)
+                }
 
                 val rootNodes = combined.map { item ->
                     IdeTreeNode(
                         item = item,
                         level = 0,
-                        isExpanded = item.name == "KotlinCalculator" || item.name == "src",
+                        isExpanded = false,
                         children = emptyList()
                     )
                 }
@@ -119,6 +130,10 @@ fun IdeSidebar(
                 isLoadingFiles = false
             }
         }
+    }
+
+    LaunchedEffect(currentFolder) {
+        refreshFiles()
     }
 
     // Load Git status
@@ -388,6 +403,8 @@ fun IdeSidebar(
                             IdeActivityTab.EXPLORER -> {
                                 ExplorerView(
                                     nodes = workspaceNodes,
+                                    currentFolder = currentFolder,
+                                    onNavigateFolder = { currentFolder = it },
                                     activeTab = activeTab,
                                     isLoading = isLoadingFiles,
                                     onOpenFile = onOpenFile,
@@ -623,53 +640,127 @@ fun IdeSidebar(
 }
 
 /**
- * File Explorer Tree View
+ * File Explorer Tree View with Unified Subfolder Drilling
  */
 @Composable
 private fun ExplorerView(
     nodes: List<IdeTreeNode>,
+    currentFolder: String,
+    onNavigateFolder: (String) -> Unit,
     activeTab: IdeTab?,
     isLoading: Boolean,
     onOpenFile: (GVONEFileItem) -> Unit,
     onDeleteFile: (GVONEFileItem) -> Unit
 ) {
-    if (isLoading && nodes.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(modifier = Modifier.size(28.dp))
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Navigation Bar when inside a subfolder
+        if (currentFolder.isNotEmpty()) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            val parent = if (currentFolder.contains("/")) currentFolder.substringBeforeLast("/") else ""
+                            onNavigateFolder(parent)
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Up to parent",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.FolderOpen,
+                        contentDescription = null,
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = currentFolder,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.5.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = { onNavigateFolder("") },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Home,
+                            contentDescription = "Workspace Root",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+                thickness = 1.dp
+            )
         }
-        return
-    }
 
-    if (nodes.isEmpty()) {
-        Box(
+        if (isLoading && nodes.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+            }
+            return
+        }
+
+        if (nodes.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    if (currentFolder.isNotEmpty()) "This folder is empty." else "No workspace files found.\nTap + to create a file.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+            return
+        }
+
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
+                .testTag("ide_explorer_tree"),
+            contentPadding = PaddingValues(vertical = 4.dp)
         ) {
-            Text(
-                "No workspace files found.\nTap + to create a file.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
-        }
-        return
-    }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag("ide_explorer_tree"),
-        contentPadding = PaddingValues(vertical = 4.dp)
-    ) {
-        items(nodes, key = { it.item.path }) { node ->
-            ExplorerItemRow(
-                item = node.item,
-                isSelected = activeTab?.id == node.item.path,
-                onOpenFile = onOpenFile,
-                onDelete = { onDeleteFile(node.item) }
-            )
+            items(nodes, key = { it.item.path }) { node ->
+                ExplorerItemRow(
+                    item = node.item,
+                    isSelected = activeTab?.id == node.item.path,
+                    onItemClick = { item ->
+                        if (item.isDirectory) {
+                            onNavigateFolder(item.path)
+                        } else {
+                            onOpenFile(item)
+                        }
+                    },
+                    onDelete = { onDeleteFile(node.item) }
+                )
+            }
         }
     }
 }
@@ -678,7 +769,7 @@ private fun ExplorerView(
 private fun ExplorerItemRow(
     item: GVONEFileItem,
     isSelected: Boolean,
-    onOpenFile: (GVONEFileItem) -> Unit,
+    onItemClick: (GVONEFileItem) -> Unit,
     onDelete: () -> Unit
 ) {
     val fileIcon = when (item.fileType) {
@@ -704,7 +795,7 @@ private fun ExplorerItemRow(
         else Color.Transparent,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onOpenFile(item) }
+            .clickable { onItemClick(item) }
             .testTag("ide_tree_item_${item.name}")
     ) {
         Row(
@@ -732,6 +823,28 @@ private fun ExplorerItemRow(
                 else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
+
+            if (item.isDirectory) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = "Open folder",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(16.dp)
+                )
+            } else if (item.fileType == FileType.IMAGE) {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(0xFFEC4899).copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = item.extension.uppercase().ifEmpty { "IMG" },
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFEC4899),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
 
             if (item.gitStatus == GitFileStatus.MODIFIED) {
                 Text(

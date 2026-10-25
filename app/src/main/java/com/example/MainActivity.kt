@@ -2,6 +2,7 @@ package com.example
 
 import android.content.Intent
 import android.net.Uri
+import java.io.File
 import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
@@ -67,6 +68,7 @@ class MainActivity : ComponentActivity() {
     private val browserViewModel: BrowserViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        cleanupCorruptedVariationsSeed()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleIncomingIntent(intent)
@@ -153,6 +155,25 @@ class MainActivity : ComponentActivity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    private fun cleanupCorruptedVariationsSeed() {
+        try {
+            val root = dataDir ?: filesDir?.parentFile
+            if (root != null) {
+                val targets = listOf(
+                    File(root, "app_webview/variations_seed"),
+                    File(root, "app_webview/variations_seed_new"),
+                    File(root, "app_webview_browser/variations_seed"),
+                    File(root, "app_webview_browser/variations_seed_new")
+                )
+                for (target in targets) {
+                    if (target.exists() && target.isFile) {
+                        target.delete()
+                    }
+                }
+            }
+        } catch (_: Exception) {}
     }
 }
 

@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.agent.safety.PermissionSystem
 import com.example.data.model.BrowserTab
+import com.example.ui.screens.files.UnifiedFileExplorerView
 
 /**
  * Bottom-right Inspector Panel for the unified Xcode-style IDE browser window.
@@ -45,6 +46,9 @@ fun XcodeInspectorPanel(
     workspaceMode: XcodeWorkspaceMode,
     activeWebView: WebView?,
     isTorActive: Boolean,
+    fileSystem: com.example.data.files.GVONEFileSystem? = null,
+    onOpenFileInTab: ((com.example.data.files.GVONEFileItem, Boolean) -> Unit)? = null,
+    onOpenFileInIde: ((com.example.data.files.GVONEFileItem) -> Unit)? = null,
     webConsoleLogs: List<com.example.ui.components.DevConsoleLog> = emptyList(),
     ideExecutionLogs: List<String> = emptyList(),
     terminalLines: List<com.example.data.terminal.TerminalLine> = emptyList(),
@@ -216,6 +220,26 @@ fun XcodeInspectorPanel(
                             activeEditorTab = activeEditorTab,
                             workspaceMode = workspaceMode
                         )
+                    }
+                    XcodeInspectorTab.FILES -> {
+                        if (fileSystem != null) {
+                            UnifiedFileExplorerView(
+                                fileSystem = fileSystem,
+                                onOpenFileInTab = { file, inNewTab ->
+                                    onOpenFileInTab?.invoke(file, inNewTab)
+                                    onClose()
+                                },
+                                onOpenFileInIde = { file ->
+                                    onOpenFileInIde?.invoke(file)
+                                    onClose()
+                                },
+                                onClosePanel = onClose
+                            )
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("Workspace file system loading...", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                            }
+                        }
                     }
                     XcodeInspectorTab.CONSOLE -> {
                         UnifiedDebugConsoleView(

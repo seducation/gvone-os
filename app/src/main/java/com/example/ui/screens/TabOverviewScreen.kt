@@ -2,12 +2,14 @@ package com.example.ui.screens
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -40,7 +43,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -152,6 +157,7 @@ fun TabOverviewScreen(
     // Files state
     var allFiles by remember { mutableStateOf<List<GVONEFileItem>>(emptyList()) }
     var folderFiles by remember { mutableStateOf<List<GVONEFileItem>>(emptyList()) }
+    var currentFileSubfolder by remember { mutableStateOf("") }
     var isFilesLoading by remember { mutableStateOf(false) }
 
     // Custom shortcuts added by the user in Tab Overview
@@ -194,13 +200,14 @@ fun TabOverviewScreen(
         coroutineScope.launch {
             isFilesLoading = true
             try {
-                val rootFiles = fs.listFiles(StorageLocation.MY_FILES, currentFolder = "")
+                val rootFiles = fs.listFiles(StorageLocation.MY_FILES, currentFolder = currentFileSubfolder)
                 allFiles = rootFiles
                 if (currentFolderId != null) {
                     val group = tabGroups.find { it.id == currentFolderId }
                     val groupFolderName = group?.name ?: activeProject?.name ?: ""
                     val directGroupFiles = if (groupFolderName.isNotEmpty()) {
-                        fs.listFiles(StorageLocation.MY_FILES, currentFolder = groupFolderName)
+                        val subPath = if (currentFileSubfolder.isNotEmpty()) currentFileSubfolder else groupFolderName
+                        fs.listFiles(StorageLocation.MY_FILES, currentFolder = subPath)
                     } else {
                         emptyList()
                     }
@@ -254,7 +261,7 @@ fun TabOverviewScreen(
         }
     }
 
-    LaunchedEffect(currentFolderId, tabGroups, activeProject) {
+    LaunchedEffect(currentFolderId, tabGroups, activeProject, currentFileSubfolder) {
         reloadFiles()
     }
 
@@ -809,17 +816,27 @@ fun TabOverviewScreen(
                                     }
                                 },
                                 onClick = {
-                                    if (onOpenFileInIde != null) {
-                                        onOpenFileInIde(file)
+                                    if (file.isDirectory) {
+                                        currentFileSubfolder = file.path
+                                        selectedCategory = 2
                                     } else {
-                                        onOpenFileInTab?.invoke(file, false) ?: run {
+                                        if (onOpenFileInTab != null) {
+                                            onOpenFileInTab(file, false)
+                                        } else if (onOpenFileInIde != null) {
+                                            onOpenFileInIde(file)
+                                        } else {
                                             fileToPreview = file
                                         }
                                     }
                                 },
                                 onOpenInNewTab = {
-                                    onOpenFileInTab?.invoke(file, true) ?: run {
-                                        fileToPreview = file
+                                    if (file.isDirectory) {
+                                        currentFileSubfolder = file.path
+                                        selectedCategory = 2
+                                    } else {
+                                        onOpenFileInTab?.invoke(file, true) ?: run {
+                                            fileToPreview = file
+                                        }
                                     }
                                 },
                                 onPreview = { fileToPreview = file },
@@ -1189,6 +1206,63 @@ fun TabOverviewScreen(
                                 }
                             }
 
+                            if (currentFileSubfolder.isNotEmpty()) {
+                                item(span = { GridItemSpan(2) }) {
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = Color(0xFF1E293B),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            IconButton(
+                                                onClick = {
+                                                    currentFileSubfolder = if (currentFileSubfolder.contains("/")) currentFileSubfolder.substringBeforeLast("/") else ""
+                                                },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                                    contentDescription = "Up to parent",
+                                                    tint = Color(0xFF38BDF8),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.Rounded.FolderOpen,
+                                                contentDescription = null,
+                                                tint = Color(0xFFF59E0B),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = currentFileSubfolder,
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            TextButton(
+                                                onClick = { currentFileSubfolder = "" },
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Root", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             if (folderFiles.isEmpty()) {
                                 item(span = { GridItemSpan(2) }) {
                                     Box(
@@ -1243,17 +1317,25 @@ fun TabOverviewScreen(
                                             }
                                         },
                                         onClick = {
-                                            if (onOpenFileInIde != null) {
-                                                onOpenFileInIde(file)
+                                            if (file.isDirectory) {
+                                                currentFileSubfolder = file.path
                                             } else {
-                                                onOpenFileInTab?.invoke(file, false) ?: run {
+                                                if (onOpenFileInTab != null) {
+                                                    onOpenFileInTab(file, false)
+                                                } else if (onOpenFileInIde != null) {
+                                                    onOpenFileInIde(file)
+                                                } else {
                                                     fileToPreview = file
                                                 }
                                             }
                                         },
                                         onOpenInNewTab = {
-                                            onOpenFileInTab?.invoke(file, true) ?: run {
-                                                fileToPreview = file
+                                            if (file.isDirectory) {
+                                                currentFileSubfolder = file.path
+                                            } else {
+                                                onOpenFileInTab?.invoke(file, true) ?: run {
+                                                    fileToPreview = file
+                                                }
                                             }
                                         },
                                         onPreview = { fileToPreview = file },
@@ -1561,7 +1643,64 @@ fun TabOverviewScreen(
                             }
                         }
 
-                        if (allFiles.isEmpty()) {
+                        if (currentFileSubfolder.isNotEmpty()) {
+                            item(span = { GridItemSpan(2) }) {
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFF1E293B),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            IconButton(
+                                                onClick = {
+                                                    currentFileSubfolder = if (currentFileSubfolder.contains("/")) currentFileSubfolder.substringBeforeLast("/") else ""
+                                                },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                                    contentDescription = "Up to parent",
+                                                    tint = Color(0xFF38BDF8),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.Rounded.FolderOpen,
+                                                contentDescription = null,
+                                                tint = Color(0xFFF59E0B),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = currentFileSubfolder,
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            TextButton(
+                                                onClick = { currentFileSubfolder = "" },
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Root", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (allFiles.isEmpty()) {
                             item(span = { GridItemSpan(2) }) {
                                 Box(
                                     modifier = Modifier
@@ -1610,17 +1749,25 @@ fun TabOverviewScreen(
                                         }
                                     },
                                     onClick = {
-                                        if (onOpenFileInIde != null) {
-                                            onOpenFileInIde(file)
+                                        if (file.isDirectory) {
+                                            currentFileSubfolder = file.path
                                         } else {
-                                            onOpenFileInTab?.invoke(file, false) ?: run {
+                                            if (onOpenFileInTab != null) {
+                                                onOpenFileInTab(file, false)
+                                            } else if (onOpenFileInIde != null) {
+                                                onOpenFileInIde(file)
+                                            } else {
                                                 fileToPreview = file
                                             }
                                         }
                                     },
                                     onOpenInNewTab = {
-                                        onOpenFileInTab?.invoke(file, true) ?: run {
-                                            fileToPreview = file
+                                        if (file.isDirectory) {
+                                            currentFileSubfolder = file.path
+                                        } else {
+                                            onOpenFileInTab?.invoke(file, true) ?: run {
+                                                fileToPreview = file
+                                            }
                                         }
                                     },
                                     onPreview = { fileToPreview = file },
@@ -3149,6 +3296,11 @@ fun TabFileCard(
                 .padding(12.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
+            val isFolder = file.isDirectory || file.fileType == FileType.FOLDER
+            val isImage = file.fileType == FileType.IMAGE || file.extension.lowercase() in listOf("png", "jpg", "jpeg", "webp", "gif", "svg", "bmp")
+            val badgeColor = if (isFolder) Color(0xFFF59E0B) else if (isImage) Color(0xFFEC4899) else Color(0xFF10B981)
+            val badgeText = if (isFolder) "FOLDER" else if (isImage) file.extension.uppercase().ifEmpty { "IMG" } else file.extension.uppercase().ifEmpty { "FILE" }
+
             // Top row: File Type Badge + Checkbox / More Options
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -3157,8 +3309,8 @@ fun TabFileCard(
             ) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF10B981).copy(alpha = 0.15f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f))
+                    color = badgeColor.copy(alpha = 0.15f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, badgeColor.copy(alpha = 0.4f))
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -3166,14 +3318,14 @@ fun TabFileCard(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
-                            imageVector = getFileIcon(file.name),
+                            imageVector = if (isFolder) Icons.Rounded.Folder else if (isImage) Icons.Rounded.Image else getFileIcon(file.name),
                             contentDescription = null,
-                            tint = Color(0xFF10B981),
+                            tint = badgeColor,
                             modifier = Modifier.size(12.dp)
                         )
                         Text(
-                            text = file.extension.uppercase().ifEmpty { "FILE" },
-                            color = Color(0xFF10B981),
+                            text = badgeText,
+                            color = badgeColor,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -3206,7 +3358,7 @@ fun TabFileCard(
                 }
             }
 
-            // Middle: File Icon & Preview snippet
+            // Middle: File Icon & Preview snippet (with image bitmap rendering if available)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3217,42 +3369,116 @@ fun TabFileCard(
                     .border(0.5.dp, Color(0xFF1E2838), RoundedCornerShape(10.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(8.dp)
-                ) {
-                    Icon(
-                        imageVector = getFileIcon(file.name),
-                        contentDescription = null,
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Text(
-                        text = formatFileSize(file.size),
-                        color = GVONETextSecondary,
-                        fontSize = 11.sp
-                    )
+                if (isImage) {
+                    val bitmap = remember(file.path, file.absolutePath) {
+                        try {
+                            val path = if (file.absolutePath.isNotEmpty()) file.absolutePath else null
+                            if (path != null && java.io.File(path).exists()) {
+                                BitmapFactory.decodeFile(path)
+                            } else null
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = file.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Image,
+                                contentDescription = null,
+                                tint = Color(0xFFEC4899),
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Text(
+                                text = formatFileSize(file.size),
+                                color = GVONETextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                } else if (isFolder) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.FolderOpen,
+                            contentDescription = null,
+                            tint = Color(0xFFF59E0B),
+                            modifier = Modifier.size(38.dp)
+                        )
+                        Text(
+                            text = "Tap to open folder",
+                            color = Color(0xFFF59E0B).copy(alpha = 0.8f),
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = getFileIcon(file.name),
+                            contentDescription = null,
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Text(
+                            text = formatFileSize(file.size),
+                            color = GVONETextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
 
             // Bottom row: File Name & Path
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = file.name,
-                    color = GVONETextPrimary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = file.path,
-                    color = GVONETextSecondary,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = file.name,
+                        color = GVONETextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = file.path,
+                        color = GVONETextSecondary,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (isFolder) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = "Open folder",
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
 
@@ -3408,13 +3634,18 @@ fun FilePreviewDialog(
     onOpenInTab: () -> Unit,
     onOpenInNewTab: () -> Unit
 ) {
+    val isImage = file.fileType == FileType.IMAGE || file.extension.lowercase() in listOf("png", "jpg", "jpeg", "webp", "gif", "bmp")
     var content by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
     LaunchedEffect(file.path) {
-        isLoading = true
-        content = fileSystem.readFileContent(file.path)
-        isLoading = false
+        if (!isImage) {
+            isLoading = true
+            content = fileSystem.readFileContent(file.path)
+            isLoading = false
+        } else {
+            isLoading = false
+        }
     }
 
     AlertDialog(
@@ -3427,7 +3658,11 @@ fun FilePreviewDialog(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(getFileIcon(file.name), contentDescription = null, tint = Color(0xFF38BDF8))
+                    Icon(
+                        imageVector = if (isImage) Icons.Rounded.Image else getFileIcon(file.name),
+                        contentDescription = null,
+                        tint = if (isImage) Color(0xFFEC4899) else Color(0xFF38BDF8)
+                    )
                     Text(file.name, color = GVONETextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Text(formatFileSize(file.size), color = GVONETextSecondary, fontSize = 11.sp)
@@ -3445,6 +3680,44 @@ fun FilePreviewDialog(
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color(0xFF38BDF8), modifier = Modifier.size(24.dp))
+                    }
+                } else if (isImage) {
+                    val realFile = remember(file.path) { fileSystem.getFile(file.path) }
+                    val bitmap = remember(realFile) {
+                        try {
+                            if (realFile.exists()) BitmapFactory.decodeFile(realFile.absolutePath) else null
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+
+                    if (bitmap != null) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = file.name,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 240.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Fit
+                            )
+                            Text(
+                                text = "${bitmap.width} × ${bitmap.height} px • ${formatFileSize(file.size)}",
+                                color = GVONETextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                            Text("Image preview unavailable", color = GVONETextSecondary, fontSize = 12.sp)
+                        }
                     }
                 } else {
                     Box(

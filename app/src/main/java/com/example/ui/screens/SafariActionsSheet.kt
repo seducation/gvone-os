@@ -56,9 +56,11 @@ import com.example.ui.screens.ide.NetworkSecurityInspectorView
 import com.example.ui.screens.ide.UnifiedDebugConsoleView
 import com.example.ui.components.DevConsoleLog
 import com.example.data.terminal.TerminalLine
+import com.example.ui.screens.files.UnifiedFileExplorerView
 
 enum class SafariActionTab(val label: String, val icon: ImageVector) {
     MAIN("Main", Icons.Rounded.Dashboard),
+    FILES("Files", Icons.Rounded.FolderCopy),
     ATTRIBUTES("Attributes", Icons.Rounded.Tune),
     CONSOLE("Console", Icons.Rounded.Terminal),
     DOM_INSPECT("DOM", Icons.Rounded.Code),
@@ -136,6 +138,8 @@ fun SafariActionsSheet(
     onOpenTorDiagnostics: () -> Unit = {},
     onOpenCustomCommands: () -> Unit = {},
     onOpenFiles: () -> Unit = {},
+    fileSystem: com.example.data.files.GVONEFileSystem? = null,
+    onOpenFileInTab: ((com.example.data.files.GVONEFileItem, Boolean) -> Unit)? = null,
     onOpenWebsiteConnectors: () -> Unit = {},
     onOpenConnectorHub: () -> Unit = {},
     onOpenResearchWorkspace: () -> Unit = {},
@@ -1248,6 +1252,36 @@ fun SafariActionsSheet(
                             onReload()
                         }
                     )
+                }
+            }
+        }
+
+        SafariActionTab.FILES -> {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                color = Color.Transparent
+            ) {
+                if (fileSystem != null) {
+                    UnifiedFileExplorerView(
+                        fileSystem = fileSystem,
+                        onOpenFileInTab = { file, inNewTab ->
+                            onOpenFileInTab?.invoke(file, inNewTab)
+                            onClose()
+                        },
+                        onOpenFileInIde = { _ ->
+                            onOpenIde()
+                            onClose()
+                        },
+                        onClosePanel = onClose
+                    )
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("File system loading...", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                    }
                 }
             }
         }

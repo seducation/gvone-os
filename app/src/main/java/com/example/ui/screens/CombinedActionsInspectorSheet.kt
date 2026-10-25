@@ -75,6 +75,8 @@ fun CombinedActionsInspectorSheet(
             onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
             onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
             onOpenFiles = { viewModel.openFiles(isSelectionMode = false) },
+            fileSystem = viewModel.fileSystem,
+            onOpenFileInTab = { file, inNewTab -> viewModel.openFileInTab(file, inNewTab) },
             onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
             onOpenConnectorHub = { viewModel.openConnectorHub() },
             onOpenResearchWorkspace = { viewModel.openResearchWorkspace() },

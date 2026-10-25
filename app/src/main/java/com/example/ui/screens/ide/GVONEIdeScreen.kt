@@ -32,6 +32,7 @@ import com.example.data.files.FileType
 import com.example.data.files.GVONEFileItem
 import com.example.data.files.GVONEFileSystem
 import com.example.data.files.StorageLocation
+import com.example.ui.screens.files.ImageFileViewer
 import com.example.ui.viewmodel.BrowserViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -89,7 +90,9 @@ fun GVONEIdeScreen(
             if (existing != null) {
                 activeTabId = existing.id
             } else {
-                val content = fileSystem.readFileContent(item.path)
+                val isImage = item.fileType == FileType.IMAGE ||
+                        item.extension.lowercase() in listOf("png", "jpg", "jpeg", "webp", "gif", "svg", "bmp")
+                val content = if (isImage) "" else fileSystem.readFileContent(item.path)
                 val newTab = IdeTab(
                     id = item.path,
                     fileItem = item,
@@ -571,6 +574,17 @@ fun GVONEIdeScreen(
                                         Text("Open Command Palette")
                                     }
                                 }
+                            }
+                        } else if (activeTab.fileItem.fileType == FileType.IMAGE ||
+                            activeTab.fileItem.extension.lowercase() in listOf("png", "jpg", "jpeg", "webp", "gif", "svg", "bmp")
+                        ) {
+                            val imgFile = remember(activeTab.fileItem.path) { fileSystem.getFile(activeTab.fileItem.path) }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag("ide_image_viewer_pane")
+                            ) {
+                                ImageFileViewer(imageFile = imgFile)
                             }
                         } else {
                             // Active Code Editor Buffer with Line Numbers
