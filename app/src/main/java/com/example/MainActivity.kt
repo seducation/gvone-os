@@ -732,8 +732,8 @@ fun BrowserApp(
             )
         }
 
-        // Floating Bottom Address Bar Pill matching Safari Compact Design (Visible when no modal or when Terminal is docked)
-        if ((activeSheet == ActiveSheet.None || activeSheet == ActiveSheet.FindInPage || activeSheet == ActiveSheet.Terminal || isTerminalShown) && !isTerminalFullScreen) {
+        // Floating Bottom Address Bar Pill matching Safari Compact Design (Visible upon web content and upon Terminal)
+        if (activeSheet == ActiveSheet.None || activeSheet == ActiveSheet.FindInPage || activeSheet == ActiveSheet.Terminal || isTerminalShown) {
             FloatingAddressBar(
                 currentTab = currentTab,
                 tabCount = tabs.count { it.isPrivate == isPrivateMode },

@@ -750,7 +750,6 @@ fun TerminalScreen(
                     } else {
                         Modifier
                             .statusBarsPadding()
-                            .padding(bottom = effectiveBottomPadding)
                             .then(
                                 if (!isAddressBarBottom || isAtTop) {
                                     Modifier
@@ -2026,6 +2025,11 @@ fun TerminalScreen(
                             )
                     )
                 }
+            }
+
+            // Bottom spacer so terminal input and accessory keys sit cleanly above the floating address bar
+            if (isAddressBarBottom && isAtBottom) {
+                Spacer(modifier = Modifier.height(addressBarBottomPadding))
             }
         }
     }
