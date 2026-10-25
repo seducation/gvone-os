@@ -84,6 +84,7 @@ import com.example.ui.components.ConversationHierarchyTreeView
 import com.example.ui.components.Level1TaskItem
 import com.example.ui.components.CnsDashboardSheet
 import com.example.ui.components.ConversationHistorySheet
+import com.example.ui.components.TerminalActionAndCommandPanel
 import com.example.agent.memory.ContextRouter
 import com.example.data.command.CommandEngine
 import com.example.data.files.GVONEFileSystem
@@ -198,9 +199,19 @@ fun TerminalScreen(
     val isBridgeMode = terminalBridgeMode == TerminalBridgeMode.WEB
     val isChatMode by viewModel.isChatMode.collectAsState()
     val isLogMode by viewModel.isLogMode.collectAsState()
+    val isBuildPanelOpen by viewModel.isBuildPanelOpen.collectAsStateWithLifecycle()
+    val pendingAgentQuestion by viewModel.pendingAgentQuestion.collectAsStateWithLifecycle()
+    val agentTaskSteps by viewModel.agentTaskSteps.collectAsStateWithLifecycle()
+    val terminalTargetDir by viewModel.terminalTargetDirectory.collectAsStateWithLifecycle()
 
-    var terminalHeightFraction by remember(settings.terminalHeightFraction) {
+    var isDraggingHeight by remember { mutableStateOf(false) }
+    var terminalHeightFraction by remember {
         mutableFloatStateOf(settings.terminalHeightFraction)
+    }
+    LaunchedEffect(settings.terminalHeightFraction) {
+        if (!isDraggingHeight) {
+            terminalHeightFraction = settings.terminalHeightFraction
+        }
     }
 
     // Multi-session management
@@ -676,8 +687,6 @@ fun TerminalScreen(
     val imeBottom = WindowInsets.ime.getBottom(density)
     val isImeVisible = imeBottom > 0
 
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
-
     // Main terminal overlay container
     BoxWithConstraints(
         modifier = modifier
@@ -771,11 +780,68 @@ fun TerminalScreen(
                             .fillMaxHeight(terminalHeightFraction.coerceIn(0.25f, 0.98f))
                     }
                 )
-                .offset { IntOffset(0, if (isAtTop) -dragOffsetY.coerceAtLeast(0f).toInt() else dragOffsetY.coerceAtLeast(0f).toInt()) }
         ) {
             Column(
                 modifier = Modifier.fillMaxSize()
             ) {
+                // Top drag/resize handle when terminal is at the BOTTOM (Ultra-slim 4dp pill centered, free continuous vertical dragging + tap to cycle)
+                if (!isFullScreen && isAtBottom) {
+                    var totalDragDelta by remember { mutableFloatStateOf(0f) }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(24.dp)
+                            .testTag("terminal_top_resize_handle")
+                            .pointerInput(isAtBottom) {
+                                detectVerticalDragGestures(
+                                    onDragStart = {
+                                        isDraggingHeight = true
+                                        totalDragDelta = 0f
+                                    },
+                                    onDragEnd = {
+                                        isDraggingHeight = false
+                                        if (kotlin.math.abs(totalDragDelta) < 8f) {
+                                            val next = when {
+                                                terminalHeightFraction < 0.50f -> 0.70f
+                                                terminalHeightFraction < 0.82f -> 0.92f
+                                                else -> 0.38f
+                                            }
+                                            terminalHeightFraction = next
+                                            viewModel.updateTerminalHeightFraction(next)
+                                        } else {
+                                            viewModel.updateTerminalHeightFraction(terminalHeightFraction)
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        isDraggingHeight = false
+                                        viewModel.updateTerminalHeightFraction(terminalHeightFraction)
+                                    },
+                                    onVerticalDrag = { change, dragAmount ->
+                                        change.consume()
+                                        totalDragDelta += dragAmount
+                                        val deltaFraction = -dragAmount / totalHeightPx
+                                        val minH = if (isAddressBarWriting) 0.18f else 0.22f
+                                        val maxH = 0.95f
+                                        val candidate = (terminalHeightFraction + deltaFraction).coerceIn(minH, maxH)
+                                        terminalHeightFraction = candidate
+                                    }
+                                )
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(
+                                    if (isPinnedToScreen || isAddressBarWriting) Color(0xFF38BDF8).copy(alpha = 0.85f)
+                                    else Color(0xFF64748B)
+                                )
+                        )
+                    }
+                }
+
                 // 1. In DEFAULT position: Suggestion Chips Bar is on TOP of the Terminal!
                 // Layout hierarchy: Chip -> Terminal -> Address bar
                 if (!isSwappedPosition) {
@@ -856,117 +922,6 @@ fun TerminalScreen(
                     HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
                 }
 
-                // Top drag/resize handle when terminal is at the BOTTOM (pinned at bottom or docked at bottom)
-                if (!isFullScreen && isAtBottom) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp, bottom = 4.dp)
-                            .pointerInput(totalHeightPx) {
-                                detectVerticalDragGestures(
-                                    onDragEnd = {
-                                        if (isAddressBarWriting) {
-                                            if (dragOffsetY > 100f) {
-                                                onClose()
-                                            } else {
-                                                viewModel.updateTerminalHeightFraction(terminalHeightFraction)
-                                            }
-                                        } else if (!isPinnedToScreen && dragOffsetY > 120f) {
-                                            onClose()
-                                        } else {
-                                            viewModel.updateTerminalHeightFraction(terminalHeightFraction)
-                                        }
-                                        dragOffsetY = 0f
-                                    },
-                                    onVerticalDrag = { _, dragAmount ->
-                                        val deltaFraction = -dragAmount / totalHeightPx
-                                        val minH = if (isAddressBarWriting) 0.18f else 0.20f
-                                        val maxH = if (isAddressBarWriting) 0.70f else 0.85f
-                                        val candidate = (terminalHeightFraction + deltaFraction).coerceIn(minH, maxH)
-                                        terminalHeightFraction = candidate
-                                        viewModel.updateTerminalHeightFraction(candidate)
-                                    }
-                                )
-                            }
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                val next = if (isAddressBarWriting) {
-                                    when {
-                                        terminalHeightFraction < 0.28f -> 0.35f
-                                        terminalHeightFraction < 0.45f -> 0.55f
-                                        terminalHeightFraction < 0.62f -> 0.68f
-                                        else -> 0.22f
-                                    }
-                                } else {
-                                    when {
-                                        terminalHeightFraction < 0.35f -> 0.45f
-                                        terminalHeightFraction < 0.55f -> 0.65f
-                                        terminalHeightFraction < 0.75f -> 0.80f
-                                        else -> 0.30f
-                                    }
-                                }
-                                terminalHeightFraction = next
-                                viewModel.updateTerminalHeightFraction(next)
-                                Toast.makeText(context, "Terminal height: ${(next * 100).toInt()}%", Toast.LENGTH_SHORT).show()
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(36.dp)
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(if (isPinnedToScreen || isAddressBarWriting) Color(0xFF38BDF8) else Color(0xFF484F58))
-                            )
-                            if (isPinnedToScreen || isAddressBarWriting) {
-                                Text(
-                                    text = "${(terminalHeightFraction * 100).toInt()}% • Drag or tap to resize",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                            if (isPinnedToScreen) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = Color(0xFF21262D),
-                                    modifier = Modifier.clickable {
-                                        viewModel.toggleTerminalSwappedPosition()
-                                        Toast.makeText(context, "Terminal moved up to top (Split View)", Toast.LENGTH_SHORT).show()
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.ArrowUpward,
-                                            contentDescription = "Move Up",
-                                            tint = Color(0xFF38BDF8),
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Text(
-                                            text = "MOVE UP",
-                                            color = Color(0xFF38BDF8),
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
                 // 1. TOP TERMINAL HEADER BAR
                 TerminalHeaderBar(
                     sessions = sessions,
@@ -986,9 +941,9 @@ fun TerminalScreen(
                     terminalHeightFraction = terminalHeightFraction,
                     onAdjustHeight = {
                         val next = when {
-                            terminalHeightFraction < 0.80f -> 0.85f
-                            terminalHeightFraction < 0.90f -> 0.95f
-                            else -> 0.75f
+                            terminalHeightFraction < 0.50f -> 0.70f
+                            terminalHeightFraction < 0.82f -> 0.92f
+                            else -> 0.38f
                         }
                         terminalHeightFraction = next
                         viewModel.updateTerminalHeightFraction(next)
@@ -1069,10 +1024,30 @@ fun TerminalScreen(
                     },
                     onCnsClick = { showCnsDashboard = true },
                     xcodeConsoleFilter = xcodeConsoleFilter,
-                    onSelectConsoleFilter = { xcodeConsoleFilter = it }
+                    onSelectConsoleFilter = { xcodeConsoleFilter = it },
+                    isBuildPanelOpen = isBuildPanelOpen,
+                    onToggleBuildPanel = { viewModel.toggleBuildPanel() }
                 )
 
                 HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
+
+                // Expandable Action & Command Panel (Build icon trigger, AI queries, approval gates, multi-file actions)
+                AnimatedVisibility(
+                    visible = isBuildPanelOpen || pendingAgentQuestion != null,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    TerminalActionAndCommandPanel(
+                        targetDirectory = terminalTargetDir,
+                        pendingQuestion = pendingAgentQuestion,
+                        steps = agentTaskSteps,
+                        onClose = { viewModel.setBuildPanelOpen(false) },
+                        onSubmitAnswer = { answer -> viewModel.submitAgentQuestionAnswer(answer) },
+                        onApproveStep = { step -> viewModel.approveAgentStep(step) },
+                        onRejectStep = { step -> viewModel.rejectAgentStep(step) },
+                        onExecuteCommand = { cmd -> executeCommand(cmd) }
+                    )
+                }
 
                 activeTask?.let { task ->
                     ExpandableAgentTaskCard(
@@ -2009,101 +1984,63 @@ fun TerminalScreen(
                 }
             }
 
-            // 7. When at TOP: Bottom Drag/Resize Handle to adjust height while working with website
+            // 7. When at TOP: Ultra-slim 4dp pill handle centered with free continuous vertical dragging + tap to cycle
             if (!isFullScreen && isAtTop) {
-                HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
+                HorizontalDivider(color = TermBorderColor, thickness = 0.5.dp)
+                var totalDragDeltaBottom by remember { mutableFloatStateOf(0f) }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .height(24.dp)
                         .background(Color(0xFF161B22))
-                        .pointerInput(totalHeightPx) {
+                        .testTag("terminal_pinned_resize_handle")
+                        .pointerInput(isAtTop) {
                             detectVerticalDragGestures(
-                                onVerticalDrag = { _, dragAmount ->
+                                onDragStart = {
+                                    isDraggingHeight = true
+                                    totalDragDeltaBottom = 0f
+                                },
+                                onDragEnd = {
+                                    isDraggingHeight = false
+                                    if (kotlin.math.abs(totalDragDeltaBottom) < 8f) {
+                                        val next = when {
+                                            terminalHeightFraction < 0.50f -> 0.70f
+                                            terminalHeightFraction < 0.82f -> 0.92f
+                                            else -> 0.38f
+                                        }
+                                        terminalHeightFraction = next
+                                        viewModel.updateTerminalHeightFraction(next)
+                                    } else {
+                                        viewModel.updateTerminalHeightFraction(terminalHeightFraction)
+                                    }
+                                },
+                                onDragCancel = {
+                                    isDraggingHeight = false
+                                    viewModel.updateTerminalHeightFraction(terminalHeightFraction)
+                                },
+                                onVerticalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    totalDragDeltaBottom += dragAmount
                                     val deltaFraction = dragAmount / totalHeightPx
-                                    val minH = if (isAddressBarWriting) 0.18f else 0.20f
-                                    val maxH = if (isAddressBarWriting) 0.70f else 0.85f
+                                    val minH = if (isAddressBarWriting) 0.18f else 0.22f
+                                    val maxH = 0.95f
                                     val candidate = (terminalHeightFraction + deltaFraction).coerceIn(minH, maxH)
                                     terminalHeightFraction = candidate
-                                    viewModel.updateTerminalHeightFraction(candidate)
                                 }
                             )
-                        }
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            val next = if (isAddressBarWriting) {
-                                when {
-                                    terminalHeightFraction < 0.28f -> 0.35f
-                                    terminalHeightFraction < 0.45f -> 0.55f
-                                    terminalHeightFraction < 0.62f -> 0.68f
-                                    else -> 0.22f
-                                }
-                            } else {
-                                when {
-                                    terminalHeightFraction < 0.35f -> 0.45f
-                                    terminalHeightFraction < 0.55f -> 0.65f
-                                    terminalHeightFraction < 0.75f -> 0.80f
-                                    else -> 0.30f
-                                }
-                            }
-                            terminalHeightFraction = next
-                            viewModel.updateTerminalHeightFraction(next)
-                            Toast.makeText(context, "Terminal height: ${(next * 100).toInt()}%", Toast.LENGTH_SHORT).show()
-                        }
-                        .padding(vertical = 5.dp)
-                        .testTag("terminal_pinned_resize_handle"),
+                        },
                     contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .width(36.dp)
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(Color(0xFF38BDF8))
-                        )
-                        Text(
-                            text = "${(terminalHeightFraction * 100).toInt()}% • Drag or tap to adjust height",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Medium,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        if (isPinnedToScreen) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFF21262D),
-                                modifier = Modifier.clickable {
-                                    viewModel.toggleTerminalSwappedPosition()
-                                    Toast.makeText(context, "Terminal moved down to bottom (Split View)", Toast.LENGTH_SHORT).show()
-                                }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.ArrowDownward,
-                                        contentDescription = "Move Down",
-                                        tint = Color(0xFF38BDF8),
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Text(
-                                        text = "MOVE DOWN",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Box(
+                        modifier = Modifier
+                            .width(36.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(
+                                if (isPinnedToScreen || isAddressBarWriting) Color(0xFF38BDF8).copy(alpha = 0.85f)
+                                else Color(0xFF64748B)
+                            )
+                    )
                 }
             }
         }
@@ -2283,7 +2220,9 @@ private fun TerminalHeaderBar(
     onBridgeClick: () -> Unit = {},
     onCnsClick: () -> Unit = {},
     xcodeConsoleFilter: String = "All Output",
-    onSelectConsoleFilter: (String) -> Unit = {}
+    onSelectConsoleFilter: (String) -> Unit = {},
+    isBuildPanelOpen: Boolean = false,
+    onToggleBuildPanel: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -2411,6 +2350,21 @@ private fun TerminalHeaderBar(
                     imageVector = Icons.Rounded.PushPin,
                     contentDescription = if (isPinnedToScreen) "Unpin Terminal" else "Pin Terminal to Screen",
                     tint = if (isPinnedToScreen) Color(0xFF38BDF8) else TermTextSecondary,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+
+            // Build Icon Button: Expands Action & Command Panel
+            IconButton(
+                onClick = onToggleBuildPanel,
+                modifier = Modifier
+                    .size(32.dp)
+                    .testTag("terminal_header_build_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Build,
+                    contentDescription = "Expand Action & Command Panel",
+                    tint = if (isBuildPanelOpen) Color(0xFF38BDF8) else TermTextSecondary,
                     modifier = Modifier.size(17.dp)
                 )
             }

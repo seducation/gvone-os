@@ -314,6 +314,27 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _terminalTargetDirectory = MutableStateFlow(prefs.getString("terminal_target_dir", "Projects") ?: "Projects")
     val terminalTargetDirectory: StateFlow<String> = _terminalTargetDirectory.asStateFlow()
 
+    private val _terminalExecutionStatus = MutableStateFlow(TerminalExecutionStatus.IDLE)
+    val terminalExecutionStatus: StateFlow<TerminalExecutionStatus> = _terminalExecutionStatus.asStateFlow()
+
+    private val _terminalExecutionMessage = MutableStateFlow("")
+    val terminalExecutionMessage: StateFlow<String> = _terminalExecutionMessage.asStateFlow()
+
+    fun setTerminalExecutionStatus(status: TerminalExecutionStatus, message: String = "") {
+        _terminalExecutionStatus.value = status
+        _terminalExecutionMessage.value = message
+    }
+
+    fun executeTerminalCommand(cmd: String) {
+        val trimmed = cmd.trim()
+        if (trimmed.isEmpty()) return
+        terminalCommandExecutor.executeCommand(
+            rawInput = trimmed,
+            origin = com.example.data.terminal.CommandOrigin.ADDRESS_BAR,
+            onOpenAgentDashboard = { openAgentDashboard() }
+        )
+    }
+
     fun setTerminalTargetDirectory(dir: String) {
         val sanitized = dir.trim().removePrefix("/").ifBlank { "Projects" }
         _terminalTargetDirectory.value = sanitized
@@ -321,6 +342,58 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             shellEngine.changeDirectory(sanitized)
         }
+    }
+
+    // Agent Action & Build Panel State
+    private val _isBuildPanelOpen = MutableStateFlow(false)
+    val isBuildPanelOpen: StateFlow<Boolean> = _isBuildPanelOpen.asStateFlow()
+
+    private val _pendingAgentQuestion = MutableStateFlow<AgentQuestionPrompt?>(null)
+    val pendingAgentQuestion: StateFlow<AgentQuestionPrompt?> = _pendingAgentQuestion.asStateFlow()
+
+    private val _agentTaskSteps = MutableStateFlow<List<AgentTaskStep>>(emptyList())
+    val agentTaskSteps: StateFlow<List<AgentTaskStep>> = _agentTaskSteps.asStateFlow()
+
+    fun toggleBuildPanel() {
+        _isBuildPanelOpen.value = !_isBuildPanelOpen.value
+    }
+
+    fun setBuildPanelOpen(open: Boolean) {
+        _isBuildPanelOpen.value = open
+    }
+
+    fun setPendingAgentQuestion(prompt: AgentQuestionPrompt?) {
+        _pendingAgentQuestion.value = prompt
+        if (prompt != null) {
+            _isBuildPanelOpen.value = true
+        }
+    }
+
+    fun submitAgentQuestionAnswer(answer: String) {
+        appendTerminalLine("User Answered: $answer", TerminalLineType.COMMAND)
+        _pendingAgentQuestion.value = null
+        executeTerminalCommand(answer)
+    }
+
+    fun approveAgentStep(step: AgentTaskStep) {
+        val updated = _agentTaskSteps.value.map {
+            if (it.id == step.id) it.copy(status = AgentStepStatus.COMPLETED) else it
+        }
+        _agentTaskSteps.value = updated
+        appendTerminalLine("✔ Approved Step: ${step.title}", TerminalLineType.SUCCESS)
+        step.targetFile?.let { file ->
+            if (file.endsWith(".html", ignoreCase = true)) {
+                executeTerminalCommand("run $file")
+            }
+        }
+    }
+
+    fun rejectAgentStep(step: AgentTaskStep) {
+        val updated = _agentTaskSteps.value.map {
+            if (it.id == step.id) it.copy(status = AgentStepStatus.FAILED) else it
+        }
+        _agentTaskSteps.value = updated
+        appendTerminalLine("✖ Rejected Step: ${step.title}", TerminalLineType.WARNING)
     }
 
     // Active Bot Persona for Workspace Bot Chat tab

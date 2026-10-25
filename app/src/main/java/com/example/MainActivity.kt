@@ -243,6 +243,17 @@ fun BrowserApp(
     val workspaceMode by viewModel.workspaceMode.collectAsStateWithLifecycle()
     val activeBotPersona by viewModel.activeBotPersona.collectAsStateWithLifecycle()
     val terminalTargetDir by viewModel.terminalTargetDirectory.collectAsStateWithLifecycle()
+    val terminalExecutionStatus by viewModel.terminalExecutionStatus.collectAsStateWithLifecycle()
+    val terminalExecutionMessage by viewModel.terminalExecutionMessage.collectAsStateWithLifecycle()
+    var workspaceDirs by remember { mutableStateOf(listOf("Projects", "Projects/KotlinCalculator", "Documents", "Downloads", "workspace")) }
+    LaunchedEffect(Unit) {
+        try {
+            val dirs = viewModel.getWorkspaceProjectsAndSubfolders()
+            if (dirs.isNotEmpty()) {
+                workspaceDirs = dirs
+            }
+        } catch (_: Exception) {}
+    }
     val pendingIdeFile by viewModel.pendingIdeFile.collectAsStateWithLifecycle()
     var ideOpenTabs by remember { mutableStateOf<List<IdeTab>>(emptyList()) }
     var ideActiveTabId by remember { mutableStateOf<String?>(null) }
@@ -805,6 +816,12 @@ fun BrowserApp(
                 onToggleSuggestionChips = { viewModel.toggleSuggestionChips() },
                 onOpenTerminalCommands = { viewModel.openTerminalCommands() },
                 onCloseTerminalCommands = { viewModel.closeTerminalCommands() },
+                executionStatus = terminalExecutionStatus,
+                executionStatusMessage = terminalExecutionMessage,
+                targetDirectory = terminalTargetDir,
+                workspaceDirectories = workspaceDirs,
+                onSelectTargetDirectory = { viewModel.setTerminalTargetDirectory(it) },
+                onExecuteTerminalCommand = { cmd -> viewModel.executeTerminalCommand(cmd) },
                 modifier = Modifier
                     .align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
                     .onGloballyPositioned { coordinates ->
