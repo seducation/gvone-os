@@ -135,9 +135,6 @@ fun FloatingAddressBar(
     targetDirectory: String = "workspace",
     workspaceDirectories: List<String> = emptyList(),
     onSelectTargetDirectory: ((String) -> Unit)? = null,
-    onOpenBuildPanel: (() -> Unit)? = null,
-    onRunPreview: (() -> Unit)? = null,
-    isBuildPanelExpanded: Boolean = false,
     onExecuteTerminalCommand: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -465,7 +462,6 @@ fun FloatingAddressBar(
                         targetDirectory = targetDirectory,
                         workspaceDirectories = workspaceDirectories,
                         onSelectTargetDirectory = onSelectTargetDirectory,
-                        onRunPreview = onRunPreview,
                         onClose = {
                             onCloseSuggestionChips()
                             onCloseSuggestions()
@@ -728,29 +724,6 @@ fun FloatingAddressBar(
                                         contentDescription = "Control Center (General Bridge to All, APIs & Tasks)",
                                         tint = if (bridgeApplyToAll) GVONEPrimary else if (bridgeEnabled) Color(0xFF38BDF8) else if (autoLoadEnabled) GVONESecondary else Color(0xFF8E9BAE),
                                         modifier = Modifier.size(18.dp)
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = { onOpenBuildPanel?.invoke() },
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .testTag("address_bar_build_toggle_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Build,
-                                        contentDescription = "Build & Agent IDE Panel",
-                                        tint = if (isBuildPanelExpanded || executionStatus == TerminalExecutionStatus.AWAITING_APPROVAL) Color(0xFFFFB74D) else if (executionStatus == TerminalExecutionStatus.RUNNING) Color(0xFF38BDF8) else Color(0xFF8E9BAE),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-
-                                if (executionStatus != TerminalExecutionStatus.IDLE || isTerminalOpen) {
-                                    ExecutionStatusPill(
-                                        status = executionStatus,
-                                        message = executionStatusMessage,
-                                        onClick = { onOpenBuildPanel?.invoke() },
-                                        modifier = Modifier.padding(end = 4.dp)
                                     )
                                 }
 
@@ -1093,7 +1066,6 @@ fun FloatingAddressBar(
                     targetDirectory = targetDirectory,
                     workspaceDirectories = workspaceDirectories,
                     onSelectTargetDirectory = onSelectTargetDirectory,
-                    onRunPreview = onRunPreview,
                     onClose = {
                         onCloseSuggestionChips()
                         onCloseSuggestions()

@@ -158,24 +158,10 @@ fun TerminalScreen(
     val globalTerminalLines by viewModel.terminalLines.collectAsStateWithLifecycle()
     val bridgeConnectionState by viewModel.webAppBridge.connectionState.collectAsStateWithLifecycle()
 
-    // Autonomous Sandbox & Shell Engines
-    val fileSystem = remember { GVONEFileSystem(context) }
-    val agentEngine = remember {
-        SandboxAgentEngine(
-            context = context,
-            viewModel = viewModel,
-            aiService = viewModel.aiService,
-            fileSystem = fileSystem
-        )
-    }
-    val shellEngine = remember {
-        TerminalShellEngine(
-            context = context,
-            viewModel = viewModel,
-            fileSystem = fileSystem,
-            agentEngine = agentEngine
-        )
-    }
+    // Autonomous Sandbox & Shell Engines (Centralized from BrowserViewModel)
+    val fileSystem = viewModel.fileSystem
+    val agentEngine = viewModel.agentEngine
+    val shellEngine = viewModel.shellEngine
     val isAgenticMode by viewModel.terminalCommandExecutor.isAgenticMode.collectAsStateWithLifecycle()
     var currentCwd by remember { mutableStateOf(shellEngine.promptPath) }
     var activePersona by remember { mutableStateOf(agentEngine.activePersona) }
@@ -234,7 +220,9 @@ fun TerminalScreen(
         )
     }
     var activeSessionId by remember { mutableStateOf("sess_1") }
-    val activeSession = sessions.find { it.id == activeSessionId } ?: sessions.first()
+    val activeSession = sessions.find { it.id == activeSessionId }
+        ?: sessions.firstOrNull()
+        ?: TerminalSession("sess_default", "Session 1", globalTerminalLines)
 
     // Synchronize global terminal lines into active session in real-time
     LaunchedEffect(globalTerminalLines) {
@@ -1035,8 +1023,9 @@ fun TerminalScreen(
                     },
                     onCloseSession = { sessId ->
                         if (sessions.size > 1) {
-                            sessions = sessions.filterNot { it.id == sessId }
-                            activeSessionId = sessions.first().id
+                            val remaining = sessions.filterNot { it.id == sessId }
+                            sessions = remaining
+                            activeSessionId = remaining.firstOrNull()?.id ?: "sess_1"
                         } else {
                             onClose()
                         }
@@ -1047,38 +1036,17 @@ fun TerminalScreen(
                         }
                         viewModel.clearTerminalLines()
                     },
-                    onClose = onClose
-                )
-
-                HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
-
-                // 1.5 UNIFIED RUNTIME STATUS BAR & EXPANDABLE ACTIVE TASK
-                RuntimeStatusPillRow(
-                    runtimeMode = runtimeMode,
-                    activeTask = activeTask,
-                    onToggleVoice = {
-                        executeCommand("/voice")
-                    },
-                    onToggleAgent = {
-                        executeCommand("/agent")
-                    },
-                    onToggleText = {
-                        executeCommand("/text")
-                    },
-                    onToggleDebug = {
-                        executeCommand("/debug")
-                    },
-                    onCancelTask = {
-                        executeCommand("/cancel")
-                    },
+                    onClose = onClose,
                     isAgenticMode = isAgenticMode,
-                    activePersona = activePersona,
+                    onToggleAgent = { executeCommand("/agent") },
+                    isTextActive = (runtimeMode.interaction == InteractionType.TEXT && !runtimeMode.isVoiceActive),
+                    onToggleText = { executeCommand("/text") },
+                    isVoiceActive = (runtimeMode.isVoiceActive || runtimeMode.interaction == InteractionType.VOICE),
+                    onToggleVoice = { executeCommand("/voice") },
+                    isLogMode = isLogMode,
+                    onToggleLog = { executeCommand("/log") },
                     sandboxTabCount = tabs.count { it.tabGroupId == agentEngine.activeSandboxGroupId },
-                    onFocusSandbox = {
-                        executeCommand("/sandbox")
-                    },
-                    bridgeConnectionState = bridgeConnectionState,
-                    isWebsiteBridgeActive = settings.bidirectionalBridgeEnabled,
+                    onFocusSandbox = { executeCommand("/sandbox") },
                     terminalBridgeMode = terminalBridgeMode,
                     onBridgeClick = {
                         val nextMode = viewModel.cycleTerminalBridgeMode()
@@ -1099,18 +1067,12 @@ fun TerminalScreen(
                             if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
                         }
                     },
-                    onCnsClick = {
-                        showCnsDashboard = true
-                    },
-                    isChatMode = isChatMode,
-                    onToggleChat = {
-                        executeCommand("/chat")
-                    },
-                    isLogMode = isLogMode,
-                    onToggleLog = {
-                        executeCommand("/log")
-                    }
+                    onCnsClick = { showCnsDashboard = true },
+                    xcodeConsoleFilter = xcodeConsoleFilter,
+                    onSelectConsoleFilter = { xcodeConsoleFilter = it }
                 )
+
+                HorizontalDivider(color = TermBorderColor, thickness = 1.dp)
 
                 activeTask?.let { task ->
                     ExpandableAgentTaskCard(
@@ -1121,81 +1083,6 @@ fun TerminalScreen(
                             executeCommand("/cancel")
                         }
                     )
-                }
-
-                // Xcode-Style Debug Console Filter Strip
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0F1523))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier
-                            .background(Color(0xFF1E293B), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF34D399))
-                        )
-                        Text(
-                            text = "Target: GVONE Process",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-
-                    val filters = listOf("All Output", "Target", "Errors", "Warnings")
-                    filters.forEach { filterName ->
-                        val isFilterActive = xcodeConsoleFilter == filterName
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isFilterActive) Color(0xFF0284C7).copy(alpha = 0.25f) else Color.Transparent,
-                            border = BorderStroke(
-                                0.5.dp,
-                                if (isFilterActive) Color(0xFF38BDF8) else Color(0xFF2C384D)
-                            ),
-                            modifier = Modifier
-                                .clickable { xcodeConsoleFilter = filterName }
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = filterName,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = if (isFilterActive) Color(0xFF38BDF8) else Color(0xFF64748B),
-                                fontWeight = if (isFilterActive) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    IconButton(
-                        onClick = {
-                            sessions = sessions.map {
-                                if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
-                            }
-                            viewModel.clearTerminalLines()
-                        },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.DeleteSweep,
-                            contentDescription = "Clear Console",
-                            tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
                 }
 
                 // 2. MAIN CLI STREAM LOG (Grouped by User Input with Expandable/Collapsible Action Logs)
@@ -1243,15 +1130,6 @@ fun TerminalScreen(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .clickable(
-                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            try {
-                                focusRequester.requestFocus()
-                                keyboardController?.show()
-                            } catch (_: Throwable) {}
-                        }
                 ) {
                     LazyColumn(
                         state = listState,
@@ -2390,7 +2268,22 @@ private fun TerminalHeaderBar(
     onNewSession: () -> Unit,
     onCloseSession: (String) -> Unit,
     onClearScreen: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    isAgenticMode: Boolean = false,
+    onToggleAgent: () -> Unit = {},
+    isTextActive: Boolean = true,
+    onToggleText: () -> Unit = {},
+    isVoiceActive: Boolean = false,
+    onToggleVoice: () -> Unit = {},
+    isLogMode: Boolean = false,
+    onToggleLog: () -> Unit = {},
+    sandboxTabCount: Int = 0,
+    onFocusSandbox: () -> Unit = {},
+    terminalBridgeMode: TerminalBridgeMode = TerminalBridgeMode.CHAT,
+    onBridgeClick: () -> Unit = {},
+    onCnsClick: () -> Unit = {},
+    xcodeConsoleFilter: String = "All Output",
+    onSelectConsoleFilter: (String) -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -2520,6 +2413,398 @@ private fun TerminalHeaderBar(
                     tint = if (isPinnedToScreen) Color(0xFF38BDF8) else TermTextSecondary,
                     modifier = Modifier.size(17.dp)
                 )
+            }
+
+            // Consolidated Modes, Agent & Output Filters Drop-Down Menu
+            var showControlsMenu by remember { mutableStateOf(false) }
+            Box {
+                IconButton(
+                    onClick = { showControlsMenu = true },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("terminal_controls_menu_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = "Modes & Target Filters Menu",
+                        tint = if (isAgenticMode || xcodeConsoleFilter != "All Output") Color(0xFF38BDF8) else TermTextSecondary,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showControlsMenu,
+                    onDismissRequest = { showControlsMenu = false },
+                    modifier = Modifier
+                        .background(Color(0xFF161B22))
+                        .border(1.dp, Color(0xFF30363D), RoundedCornerShape(10.dp))
+                        .widthIn(min = 260.dp, max = 320.dp)
+                ) {
+                    Text(
+                        text = "RUNTIME & AGENT MODES",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                    )
+
+                    // 1. Agent Mode
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (isAgenticMode) "Agent Mode: ON" else "Agent Mode: OFF",
+                                    color = if (isAgenticMode) Color(0xFFA855F7) else Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isAgenticMode) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFA855F7), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.SmartToy, contentDescription = null, tint = if (isAgenticMode) Color(0xFFA855F7) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onToggleAgent()
+                        }
+                    )
+
+                    // 2. Text Input Mode
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (isTextActive) "Text Input: ON" else "Text Input: OFF",
+                                    color = if (isTextActive) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isTextActive) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.TextFields, contentDescription = null, tint = if (isTextActive) Color(0xFF38BDF8) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onToggleText()
+                        }
+                    )
+
+                    // 3. Voice Mode
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (isVoiceActive) "Voice Input: ON" else "Voice Input: OFF",
+                                    color = if (isVoiceActive) Color(0xFFF43F5E) else Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isVoiceActive) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFF43F5E), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Mic, contentDescription = null, tint = if (isVoiceActive) Color(0xFFF43F5E) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onToggleVoice()
+                        }
+                    )
+
+                    // 4. Log Stream Mode
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (isLogMode) "Log Stream: ON (Verbose)" else "Log Stream: OFF",
+                                    color = if (isLogMode) Color(0xFFEAB308) else Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isLogMode) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFEAB308), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Subject, contentDescription = null, tint = if (isLogMode) Color(0xFFEAB308) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onToggleLog()
+                        }
+                    )
+
+                    // 5. Sandbox Workspace
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Sandbox Workspace ($sandboxTabCount tabs)",
+                                    color = Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Layers, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onFocusSandbox()
+                        }
+                    )
+
+                    // 6. Web Bridge / Chat Bridge
+                    val isWebBridge = terminalBridgeMode == com.example.data.terminal.TerminalBridgeMode.WEB
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (isWebBridge) "Bridge: Web (Website Input)" else "Bridge: Chat (Gemini AI)",
+                                    color = if (isWebBridge) Color(0xFF38BDF8) else Color(0xFF10B981),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Sensors, contentDescription = null, tint = if (isWebBridge) Color(0xFF38BDF8) else Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onBridgeClick()
+                        }
+                    )
+
+                    // 7. CNS Debug & Dashboard
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "CNS Debug & Dashboard",
+                                    color = Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.BugReport, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onCnsClick()
+                        }
+                    )
+
+                    HorizontalDivider(color = Color(0xFF30363D), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text(
+                        text = "CONSOLE OUTPUT & TARGET FILTERS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                    )
+
+                    // 8. Target: GVONE Process
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF34D399))
+                                )
+                                Text(
+                                    text = "Target: GVONE Process",
+                                    color = Color(0xFF34D399),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Memory, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onSelectConsoleFilter("All Output")
+                        }
+                    )
+
+                    // 9. All Output
+                    val isAllOutput = xcodeConsoleFilter == "All Output"
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "All Output",
+                                    color = if (isAllOutput) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (isAllOutput) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isAllOutput) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.FormatListBulleted, contentDescription = null, tint = if (isAllOutput) Color(0xFF38BDF8) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onSelectConsoleFilter("All Output")
+                        }
+                    )
+
+                    // 10. Target Only
+                    val isTargetFilter = xcodeConsoleFilter == "Target"
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Target",
+                                    color = if (isTargetFilter) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (isTargetFilter) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isTargetFilter) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.GpsFixed, contentDescription = null, tint = if (isTargetFilter) Color(0xFF38BDF8) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onSelectConsoleFilter("Target")
+                        }
+                    )
+
+                    // 11. Errors
+                    val isErrorsFilter = xcodeConsoleFilter == "Errors"
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Errors",
+                                    color = if (isErrorsFilter) Color(0xFFEF4444) else Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (isErrorsFilter) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isErrorsFilter) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = if (isErrorsFilter) Color(0xFFEF4444) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onSelectConsoleFilter("Errors")
+                        }
+                    )
+
+                    // 12. Warnings
+                    val isWarningsFilter = xcodeConsoleFilter == "Warnings"
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Warnings",
+                                    color = if (isWarningsFilter) Color(0xFFF59E0B) else Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (isWarningsFilter) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isWarningsFilter) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.WarningAmber, contentDescription = null, tint = if (isWarningsFilter) Color(0xFFF59E0B) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onSelectConsoleFilter("Warnings")
+                        }
+                    )
+                }
             }
 
             // Button for swiping/swapping the position between suggestions chip and terminal or moving down/up

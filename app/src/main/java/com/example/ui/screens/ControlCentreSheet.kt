@@ -51,12 +51,7 @@ fun ControlCentreSheet(
     val scope = rememberCoroutineScope()
 
     fun safeAction(action: () -> Unit) {
-        scope.launch {
-            try {
-                sheetState.hide()
-            } catch (_: Throwable) {}
-            action()
-        }
+        action()
     }
 
     ModalBottomSheet(

@@ -915,7 +915,6 @@ fun SafariActionsSheet(
                                                 label = "Terminal CLI",
                                                 trailingText = "Shell",
                                                 onClick = {
-                                                    onClose()
                                                     onOpenTerminal()
                                                 }
                                             )
@@ -1064,7 +1063,6 @@ fun SafariActionsSheet(
                             icon = Icons.Rounded.Terminal,
                             label = "Terminal",
                             onClick = {
-                                onClose()
                                 onOpenTerminal()
                             },
                             modifier = Modifier.weight(1f)
@@ -1406,7 +1404,6 @@ fun SafariActionsSheet(
         SafariActionTab.ABOUT -> {
             SafariAboutTabContent(
                 onOpenTerminal = {
-                    onClose()
                     onOpenTerminal()
                 },
                 onOpenTorDiagnostics = {
@@ -1437,7 +1434,6 @@ fun SafariActionsSheet(
         SafariActionTab.GIT -> {
             SafariGitTabContent(
                 onOpenTerminal = {
-                    onClose()
                     onOpenTerminal()
                 },
                 onShowToast = { toastMessage = it }
@@ -1476,7 +1472,6 @@ fun SafariActionsSheet(
                     onOpenFiles()
                 },
                 onOpenTerminal = {
-                    onClose()
                     onOpenTerminal()
                 },
                 onShowToast = { toastMessage = it }
