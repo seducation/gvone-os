@@ -901,6 +901,7 @@ fun BrowserApp(
                     }
                     viewModel.closeSheet()
                 },
+                onSelectProjectTarget = { viewModel.selectProjectTarget(it) },
                 onCloseOverview = { viewModel.closeSheet() }
             )
         }

@@ -214,6 +214,15 @@ fun XcodeInspectorPanel(
                     .weight(1f)
             ) {
                 when (selectedTab) {
+                    XcodeInspectorTab.PROJECT -> {
+                        ProjectInspectorView(
+                            fileSystem = fileSystem,
+                            onOpenFileInTab = onOpenFileInTab,
+                            onOpenFileInIde = onOpenFileInIde,
+                            onExecuteTerminalCommand = onExecuteTerminalCommand,
+                            onClose = onClose
+                        )
+                    }
                     XcodeInspectorTab.ATTRIBUTES -> {
                         AttributesInspectorView(
                             currentTab = currentTab,

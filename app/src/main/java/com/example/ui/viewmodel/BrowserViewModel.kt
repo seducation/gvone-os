@@ -310,9 +310,36 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _pendingIdeFile.value = null
     }
 
-    // Terminal Target Directory (persists in state and SharedPreferences)
-    private val _terminalTargetDirectory = MutableStateFlow(prefs.getString("terminal_target_dir", "Projects") ?: "Projects")
+    // Terminal Target Directory (persists in state and SharedPreferences; empty means Root (~))
+    private val _terminalTargetDirectory = MutableStateFlow(prefs.getString("terminal_target_dir", "") ?: "")
     val terminalTargetDirectory: StateFlow<String> = _terminalTargetDirectory.asStateFlow()
+
+    // Active Selected Project Target (holds project files, tabs, chats, extensions, bots)
+    private val _selectedProjectTarget = MutableStateFlow<QuickMenuProject?>(null)
+    val selectedProjectTarget: StateFlow<QuickMenuProject?> = _selectedProjectTarget.asStateFlow()
+
+    fun selectProjectTarget(project: QuickMenuProject?) {
+        _selectedProjectTarget.value = project
+        if (project != null) {
+            val dir = "Projects/${project.name}"
+            _terminalTargetDirectory.value = dir
+            prefs.edit().putString("terminal_target_dir", dir).apply()
+            viewModelScope.launch {
+                shellEngine.changeDirectory(dir)
+            }
+        } else {
+            clearProjectTarget()
+        }
+    }
+
+    fun clearProjectTarget() {
+        _selectedProjectTarget.value = null
+        _terminalTargetDirectory.value = ""
+        prefs.edit().putString("terminal_target_dir", "").apply()
+        viewModelScope.launch {
+            shellEngine.changeDirectory("~")
+        }
+    }
 
     private val _terminalExecutionStatus = MutableStateFlow(TerminalExecutionStatus.IDLE)
     val terminalExecutionStatus: StateFlow<TerminalExecutionStatus> = _terminalExecutionStatus.asStateFlow()
@@ -336,11 +363,111 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setTerminalTargetDirectory(dir: String) {
-        val sanitized = dir.trim().removePrefix("/").ifBlank { "Projects" }
+        val sanitized = if (dir.isBlank() || dir == "Root (~)" || dir == "~" || dir == "root" || dir.equals("unselect", ignoreCase = true)) {
+            ""
+        } else {
+            dir.trim().removePrefix("/")
+        }
         _terminalTargetDirectory.value = sanitized
         prefs.edit().putString("terminal_target_dir", sanitized).apply()
+
+        // Sync with active project if target starts with Projects/
+        if (sanitized.isNotEmpty()) {
+            val allProjects = QuickMenuStorage.getProjects(getApplication())
+            val matchingProj = allProjects.find { 
+                sanitized.equals("Projects/${it.name}", ignoreCase = true) || sanitized.equals(it.name, ignoreCase = true) 
+            }
+            _selectedProjectTarget.value = matchingProj
+        } else {
+            _selectedProjectTarget.value = null
+        }
+
         viewModelScope.launch {
-            shellEngine.changeDirectory(sanitized)
+            if (sanitized.isEmpty()) {
+                shellEngine.changeDirectory("~")
+            } else {
+                shellEngine.changeDirectory(sanitized)
+            }
+        }
+    }
+
+    /**
+     * Adds a file directly to the specified or active project, creates it in filesystem,
+     * and optionally opens it in IDE editor.
+     */
+    fun addFileToProject(projectId: String, fileName: String, content: String = "", openInIde: Boolean = true) {
+        viewModelScope.launch {
+            val allProjects = QuickMenuStorage.getProjects(getApplication())
+            val targetProj = allProjects.find { it.id == projectId } ?: _selectedProjectTarget.value ?: return@launch
+            val folder = "Projects/${targetProj.name}"
+            val ext = fileName.substringAfterLast('.', "")
+            val baseName = fileName.substringBeforeLast('.')
+            val created = fileSystem.createFile(folder, baseName, ext, content)
+            
+            val updatedFiles = (targetProj.files + fileName).distinct()
+            val updatedProj = targetProj.copy(files = updatedFiles)
+            val updatedList = allProjects.map { if (it.id == targetProj.id) updatedProj else it }
+            QuickMenuStorage.saveProjects(getApplication(), updatedList)
+            if (_selectedProjectTarget.value?.id == targetProj.id) {
+                _selectedProjectTarget.value = updatedProj
+            }
+            if (openInIde) {
+                openIdeWithFile(created)
+            }
+            appendTerminalLine("📄 Added '$fileName' to project '${targetProj.name}'", TerminalLineType.SUCCESS)
+        }
+    }
+
+    /**
+     * Removes a file from a project's manifest.
+     */
+    fun removeFileFromProject(projectId: String, fileName: String) {
+        val allProjects = QuickMenuStorage.getProjects(getApplication())
+        val targetProj = allProjects.find { it.id == projectId } ?: return
+        val updatedFiles = targetProj.files.filterNot { it.equals(fileName, ignoreCase = true) }
+        val updatedProj = targetProj.copy(files = updatedFiles)
+        val updatedList = allProjects.map { if (it.id == targetProj.id) updatedProj else it }
+        QuickMenuStorage.saveProjects(getApplication(), updatedList)
+        if (_selectedProjectTarget.value?.id == targetProj.id) {
+            _selectedProjectTarget.value = updatedProj
+        }
+    }
+
+    /**
+     * Autonomous AI execution helper: modifies or creates a file, registers it with the project,
+     * syncs with IDE editor and offers immediate browser preview.
+     */
+    fun autoApplyAiFileModification(
+        fileName: String,
+        content: String,
+        openInIde: Boolean = true,
+        previewInBrowser: Boolean = false
+    ) {
+        viewModelScope.launch {
+            val targetDir = _terminalTargetDirectory.value.ifBlank { "Projects" }
+            val ext = fileName.substringAfterLast('.', "")
+            val baseName = fileName.substringBeforeLast('.')
+            val created = fileSystem.createFile(targetDir, baseName, ext, content)
+
+            // Register in active project if applicable
+            val activeProj = _selectedProjectTarget.value
+            if (activeProj != null) {
+                val allProjects = QuickMenuStorage.getProjects(getApplication())
+                val updatedFiles = (activeProj.files + fileName).distinct()
+                val updatedProj = activeProj.copy(files = updatedFiles)
+                QuickMenuStorage.saveProjects(getApplication(), allProjects.map { if (it.id == activeProj.id) updatedProj else it })
+                _selectedProjectTarget.value = updatedProj
+            }
+
+            appendTerminalLine("⚡ [AI AUTO-EDIT] File '$fileName' updated in $targetDir", TerminalLineType.SUCCESS)
+
+            if (openInIde) {
+                openIdeWithFile(created)
+            }
+
+            if (previewInBrowser && (ext == "html" || ext == "htm" || ext == "js" || ext == "svg")) {
+                openFileInTab(created, inNewTab = true)
+            }
         }
     }
 

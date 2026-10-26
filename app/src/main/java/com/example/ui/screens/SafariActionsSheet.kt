@@ -57,10 +57,12 @@ import com.example.ui.screens.ide.UnifiedDebugConsoleView
 import com.example.ui.components.DevConsoleLog
 import com.example.data.terminal.TerminalLine
 import com.example.ui.screens.files.UnifiedFileExplorerView
+import com.example.ui.screens.ide.ProjectInspectorView
 
 enum class SafariActionTab(val label: String, val icon: ImageVector) {
     MAIN("Main", Icons.Rounded.Dashboard),
-    FILES("Files", Icons.Rounded.FolderCopy),
+    PROJECT("Project", Icons.Rounded.FolderSpecial),
+    FILES("All Files", Icons.Rounded.FolderCopy),
     ATTRIBUTES("Attributes", Icons.Rounded.Tune),
     CONSOLE("Console", Icons.Rounded.Terminal),
     DOM_INSPECT("DOM", Icons.Rounded.Code),
@@ -1253,6 +1255,30 @@ fun SafariActionsSheet(
                         }
                     )
                 }
+            }
+        }
+
+        SafariActionTab.PROJECT -> {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                color = Color.Transparent
+            ) {
+                ProjectInspectorView(
+                    fileSystem = fileSystem,
+                    onOpenFileInTab = onOpenFileInTab,
+                    onOpenFileInIde = { _ ->
+                        onOpenIde()
+                        onClose()
+                    },
+                    onExecuteTerminalCommand = { cmd ->
+                        onOpenTerminal()
+                    },
+                    onClose = onClose
+                )
             }
         }
 

@@ -888,13 +888,24 @@ fun TerminalScreen(
                             onSelectTargetDirectory = { chosenDir ->
                                 viewModel.setTerminalTargetDirectory(chosenDir)
                                 coroutineScope.launch {
-                                    shellEngine.changeDirectory(chosenDir)
-                                    currentCwd = shellEngine.promptPath
-                                    val feedbackLine = TerminalLine("📁 Target project/directory set to: $chosenDir (AI tasks will target this directory)", TerminalLineType.SUCCESS)
-                                    val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
-                                    if (activeSess != null) {
-                                        val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
-                                        sessions = sessions.map { if (it.id == activeSess.id) updated else it }
+                                    if (chosenDir.isBlank()) {
+                                        shellEngine.changeDirectory("~")
+                                        currentCwd = shellEngine.promptPath
+                                        val feedbackLine = TerminalLine("📁 Target cleared: Returned to global root workspace (~)", TerminalLineType.INFO)
+                                        val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
+                                        if (activeSess != null) {
+                                            val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
+                                            sessions = sessions.map { if (it.id == activeSess.id) updated else it }
+                                        }
+                                    } else {
+                                        shellEngine.changeDirectory(chosenDir)
+                                        currentCwd = shellEngine.promptPath
+                                        val feedbackLine = TerminalLine("📁 Target set to: $chosenDir (AI tasks, tabs and file edits scoped)", TerminalLineType.SUCCESS)
+                                        val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
+                                        if (activeSess != null) {
+                                            val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
+                                            sessions = sessions.map { if (it.id == activeSess.id) updated else it }
+                                        }
                                     }
                                 }
                             },
@@ -1041,6 +1052,62 @@ fun TerminalScreen(
                             executeCommand("/cancel")
                         }
                     )
+                }
+
+                // Active Project Scoped Chat Banner
+                val selectedProjTarget by viewModel.selectedProjectTarget.collectAsStateWithLifecycle()
+                if (selectedProjTarget != null) {
+                    val proj = selectedProjTarget!!
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = Color(0xFF101B2E),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF1E3A5F))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.FolderSpecial,
+                                    contentDescription = "Active Project",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Project: ${proj.name}",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFF1F5F9),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "(${proj.files.size} files, ${proj.tabs.size} tabs)",
+                                    fontSize = 10.5.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                            TextButton(
+                                onClick = { 
+                                    viewModel.clearProjectTarget()
+                                    Toast.makeText(context, "Unselected project. Switched to global root (~)", Toast.LENGTH_SHORT).show()
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                modifier = Modifier.height(24.dp)
+                            ) {
+                                Text("Unselect", fontSize = 10.5.sp, color = Color(0xFF38BDF8))
+                            }
+                        }
+                    }
                 }
 
                 // 2. MAIN CLI STREAM LOG (Grouped by User Input with Expandable/Collapsible Action Logs)
@@ -1952,13 +2019,24 @@ fun TerminalScreen(
                         onSelectTargetDirectory = { chosenDir ->
                             viewModel.setTerminalTargetDirectory(chosenDir)
                             coroutineScope.launch {
-                                shellEngine.changeDirectory(chosenDir)
-                                currentCwd = shellEngine.promptPath
-                                val feedbackLine = TerminalLine("📁 Target project/directory set to: $chosenDir (AI tasks will target this directory)", TerminalLineType.SUCCESS)
-                                val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
-                                if (activeSess != null) {
-                                    val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
-                                    sessions = sessions.map { if (it.id == activeSess.id) updated else it }
+                                if (chosenDir.isBlank()) {
+                                    shellEngine.changeDirectory("~")
+                                    currentCwd = shellEngine.promptPath
+                                    val feedbackLine = TerminalLine("📁 Target cleared: Returned to global root workspace (~)", TerminalLineType.INFO)
+                                    val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
+                                    if (activeSess != null) {
+                                        val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
+                                        sessions = sessions.map { if (it.id == activeSess.id) updated else it }
+                                    }
+                                } else {
+                                    shellEngine.changeDirectory(chosenDir)
+                                    currentCwd = shellEngine.promptPath
+                                    val feedbackLine = TerminalLine("📁 Target set to: $chosenDir (AI tasks, tabs and file edits scoped)", TerminalLineType.SUCCESS)
+                                    val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
+                                    if (activeSess != null) {
+                                        val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
+                                        sessions = sessions.map { if (it.id == activeSess.id) updated else it }
+                                    }
                                 }
                             }
                         },

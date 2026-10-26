@@ -128,6 +128,7 @@ fun TabOverviewScreen(
     onCloseOtherTabs: (tabId: String) -> Unit,
     onCloseTabsToRight: (tabId: String) -> Unit,
     onNavigateToUrl: ((String) -> Unit)? = null,
+    onSelectProjectTarget: ((QuickMenuProject) -> Unit)? = null,
     onCloseOverview: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -617,6 +618,7 @@ fun TabOverviewScreen(
                             .testTag("overview_quick_menu_card"),
                         onOpenProject = { project ->
                             activeProject = project
+                            onSelectProjectTarget?.invoke(project)
                             val existingGroup = tabGroups.find { it.id == project.id || it.name.equals(project.name, ignoreCase = true) }
                             if (existingGroup != null) {
                                 currentFolderId = existingGroup.id

@@ -811,10 +811,15 @@ fun SuggestionChipsBar(
                 )
             }
 
-            // Prominent Terminal Project/Directory Target Suggestion Chip
+            // Prominent Terminal Project/Directory Target Suggestion Chip with Instant Unselect
             if (onSelectTargetDirectory != null) {
+                val context = androidx.compose.ui.platform.LocalContext.current
                 var isTargetDropdownOpen by remember { mutableStateOf(false) }
-                val cleanDisplayTarget = targetDirectory?.ifBlank { "Root (~)" } ?: "Projects"
+                val isTargetSelected = !targetDirectory.isNullOrBlank() && 
+                    !targetDirectory.equals("Root (~)", ignoreCase = true) && 
+                    targetDirectory != "~" && 
+                    !targetDirectory.equals("root", ignoreCase = true)
+                val cleanDisplayTarget = if (isTargetSelected) targetDirectory!! else "Root (~)"
 
                 Box {
                     Surface(
@@ -822,37 +827,64 @@ fun SuggestionChipsBar(
                             .height(34.dp)
                             .shadow(elevation = 6.dp, shape = RoundedCornerShape(17.dp), spotColor = Color(0xFF00E5FF).copy(alpha = 0.3f))
                             .clip(RoundedCornerShape(17.dp))
-                            .clickable { isTargetDropdownOpen = true }
                             .testTag("terminal_target_directory_chip"),
                         shape = RoundedCornerShape(17.dp),
                         color = Color(0xFF162032),
-                        border = BorderStroke(1.2.dp, Color(0xFF38BDF8).copy(alpha = 0.7f))
+                        border = BorderStroke(1.2.dp, if (isTargetSelected) Color(0xFF38BDF8) else Color(0xFF334155))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.FolderOpen,
-                                contentDescription = "Target Directory",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "Target: $cleanDisplayTarget",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFF1F5F9),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Icon(
-                                imageVector = Icons.Rounded.ArrowDropDown,
-                                contentDescription = "Select Target Directory",
-                                tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { isTargetDropdownOpen = true },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isTargetSelected) Icons.Rounded.FolderSpecial else Icons.Rounded.FolderOpen,
+                                    contentDescription = "Target Directory",
+                                    tint = if (isTargetSelected) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Target: $cleanDisplayTarget",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isTargetSelected) Color(0xFFF1F5F9) else Color(0xFF94A3B8),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Icon(
+                                    imageVector = Icons.Rounded.ArrowDropDown,
+                                    contentDescription = "Select Target Directory",
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            // Dedicated instant Unselect / Clear button
+                            if (isTargetSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF334155))
+                                        .clickable { onSelectTargetDirectory.invoke("") }
+                                        .testTag("terminal_target_unselect_btn"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Unselect Target (Return to Root)",
+                                        tint = Color(0xFFF1F5F9),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -862,10 +894,10 @@ fun SuggestionChipsBar(
                         modifier = Modifier
                             .background(Color(0xFF0D131F))
                             .border(BorderStroke(1.dp, Color(0xFF233554)), RoundedCornerShape(12.dp))
-                            .widthIn(min = 220.dp, max = 320.dp)
+                            .widthIn(min = 250.dp, max = 340.dp)
                     ) {
                         Text(
-                            text = "SELECT TARGET DIRECTORY",
+                            text = "TARGET DIRECTORY & PROJECT",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF94A3B8),
@@ -873,9 +905,118 @@ fun SuggestionChipsBar(
                         )
                         HorizontalDivider(color = Color(0xFF233554), thickness = 0.5.dp)
 
-                        val directories = if (workspaceDirectories.isNotEmpty()) workspaceDirectories else listOf("Projects", "Projects/KotlinCalculator", "Documents", "Downloads", "Images")
+                        // Option 0: Clear / Unselect (Global Root)
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Home,
+                                        contentDescription = null,
+                                        tint = if (!isTargetSelected) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Unselect / Global Root (~)",
+                                        color = if (!isTargetSelected) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
+                                        fontSize = 12.sp,
+                                        fontWeight = if (!isTargetSelected) FontWeight.Bold else FontWeight.Medium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (!isTargetSelected) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = "Active",
+                                            tint = Color(0xFF38BDF8),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = {
+                                isTargetDropdownOpen = false
+                                onSelectTargetDirectory.invoke("")
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        )
+
+                        // Projects Section
+                        val savedProjects = remember(isTargetDropdownOpen) {
+                            com.example.data.model.QuickMenuStorage.getProjects(context)
+                        }
+                        if (savedProjects.isNotEmpty()) {
+                            HorizontalDivider(color = Color(0xFF233554), thickness = 0.5.dp)
+                            Text(
+                                text = "PROJECTS",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF38BDF8),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
+                            savedProjects.forEach { proj ->
+                                val projTarget = "Projects/${proj.name}"
+                                val isCurrent = targetDirectory.equals(projTarget, ignoreCase = true) || 
+                                    targetDirectory.equals(proj.name, ignoreCase = true)
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.FolderSpecial,
+                                                contentDescription = null,
+                                                tint = if (isCurrent) Color(0xFF38BDF8) else Color(0xFF00E5FF),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = proj.name,
+                                                    color = if (isCurrent) Color(0xFF38BDF8) else Color(0xFFF1F5F9),
+                                                    fontSize = 12.5.sp,
+                                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium
+                                                )
+                                                Text(
+                                                    text = "${proj.files.size} files • ${proj.tabs.size} tabs",
+                                                    color = Color(0xFF64748B),
+                                                    fontSize = 10.sp
+                                                )
+                                            }
+                                            if (isCurrent) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = Color(0xFF38BDF8),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        isTargetDropdownOpen = false
+                                        onSelectTargetDirectory.invoke(projTarget)
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+
+                        // Standard Directories Section
+                        HorizontalDivider(color = Color(0xFF233554), thickness = 0.5.dp)
+                        Text(
+                            text = "DIRECTORIES",
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                        val directories = if (workspaceDirectories.isNotEmpty()) workspaceDirectories else listOf("Projects", "Documents", "Downloads", "Images")
                         directories.forEach { dir ->
-                            val isCurrent = (dir.equals(targetDirectory, ignoreCase = true) || (dir == "Projects" && targetDirectory.isNullOrBlank()))
+                            val isCurrent = dir.equals(targetDirectory, ignoreCase = true)
                             DropdownMenuItem(
                                 text = {
                                     Row(
@@ -884,7 +1025,7 @@ fun SuggestionChipsBar(
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Icon(
-                                            imageVector = if (dir.startsWith("Projects", ignoreCase = true)) Icons.Rounded.FolderSpecial else Icons.Rounded.Folder,
+                                            imageVector = Icons.Rounded.Folder,
                                             contentDescription = null,
                                             tint = if (isCurrent) Color(0xFF38BDF8) else Color(0xFF94A3B8),
                                             modifier = Modifier.size(16.dp)
@@ -892,7 +1033,7 @@ fun SuggestionChipsBar(
                                         Text(
                                             text = dir,
                                             color = if (isCurrent) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
-                                            fontSize = 12.5.sp,
+                                            fontSize = 12.sp,
                                             fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
                                             modifier = Modifier.weight(1f)
                                         )
@@ -910,7 +1051,7 @@ fun SuggestionChipsBar(
                                     isTargetDropdownOpen = false
                                     onSelectTargetDirectory.invoke(dir)
                                 },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             )
                         }
                     }

@@ -16,6 +16,8 @@ data class QuickMenuProject(
     val tabs: List<String> = emptyList(),
     val files: List<String> = emptyList(),
     val chats: List<String> = emptyList(),
+    val extensions: List<String> = listOf("prettier", "eslint", "live_server"),
+    val bots: List<String> = listOf("Coding Agent", "Terminal Agent"),
     val createdAt: Long = System.currentTimeMillis()
 ) {
     fun toJsonObject(): JSONObject {
@@ -36,6 +38,14 @@ data class QuickMenuProject(
         val chatsArray = JSONArray()
         chats.forEach { chatsArray.put(it) }
         json.put("chats", chatsArray)
+
+        val extensionsArray = JSONArray()
+        extensions.forEach { extensionsArray.put(it) }
+        json.put("extensions", extensionsArray)
+
+        val botsArray = JSONArray()
+        bots.forEach { botsArray.put(it) }
+        json.put("bots", botsArray)
 
         return json
     }
@@ -66,6 +76,26 @@ data class QuickMenuProject(
                 }
             }
 
+            val extensionsList = mutableListOf<String>()
+            val extensionsArray = json.optJSONArray("extensions")
+            if (extensionsArray != null) {
+                for (i in 0 until extensionsArray.length()) {
+                    extensionsList.add(extensionsArray.optString(i))
+                }
+            } else {
+                extensionsList.addAll(listOf("prettier", "eslint", "live_server"))
+            }
+
+            val botsList = mutableListOf<String>()
+            val botsArray = json.optJSONArray("bots")
+            if (botsArray != null) {
+                for (i in 0 until botsArray.length()) {
+                    botsList.add(botsArray.optString(i))
+                }
+            } else {
+                botsList.addAll(listOf("Coding Agent", "Terminal Agent"))
+            }
+
             return QuickMenuProject(
                 id = json.optString("id", UUID.randomUUID().toString()),
                 name = json.optString("name", "Untitled Project"),
@@ -73,6 +103,8 @@ data class QuickMenuProject(
                 tabs = tabsList,
                 files = filesList,
                 chats = chatsList,
+                extensions = extensionsList,
+                bots = botsList,
                 createdAt = json.optLong("createdAt", System.currentTimeMillis())
             )
         }

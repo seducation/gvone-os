@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -626,7 +627,7 @@ fun ProjectsInlineView(
                             }
                         }
 
-                        // Badges: Tabs count, Files count, Chats count
+                        // Badges: Files, Tabs, Chats, Extensions, Bots count
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -635,19 +636,29 @@ fun ProjectsInlineView(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             CountBadge(
-                                icon = Icons.Rounded.Tab,
-                                text = "${project.tabs.size} tabs",
-                                color = Color(0xFF38BDF8)
-                            )
-                            CountBadge(
                                 icon = Icons.Rounded.Description,
                                 text = "${project.files.size} files",
                                 color = Color(0xFF34D399)
                             )
                             CountBadge(
+                                icon = Icons.Rounded.Tab,
+                                text = "${project.tabs.size} tabs",
+                                color = Color(0xFF38BDF8)
+                            )
+                            CountBadge(
                                 icon = Icons.Rounded.Chat,
                                 text = "${project.chats.size} chats",
                                 color = Color(0xFFA78BFA)
+                            )
+                            CountBadge(
+                                icon = Icons.Rounded.Extension,
+                                text = "${project.extensions.size} exts",
+                                color = Color(0xFFF59E0B)
+                            )
+                            CountBadge(
+                                icon = Icons.Rounded.AutoAwesome,
+                                text = "${project.bots.size} bots",
+                                color = Color(0xFFE879F9)
                             )
 
                             // Toggle preview chips button
@@ -662,22 +673,133 @@ fun ProjectsInlineView(
                             )
                         }
 
-                        // Expandable details (tabs, files, chats preview chips)
+                        // Expandable details (tabs, files, chats, extensions, bots)
                         AnimatedVisibility(visible = showDetails) {
+                            var currentSubTab by remember { mutableStateOf(0) } // 0: Files, 1: Tabs, 2: Chats, 3: Exts, 4: Bots
+                            val subTabLabels = listOf("Files (${project.files.size})", "Tabs (${project.tabs.size})", "Chats (${project.chats.size})", "Exts (${project.extensions.size})", "Bots (${project.bots.size})")
+
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 4.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                if (project.tabs.isNotEmpty()) {
-                                    SectionChipList(title = "Tabs", items = project.tabs, chipBg = Color(0xFF1E293B), chipText = Color(0xFF7DD3FC))
+                                // Sub-tab pills
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    subTabLabels.forEachIndexed { idx, label ->
+                                        val isTabActive = currentSubTab == idx
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isTabActive) Color(0xFF1E293B) else Color(0xFF10141D),
+                                            border = BorderStroke(0.6.dp, if (isTabActive) Color(0xFF38BDF8) else Color(0xFF1F2836)),
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable { currentSubTab = idx }
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                fontSize = 10.5.sp,
+                                                fontWeight = if (isTabActive) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isTabActive) Color(0xFF38BDF8) else Color(0xFF94A3B8)
+                                            )
+                                        }
+                                    }
                                 }
-                                if (project.files.isNotEmpty()) {
-                                    SectionChipList(title = "Files", items = project.files, chipBg = Color(0xFF132A22), chipText = Color(0xFF6EE7B7))
-                                }
-                                if (project.chats.isNotEmpty()) {
-                                    SectionChipList(title = "Chats", items = project.chats, chipBg = Color(0xFF281C3D), chipText = Color(0xFFC4B5FD))
+
+                                when (currentSubTab) {
+                                    0 -> {
+                                        // FILES (Strictly project-related files!)
+                                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            if (project.files.isEmpty()) {
+                                                Text(
+                                                    text = "No files assigned to this project.",
+                                                    fontSize = 11.sp,
+                                                    color = Color(0xFF64748B),
+                                                    modifier = Modifier.padding(vertical = 4.dp)
+                                                )
+                                            } else {
+                                                project.files.forEach { fileName ->
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = Color(0xFF101B17),
+                                                        border = BorderStroke(0.5.dp, Color(0xFF1E3A2E)),
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                        ) {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                modifier = Modifier.weight(1f)
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Rounded.Description,
+                                                                    contentDescription = null,
+                                                                    tint = Color(0xFF34D399),
+                                                                    modifier = Modifier.size(14.dp)
+                                                                )
+                                                                Text(
+                                                                    text = fileName,
+                                                                    fontSize = 11.sp,
+                                                                    fontFamily = FontFamily.Monospace,
+                                                                    color = Color(0xFF6EE7B7),
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                            }
+                                                            Icon(
+                                                                imageVector = Icons.Rounded.CheckCircle,
+                                                                contentDescription = "Project Scoped",
+                                                                tint = Color(0xFF10B981),
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    1 -> {
+                                        // TABS
+                                        if (project.tabs.isNotEmpty()) {
+                                            SectionChipList(title = "Project Tabs", items = project.tabs, chipBg = Color(0xFF1E293B), chipText = Color(0xFF7DD3FC))
+                                        } else {
+                                            Text("No project tabs.", fontSize = 11.sp, color = Color(0xFF64748B))
+                                        }
+                                    }
+                                    2 -> {
+                                        // CHATS
+                                        if (project.chats.isNotEmpty()) {
+                                            SectionChipList(title = "Project Chats", items = project.chats, chipBg = Color(0xFF281C3D), chipText = Color(0xFFC4B5FD))
+                                        } else {
+                                            Text("No project chats.", fontSize = 11.sp, color = Color(0xFF64748B))
+                                        }
+                                    }
+                                    3 -> {
+                                        // EXTENSIONS
+                                        if (project.extensions.isNotEmpty()) {
+                                            SectionChipList(title = "Project Extensions", items = project.extensions, chipBg = Color(0xFF2B2011), chipText = Color(0xFFFBBF24))
+                                        } else {
+                                            Text("No project extensions.", fontSize = 11.sp, color = Color(0xFF64748B))
+                                        }
+                                    }
+                                    4 -> {
+                                        // BOTS
+                                        if (project.bots.isNotEmpty()) {
+                                            SectionChipList(title = "Project Bots", items = project.bots, chipBg = Color(0xFF261230), chipText = Color(0xFFE879F9))
+                                        } else {
+                                            Text("No project bots.", fontSize = 11.sp, color = Color(0xFF64748B))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1075,6 +1197,8 @@ fun ProjectFormDialog(
     var tabsText by remember { mutableStateOf(initialProject?.tabs?.joinToString(", ") ?: "Google, GitHub") }
     var filesText by remember { mutableStateOf(initialProject?.files?.joinToString(", ") ?: "Main.kt, app.py") }
     var chatsText by remember { mutableStateOf(initialProject?.chats?.joinToString(", ") ?: "Project kickoff") }
+    var extensionsText by remember { mutableStateOf(initialProject?.extensions?.joinToString(", ") ?: "prettier, eslint, live_server") }
+    var botsText by remember { mutableStateOf(initialProject?.bots?.joinToString(", ") ?: "Coding Agent, Terminal Agent") }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1143,7 +1267,35 @@ fun ProjectFormDialog(
                 OutlinedTextField(
                     value = filesText,
                     onValueChange = { filesText = it },
-                    label = { Text("Files (comma separated)") },
+                    label = { Text("Project Files (comma separated)") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = extensionsText,
+                    onValueChange = { extensionsText = it },
+                    label = { Text("Extensions (comma separated)") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = botsText,
+                    onValueChange = { botsText = it },
+                    label = { Text("Bots / Agents (comma separated)") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
@@ -1172,6 +1324,8 @@ fun ProjectFormDialog(
                                 val tabsList = tabsText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                                 val filesList = filesText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                                 val chatsList = chatsText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                                val extsList = extensionsText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                                val botsList = botsText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
                                 onSave(
                                     initialProject?.copy(
@@ -1179,13 +1333,17 @@ fun ProjectFormDialog(
                                         description = description.trim(),
                                         tabs = tabsList,
                                         files = filesList,
-                                        chats = chatsList
+                                        chats = chatsList,
+                                        extensions = extsList,
+                                        bots = botsList
                                     ) ?: QuickMenuProject(
                                         name = name.trim(),
                                         description = description.trim(),
                                         tabs = tabsList,
                                         files = filesList,
-                                        chats = chatsList
+                                        chats = chatsList,
+                                        extensions = extsList,
+                                        bots = botsList
                                     )
                                 )
                             }
