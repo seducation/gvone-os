@@ -39,4 +39,18 @@ class ShortcutsUnitTest {
         val combined = (primary + extra).distinctBy { it.url }
         assertEquals(primary.size + extra.size, combined.size)
     }
+
+    @Test
+    fun testShortcutCategories() {
+        val extra = getDefaultExtraShortcuts()
+        val devShortcuts = extra.filter { it.category == "Dev" }
+        val socialShortcuts = extra.filter { it.category == "Social" }
+        val mediaShortcuts = extra.filter { it.category == "Media" }
+        val newsShortcuts = extra.filter { it.category == "News" }
+
+        assertTrue(devShortcuts.any { it.title == "GitHub" })
+        assertTrue(socialShortcuts.any { it.title == "Reddit" })
+        assertTrue(mediaShortcuts.any { it.title == "YouTube" })
+        assertTrue(newsShortcuts.any { it.title == "Wikipedia" })
+    }
 }

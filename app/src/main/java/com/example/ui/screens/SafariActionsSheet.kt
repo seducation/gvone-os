@@ -80,7 +80,8 @@ data class MenuShortcut(
     val initialLetters: String,
     val iconVector: ImageVector? = null,
     val badgeBg: Brush,
-    val textColor: Color = Color.White
+    val textColor: Color = Color.White,
+    val category: String = "General"
 )
 
 /**

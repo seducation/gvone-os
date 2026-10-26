@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -551,7 +552,14 @@ fun ProjectsInlineView(
                 modifier = Modifier.padding(vertical = 12.dp)
             )
         } else {
-            projects.forEach { project ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 280.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                projects.forEach { project ->
                 var showDetails by remember { mutableStateOf(false) }
 
                 Surface(
@@ -878,6 +886,7 @@ fun ProjectsInlineView(
         }
     }
 }
+}
 
 /**
  * Inline view for Schedule: displays tasks by date/time, add/edit/delete, and reminder toggles.
@@ -942,8 +951,15 @@ fun ScheduleInlineView(
                 modifier = Modifier.padding(vertical = 12.dp)
             )
         } else {
-            // Group tasks by date ("Today", "Tomorrow", etc.)
-            val grouped = items.groupBy { it.date }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 280.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Group tasks by date ("Today", "Tomorrow", etc.)
+                val grouped = items.groupBy { it.date }
 
             grouped.forEach { (dateHeader, dateItems) ->
                 // Date Section Header
@@ -1111,6 +1127,7 @@ fun ScheduleInlineView(
             }
         }
     }
+}
 }
 
 /**
