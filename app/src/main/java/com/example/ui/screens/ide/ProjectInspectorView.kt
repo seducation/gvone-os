@@ -17,6 +17,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -36,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.files.FileType
 import com.example.data.files.GVONEFileItem
 import com.example.data.files.GVONEFileSystem
+import com.example.data.files.StorageLocation
 import com.example.data.model.QuickMenuProject
 import com.example.data.model.QuickMenuStorage
 import kotlinx.coroutines.launch
@@ -75,6 +78,24 @@ fun ProjectInspectorView(
     val activeProject = projects.find { it.id == selectedProjectId } ?: projects.firstOrNull()
 
     var activeSubTab by remember { mutableStateOf(ProjectSubTab.FILES) }
+
+    var currentFolder by remember { mutableStateOf("") }
+    var fileItems by remember { mutableStateOf<List<GVONEFileItem>>(emptyList()) }
+    var isLoadingFiles by remember { mutableStateOf(false) }
+
+    val refreshFiles: () -> Unit = {
+        coroutineScope.launch {
+            if (fileSystem != null) {
+                isLoadingFiles = true
+                fileItems = fileSystem.listFiles(StorageLocation.MY_FILES, currentFolder)
+                isLoadingFiles = false
+            }
+        }
+    }
+
+    LaunchedEffect(currentFolder, activeProject) {
+        refreshFiles()
+    }
 
     // Dialog state for new file
     var showNewFileDialog by remember { mutableStateOf(false) }
@@ -166,7 +187,7 @@ fun ProjectInspectorView(
             ProjectSubTab.values().forEach { subTab ->
                 val isSelected = activeSubTab == subTab
                 val count = when (subTab) {
-                    ProjectSubTab.FILES -> activeProject.files.size
+                    ProjectSubTab.FILES -> if (fileItems.isNotEmpty()) fileItems.size else activeProject.files.size
                     ProjectSubTab.TABS -> activeProject.tabs.size
                     ProjectSubTab.CHATS -> activeProject.chats.size
                     ProjectSubTab.EXTENSIONS -> activeProject.extensions.size
@@ -197,7 +218,7 @@ fun ProjectInspectorView(
         // SubTab Content Body
         when (activeSubTab) {
             ProjectSubTab.FILES -> {
-                // FILES SUB-TAB (Only project-related files!)
+                // FILES SUB-TAB (All files and folders with normal navigation!)
                 Column(modifier = Modifier.fillMaxSize()) {
                     // Actions Toolbar: + New File, + AI Create, + Import Device File
                     Row(
@@ -248,9 +269,92 @@ fun ProjectInspectorView(
                             Spacer(modifier = Modifier.width(3.dp))
                             Text("Import", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        IconButton(
+                            onClick = { refreshFiles() },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh", tint = Color(0xFF94A3B8), modifier = Modifier.size(14.dp))
+                        }
                     }
 
-                    if (activeProject.files.isEmpty()) {
+                    // Breadcrumb navigation bar when inside subfolders
+                    if (currentFolder.isNotEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1E293B),
+                            border = BorderStroke(0.8.dp, Color(0xFF334155)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        currentFolder = if (currentFolder.contains('/')) {
+                                            currentFolder.substringBeforeLast('/')
+                                        } else {
+                                            ""
+                                        }
+                                    },
+                                    modifier = Modifier.size(26.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = "Up to parent directory",
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Rounded.FolderOpen,
+                                    contentDescription = null,
+                                    tint = Color(0xFFF59E0B),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = currentFolder,
+                                    color = Color.White,
+                                    fontSize = 11.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(
+                                    onClick = { currentFolder = "" },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(24.dp)
+                                ) {
+                                    Text("Root", color = Color(0xFF94A3B8), fontSize = 10.5.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    if (isLoadingFiles) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = Color(0xFF38BDF8),
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    } else if (fileItems.isEmpty()) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -259,8 +363,12 @@ fun ProjectInspectorView(
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = Color(0xFF475569), modifier = Modifier.size(28.dp))
-                                Text("No project files yet", color = Color(0xFF94A3B8), fontSize = 12.sp)
-                                Text("Use '+ File' or '+ AI Create' to add files to ${activeProject.name}", color = Color(0xFF64748B), fontSize = 10.5.sp)
+                                Text(
+                                    text = if (currentFolder.isEmpty()) "No files found in workspace" else "Folder \"${currentFolder.substringAfterLast('/')}\" is empty",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 12.sp
+                                )
+                                Text("Use '+ File' or '+ AI Create' to add files", color = Color(0xFF64748B), fontSize = 10.5.sp)
                             }
                         }
                     } else {
@@ -268,102 +376,151 @@ fun ProjectInspectorView(
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            items(activeProject.files) { fileName ->
-                                val ext = fileName.substringAfterLast('.', "").lowercase()
-                                val iconTint = when (ext) {
-                                    "kt", "java" -> Color(0xFFA78BFA)
-                                    "html", "htm" -> Color(0xFF38BDF8)
-                                    "js", "ts", "jsx", "tsx" -> Color(0xFFFBBF24)
-                                    "css" -> Color(0xFF60A5FA)
-                                    "png", "jpg", "jpeg", "webp" -> Color(0xFF34D399)
-                                    else -> Color(0xFF94A3B8)
-                                }
-
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = Color(0xFF121926),
-                                    border = BorderStroke(0.6.dp, Color(0xFF223048)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                            items(fileItems, key = { it.path }) { item ->
+                                if (item.isDirectory) {
+                                    // DIRECTORY FOLDER ITEM (Opens normally into subfolder, never in tab groups)
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color(0xFF141D2B),
+                                        border = BorderStroke(0.6.dp, Color(0xFF26354D)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable {
+                                                // Opens normally by navigating into folder, NOT in tab groups!
+                                                currentFolder = item.path
+                                            }
                                     ) {
                                         Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                            modifier = Modifier.weight(1f)
+                                            horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Folder,
+                                                    contentDescription = "Folder",
+                                                    tint = Color(0xFFF59E0B),
+                                                    modifier = Modifier.size(17.dp)
+                                                )
+                                                Text(
+                                                    text = item.name,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 12.sp,
+                                                    color = Color(0xFFF8FAFC),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
                                             Icon(
-                                                imageVector = if (ext in listOf("png", "jpg", "jpeg")) Icons.Rounded.Image else Icons.Rounded.Description,
-                                                contentDescription = null,
-                                                tint = iconTint,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                            Text(
-                                                text = fileName,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 11.5.sp,
-                                                color = Color(0xFFE2E8F0),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                                imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                                contentDescription = "Open folder",
+                                                tint = Color(0xFF64748B),
+                                                modifier = Modifier.size(14.dp)
                                             )
                                         }
+                                    }
+                                } else {
+                                    // REGULAR FILE ITEM
+                                    val ext = item.extension.lowercase()
+                                    val iconTint = when (ext) {
+                                        "kt", "java" -> Color(0xFFA78BFA)
+                                        "html", "htm" -> Color(0xFF38BDF8)
+                                        "js", "ts", "jsx", "tsx" -> Color(0xFFFBBF24)
+                                        "css" -> Color(0xFF60A5FA)
+                                        "png", "jpg", "jpeg", "webp" -> Color(0xFF34D399)
+                                        else -> Color(0xFF94A3B8)
+                                    }
 
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color(0xFF121926),
+                                        border = BorderStroke(0.6.dp, Color(0xFF223048)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable {
+                                                onOpenFileInIde?.invoke(item)
+                                                onClose()
+                                            }
+                                    ) {
                                         Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                            horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            // Open in IDE Editor Button
-                                            IconButton(
-                                                onClick = {
-                                                    coroutineScope.launch {
-                                                        val path = "Projects/${activeProject.name}/$fileName"
-                                                        val fileItem = fileSystem?.getFileItem(path)
-                                                            ?: fileSystem?.createFile("Projects/${activeProject.name}", fileName.substringBeforeLast('.'), fileName.substringAfterLast('.', "txt"), "")
-                                                        if (fileItem != null) {
-                                                            onOpenFileInIde?.invoke(fileItem)
-                                                            onClose()
-                                                        }
-                                                    }
-                                                },
-                                                modifier = Modifier.size(26.dp)
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                modifier = Modifier.weight(1f)
                                             ) {
-                                                Icon(Icons.Rounded.Code, contentDescription = "Edit in IDE", tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                                                Icon(
+                                                    imageVector = if (ext in listOf("png", "jpg", "jpeg", "webp")) Icons.Rounded.Image else Icons.Rounded.Description,
+                                                    contentDescription = null,
+                                                    tint = iconTint,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                                Text(
+                                                    text = item.name,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 11.5.sp,
+                                                    color = Color(0xFFE2E8F0),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
                                             }
 
-                                            // Preview in Browser Tab Button
-                                            IconButton(
-                                                onClick = {
-                                                    coroutineScope.launch {
-                                                        val path = "Projects/${activeProject.name}/$fileName"
-                                                        val fileItem = fileSystem?.getFileItem(path)
-                                                            ?: fileSystem?.createFile("Projects/${activeProject.name}", fileName.substringBeforeLast('.'), fileName.substringAfterLast('.', "txt"), "")
-                                                        if (fileItem != null) {
-                                                            onOpenFileInTab?.invoke(fileItem, true)
-                                                            onClose()
-                                                        }
-                                                    }
-                                                },
-                                                modifier = Modifier.size(26.dp)
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp)
                                             ) {
-                                                Icon(Icons.Rounded.PlayArrow, contentDescription = "Preview in Tab", tint = Color(0xFF34D399), modifier = Modifier.size(14.dp))
-                                            }
+                                                // Open in IDE Editor Button
+                                                IconButton(
+                                                    onClick = {
+                                                        onOpenFileInIde?.invoke(item)
+                                                        onClose()
+                                                    },
+                                                    modifier = Modifier.size(26.dp)
+                                                ) {
+                                                    Icon(Icons.Rounded.Code, contentDescription = "Edit in IDE", tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+                                                }
 
-                                            // Remove from Project Button
-                                            IconButton(
-                                                onClick = {
-                                                    val updatedFiles = activeProject.files.filterNot { it == fileName }
-                                                    val updatedProj = activeProject.copy(files = updatedFiles)
-                                                    val updatedList = projects.map { if (it.id == activeProject.id) updatedProj else it }
-                                                    projects = updatedList
-                                                    QuickMenuStorage.saveProjects(context, updatedList)
-                                                    Toast.makeText(context, "Removed $fileName from project", Toast.LENGTH_SHORT).show()
-                                                },
-                                                modifier = Modifier.size(26.dp)
-                                            ) {
-                                                Icon(Icons.Rounded.Close, contentDescription = "Remove File", tint = Color(0xFFEF4444), modifier = Modifier.size(13.dp))
+                                                // Preview in Browser Tab Button
+                                                IconButton(
+                                                    onClick = {
+                                                        onOpenFileInTab?.invoke(item, true)
+                                                        onClose()
+                                                    },
+                                                    modifier = Modifier.size(26.dp)
+                                                ) {
+                                                    Icon(Icons.Rounded.PlayArrow, contentDescription = "Preview in Tab", tint = Color(0xFF34D399), modifier = Modifier.size(14.dp))
+                                                }
+
+                                                // Delete File Button
+                                                IconButton(
+                                                    onClick = {
+                                                        coroutineScope.launch {
+                                                            fileSystem?.deleteItem(item.path)
+                                                            if (activeProject != null) {
+                                                                val updatedFiles = activeProject.files.filterNot { it == item.name }
+                                                                val updatedProj = activeProject.copy(files = updatedFiles)
+                                                                val updatedList = projects.map { if (it.id == activeProject.id) updatedProj else it }
+                                                                projects = updatedList
+                                                                QuickMenuStorage.saveProjects(context, updatedList)
+                                                            }
+                                                            refreshFiles()
+                                                            Toast.makeText(context, "Deleted ${item.name}", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(26.dp)
+                                                ) {
+                                                    Icon(Icons.Rounded.Close, contentDescription = "Delete File", tint = Color(0xFFEF4444), modifier = Modifier.size(13.dp))
+                                                }
                                             }
                                         }
                                     }
@@ -590,7 +747,7 @@ fun ProjectInspectorView(
                         val name = newFileName.trim()
                         if (name.isNotEmpty()) {
                             coroutineScope.launch {
-                                val folder = "Projects/${activeProject.name}"
+                                val folder = if (currentFolder.isNotEmpty()) currentFolder else "Projects/${activeProject.name}"
                                 val ext = name.substringAfterLast('.', "txt")
                                 val baseName = name.substringBeforeLast('.')
                                 fileSystem?.createFile(folder, baseName, ext, "// File: $name in ${activeProject.name}")
@@ -599,6 +756,7 @@ fun ProjectInspectorView(
                                 val updatedList = projects.map { if (it.id == activeProject.id) updatedProj else it }
                                 projects = updatedList
                                 QuickMenuStorage.saveProjects(context, updatedList)
+                                refreshFiles()
                                 showNewFileDialog = false
                                 Toast.makeText(context, "Created $name", Toast.LENGTH_SHORT).show()
                             }
@@ -645,7 +803,7 @@ fun ProjectInspectorView(
                         val name = aiTargetName.trim().ifEmpty { "MainComponent.kt" }
                         val desc = aiPromptDesc.trim()
                         coroutineScope.launch {
-                            val folder = "Projects/${activeProject.name}"
+                            val folder = if (currentFolder.isNotEmpty()) currentFolder else "Projects/${activeProject.name}"
                             val ext = name.substringAfterLast('.', "kt")
                             val baseName = name.substringBeforeLast('.')
                             val content = "// AI-Generated File: $name\n// Requirements: $desc\n\nfun main() {\n    println(\"Executing $name for ${activeProject.name}\")\n}\n"
@@ -655,6 +813,7 @@ fun ProjectInspectorView(
                             val updatedList = projects.map { if (it.id == activeProject.id) updatedProj else it }
                             projects = updatedList
                             QuickMenuStorage.saveProjects(context, updatedList)
+                            refreshFiles()
                             showAiCreateDialog = false
                             Toast.makeText(context, "AI generated $name", Toast.LENGTH_SHORT).show()
                             if (created != null) {

@@ -111,9 +111,13 @@ class TerminalRepository(context: Context) {
             for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.getJSONObject(i)
                 val id = obj.optString("id", java.util.UUID.randomUUID().toString())
-                val title = obj.optString("title", "Session ${i + 1}")
+                var title = obj.optString("title", "Chat ${i + 1}")
+                if (title.startsWith("Session ")) {
+                    title = title.replace("Session ", "Chat ")
+                }
                 val createdAt = obj.optLong("createdAt", System.currentTimeMillis())
                 val lastActiveAt = obj.optLong("lastActiveAt", System.currentTimeMillis())
+                val tabGroupId = if (obj.has("tabGroupId") && !obj.isNull("tabGroupId")) obj.getString("tabGroupId") else null
                 val linesArr = obj.optJSONArray("lines")
                 val lines = mutableListOf<TerminalLine>()
                 if (linesArr != null) {
@@ -137,7 +141,8 @@ class TerminalRepository(context: Context) {
                         title = title,
                         lines = lines,
                         createdAt = createdAt,
-                        lastActiveAt = lastActiveAt
+                        lastActiveAt = lastActiveAt,
+                        tabGroupId = tabGroupId
                     )
                 )
             }
@@ -157,6 +162,9 @@ class TerminalRepository(context: Context) {
                 sObj.put("title", session.title)
                 sObj.put("createdAt", session.createdAt)
                 sObj.put("lastActiveAt", session.lastActiveAt)
+                if (session.tabGroupId != null) {
+                    sObj.put("tabGroupId", session.tabGroupId)
+                }
 
                 val linesArr = JSONArray()
                 val linesToSave = session.lines.takeLast(MAX_SAVED_LINES)

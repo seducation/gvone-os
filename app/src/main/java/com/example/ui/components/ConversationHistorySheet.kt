@@ -59,7 +59,7 @@ private val TextPrimary = Color(0xFFE6EDF3)
 private val TextMuted = Color(0xFF8B949E)
 
 enum class ConversationHistoryTab(val label: String, val icon: String) {
-    SESSIONS("Sessions", "💬"),
+    SESSIONS("Chats", "💬"),
     TASKS("Tasks & Agents", "🌳"),
     CHAT("Dialogue", "🗨️"),
     COMMANDS("Commands", "⌨️")

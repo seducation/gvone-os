@@ -33,11 +33,13 @@ data class TerminalLine(
 
 data class TerminalSession(
     val id: String = UUID.randomUUID().toString(),
-    val title: String = "Session 1",
+    val title: String = "Chat 1",
     val lines: List<TerminalLine> = emptyList(),
     val currentInput: String = "",
     val historyIndex: Int = -1,
     val createdAt: Long = System.currentTimeMillis(),
-    val lastActiveAt: Long = System.currentTimeMillis()
+    val lastActiveAt: Long = System.currentTimeMillis(),
+    val tabGroupId: String? = null
 )
+
 

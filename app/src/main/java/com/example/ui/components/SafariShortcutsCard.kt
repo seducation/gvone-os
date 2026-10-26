@@ -312,10 +312,11 @@ fun SafariShortcutsCard(
         }
     }
 
-    val categories = remember(allShortcuts, pinnedShortcuts) {
+    val categories = remember(allShortcuts, pinnedShortcuts, quickActions) {
         listOf(
             "All" to allShortcuts.size,
             "Pinned" to pinnedShortcuts.size,
+            "Quick Tools" to quickActions.size,
             "Dev & AI" to allShortcuts.count { it.category == "Dev" || it.title.contains("AI") },
             "Social" to allShortcuts.count { it.category == "Social" },
             "Media" to allShortcuts.count { it.category == "Media" },
@@ -359,89 +360,8 @@ fun SafariShortcutsCard(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             // -----------------------------------------------------------------
-            // HEADER BAR: Quick Shortcuts Indicator & Expand Toggle
-            // -----------------------------------------------------------------
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFF1E293B)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.FlashOn,
-                            contentDescription = "Quick Shortcuts",
-                            tint = Color(0xFF38BDF8),
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-                    Text(
-                        text = "Shortcut Quick Panel",
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF94A3B8),
-                        letterSpacing = 0.4.sp
-                    )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF222F44))
-                            .padding(horizontal = 6.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = "${pinnedShortcuts.size} pinned • ${allShortcuts.size} total",
-                            fontSize = 9.5.sp,
-                            color = Color(0xFF38BDF8),
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // Quick Tools toggle button
-                    Text(
-                        text = if (showQuickToolsOnly) "Shortcuts" else "Quick Tools",
-                        fontSize = 10.5.sp,
-                        color = if (showQuickToolsOnly) Color(0xFF38BDF8) else Color(0xFF64748B),
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { showQuickToolsOnly = !showQuickToolsOnly }
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-
-                    // Expand / Collapse text badge
-                    Text(
-                        text = if (isExpanded) "Collapse" else "View All",
-                        fontSize = 10.5.sp,
-                        color = Color(0xFF38BDF8),
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { setExpanded(!isExpanded) }
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-
-            // -----------------------------------------------------------------
             // 1. PIN SHORTCUTS ROW (Horizontally Scrollable Carousel)
             // -----------------------------------------------------------------
-            if (!showQuickToolsOnly) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -552,64 +472,8 @@ fun SafariShortcutsCard(
 
                     Spacer(modifier = Modifier.width(2.dp))
                 }
-            } else {
-                // -------------------------------------------------------------
-                // QUICK TOOLS HORIZONTAL SCROLLABLE ROW
-                // -------------------------------------------------------------
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Spacer(modifier = Modifier.width(2.dp))
-                    quickActions.forEach { action ->
-                        Surface(
-                            onClick = {
-                                onQuickActionClick?.invoke(action.id) ?: run {
-                                    Toast.makeText(context, "Quick Action: ${action.title}", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFF1E2838),
-                            border = BorderStroke(0.8.dp, action.color.copy(alpha = 0.4f)),
-                            modifier = Modifier.heightIn(min = 44.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .clip(CircleShape)
-                                        .background(action.color.copy(alpha = 0.2f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = action.icon,
-                                        contentDescription = action.title,
-                                        tint = action.color,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                                Text(
-                                    text = action.title,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = GVONETextPrimary
-                                )
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(2.dp))
-                }
-            }
-
             // -----------------------------------------------------------------
-            // 2. PULL / TAP TO EXPAND HANDLE
+            // 2. PULL / TAP TO EXPAND HANDLE (View all & Pull to expand)
             // -----------------------------------------------------------------
             val handleChevronRotation by animateFloatAsState(
                 targetValue = if (isExpanded) 180f else 0f,
@@ -617,7 +481,7 @@ fun SafariShortcutsCard(
                 label = "handle_chevron"
             )
 
-            Box(
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
@@ -643,29 +507,41 @@ fun SafariShortcutsCard(
                             }
                         )
                     }
-                    .padding(vertical = 2.dp)
+                    .padding(vertical = 4.dp)
                     .testTag("${testTagPrefix}_toggle_expand"),
-                contentAlignment = Alignment.Center
+                color = Color.Transparent
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .width(32.dp)
-                            .height(3.5.dp)
+                            .width(36.dp)
+                            .height(4.dp)
                             .clip(RoundedCornerShape(2.dp))
                             .background(Color(0xFF475569))
                     )
-                    Icon(
-                        imageVector = Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = if (isExpanded) "Collapse" else "Pull down to expand",
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier
-                            .size(16.dp)
-                            .rotate(handleChevronRotation)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = if (isExpanded) "Show less" else "View all • Pull to expand",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF38BDF8)
+                        )
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = if (isExpanded) "Collapse" else "View all",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier
+                                .size(16.dp)
+                                .rotate(handleChevronRotation)
+                        )
+                    }
                 }
             }
 
@@ -810,7 +686,64 @@ fun SafariShortcutsCard(
                             .heightIn(max = 260.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        if (filteredShortcuts.isEmpty()) {
+                        if (selectedCategory == "Quick Tools") {
+                            val chunkedTools = remember(quickActions) { quickActions.chunked(4) }
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                chunkedTools.forEach { rowTools ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceAround,
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        rowTools.forEach { action ->
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .clickable {
+                                                        onQuickActionClick?.invoke(action.id) ?: run {
+                                                            Toast.makeText(context, action.title, Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                    .padding(horizontal = 3.dp, vertical = 3.dp)
+                                                    .widthIn(min = 58.dp, max = 74.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(44.dp)
+                                                        .clip(CircleShape)
+                                                        .background(action.color.copy(alpha = 0.2f))
+                                                        .border(1.dp, action.color.copy(alpha = 0.5f), CircleShape),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = action.icon,
+                                                        contentDescription = action.title,
+                                                        tint = action.color,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = action.title,
+                                                    color = Color(0xFFCBD5E1),
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
+                                        repeat(4 - rowTools.size) {
+                                            Spacer(modifier = Modifier.width(74.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (filteredShortcuts.isEmpty()) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()

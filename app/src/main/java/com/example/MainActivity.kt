@@ -262,6 +262,8 @@ fun BrowserApp(
     }
 
     val workspaceMode by viewModel.workspaceMode.collectAsStateWithLifecycle()
+    val terminalSessions by viewModel.terminalSessions.collectAsStateWithLifecycle()
+    val activeTerminalSessionId by viewModel.activeTerminalSessionId.collectAsStateWithLifecycle()
     val activeBotPersona by viewModel.activeBotPersona.collectAsStateWithLifecycle()
     val terminalTargetDir by viewModel.terminalTargetDirectory.collectAsStateWithLifecycle()
     val terminalExecutionStatus by viewModel.terminalExecutionStatus.collectAsStateWithLifecycle()
@@ -862,6 +864,8 @@ fun BrowserApp(
             TabOverviewScreen(
                 tabs = tabs,
                 tabGroups = tabGroups,
+                terminalSessions = terminalSessions,
+                activeTerminalSessionId = activeTerminalSessionId,
                 currentTabId = currentTabId,
                 activeGroupId = activeGroupId,
                 isPrivateMode = isPrivateMode,
@@ -882,6 +886,19 @@ fun BrowserApp(
                 onTabSelected = { tabId -> viewModel.selectTab(tabId) },
                 onTabClose = { tabId -> viewModel.closeTab(tabId) },
                 onNewTab = { groupId -> viewModel.createNewTab(groupId = groupId) },
+                onSelectChat = { chatId ->
+                    viewModel.selectTerminalSession(chatId)
+                    viewModel.openSheet(ActiveSheet.Terminal)
+                },
+                onNewChat = { groupId ->
+                    viewModel.createNewTerminalSession(groupId = groupId)
+                    viewModel.openSheet(ActiveSheet.Terminal)
+                },
+                onDeleteChat = { chatId -> viewModel.deleteTerminalSession(chatId) },
+                onRenameChat = { chatId, newName -> viewModel.renameTerminalSession(chatId, newName) },
+                onMoveChatToGroup = { chatId, targetGroupId -> viewModel.moveTerminalSessionToGroup(chatId, targetGroupId) },
+                onMoveChatsToGroup = { chatIds, targetGroupId -> viewModel.moveTerminalSessionsToGroup(chatIds, targetGroupId) },
+                onCloseChatsInGroup = { groupId -> viewModel.closeTerminalSessionsInGroup(groupId) },
                 onTogglePrivate = { isPrivate -> viewModel.setPrivateMode(isPrivate) },
                 onSortTabs = { sortOption -> viewModel.sortTabs(sortOption) },
                 onCreateGroup = { name, colorHex, tabIds -> viewModel.createTabGroup(name, colorHex, tabIds) },
