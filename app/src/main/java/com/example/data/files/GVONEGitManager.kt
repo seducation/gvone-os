@@ -63,7 +63,7 @@ class GVONEGitManager(private val context: Context, private val rootDir: File) {
 
     /**
      * Resolves which project a relative file/folder path belongs to.
-     * Every folder (including Images, Documents, GVONE, Downloads, etc.) is a project!
+     * Only directories inside Projects/ are software projects.
      */
     fun resolveProjectRoot(relativePath: String): String? {
         val clean = relativePath.trim('/').replace('\\', '/')
@@ -72,10 +72,12 @@ class GVONEGitManager(private val context: Context, private val rootDir: File) {
         val parts = clean.split('/')
         return if (parts.size >= 2 && parts[0].equals("Projects", ignoreCase = true)) {
             "${parts[0]}/${parts[1]}"
-        } else if (parts.isNotEmpty()) {
-            parts[0]
-        } else {
+        } else if (parts.size == 1 && parts[0].equals("Projects", ignoreCase = true)) {
             null
+        } else {
+            // Check if git was explicitly initialized for this folder
+            val repoFile = File(rootDir, parts[0])
+            if (repoFile.isDirectory && File(repoFile, ".git").exists()) parts[0] else null
         }
     }
 
@@ -87,19 +89,12 @@ class GVONEGitManager(private val context: Context, private val rootDir: File) {
     }
 
     /**
-     * Lists all projects discovered in the file system.
-     * All folders are treated as project folders (including Images, Documents, GVONE, etc.)
+     * Lists all software projects discovered in the file system under Projects/.
      */
     suspend fun listProjects(): List<ProjectRepoInfo> = withContext(Dispatchers.IO) {
         val projects = mutableListOf<ProjectRepoInfo>()
 
-        // Discover all root-level folders as projects
-        rootDir.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.forEach { dir ->
-            val relPath = dir.name
-            projects.add(getProjectRepoInfo(relPath))
-        }
-
-        // Also check if any subfolders exist under Projects/
+        // Check all subfolders under Projects/
         val projectsDir = File(rootDir, "Projects")
         if (projectsDir.exists() && projectsDir.isDirectory) {
             projectsDir.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.forEach { dir ->

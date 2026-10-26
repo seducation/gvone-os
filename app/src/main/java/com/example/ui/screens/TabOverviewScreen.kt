@@ -6,6 +6,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -200,63 +202,63 @@ fun TabOverviewScreen(
         coroutineScope.launch {
             isFilesLoading = true
             try {
-                val rootFiles = fs.listFiles(StorageLocation.MY_FILES, currentFolder = currentFileSubfolder)
-                allFiles = rootFiles
                 if (currentFolderId != null) {
                     val group = tabGroups.find { it.id == currentFolderId }
-                    val groupFolderName = group?.name ?: activeProject?.name ?: ""
-                    val directGroupFiles = if (groupFolderName.isNotEmpty()) {
+                    val groupFolderName = activeProject?.name ?: group?.name.orEmpty()
+                    val isProject = activeProject != null || fs.isProjectFolder(groupFolderName)
+
+                    if (isProject && groupFolderName.isNotEmpty()) {
+                        // STRICT ISOLATION: Only files and directories belonging to this specific project
+                        folderFiles = fs.listProjectFiles(
+                            projectName = groupFolderName,
+                            subfolder = currentFileSubfolder
+                        )
+                    } else {
                         val subPath = if (currentFileSubfolder.isNotEmpty()) currentFileSubfolder else groupFolderName
-                        fs.listFiles(StorageLocation.MY_FILES, currentFolder = subPath)
-                    } else {
-                        emptyList()
-                    }
-                    val matchedFsFiles = if (directGroupFiles.isNotEmpty()) {
-                        directGroupFiles
-                    } else {
-                        rootFiles.filter { it.path.contains(groupFolderName, ignoreCase = true) || it.name.contains(groupFolderName, ignoreCase = true) }
-                    }
-
-                    val projectFiles = if (activeProject != null && (activeProject?.id == currentFolderId || groupFolderName.equals(activeProject?.name, ignoreCase = true))) {
-                        activeProject!!.files.mapIndexed { idx, fileName ->
-                            rootFiles.find { it.name.equals(fileName, ignoreCase = true) }
-                                ?: fs.getFileItem(fileName)
-                                ?: GVONEFileItem(
-                                    id = "proj_file_${activeProject!!.id}_$idx",
-                                    name = fileName,
-                                    path = "${activeProject!!.name}/$fileName",
-                                    absolutePath = "",
-                                    parentPath = activeProject!!.name,
-                                    isDirectory = false,
-                                    size = (1024L + idx * 512L),
-                                    formattedSize = "1.5 KB",
-                                    lastModified = System.currentTimeMillis() - (idx * 1800_000L),
-                                    formattedDate = "Today",
-                                    extension = fileName.substringAfterLast('.', "txt"),
-                                    fileType = when (fileName.substringAfterLast('.', "").lowercase()) {
-                                        "md" -> FileType.MARKDOWN
-                                        "txt" -> FileType.TEXT
-                                        "json" -> FileType.JSON
-                                        "pdf" -> FileType.PDF
-                                        "png", "jpg", "jpeg", "webp" -> FileType.IMAGE
-                                        "zip", "tar", "gz" -> FileType.ARCHIVE
-                                        else -> FileType.CODE
-                                    }
-                                )
+                        folderFiles = if (subPath.isNotEmpty()) {
+                            fs.listFiles(StorageLocation.MY_FILES, currentFolder = subPath)
+                        } else {
+                            emptyList()
                         }
-                    } else {
-                        emptyList()
                     }
-
-                    folderFiles = (matchedFsFiles + projectFiles).distinctBy { it.name }
                 } else {
                     folderFiles = emptyList()
                 }
+
+                // Scope root workspace to Projects only
+                allFiles = fs.listFiles(StorageLocation.PROJECTS, "")
             } catch (_: Exception) {
                 allFiles = emptyList()
                 folderFiles = emptyList()
             } finally {
                 isFilesLoading = false
+            }
+        }
+    }
+
+    // File import launcher for importing external files directly into the active project/workspace
+    val fileImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val group = tabGroups.find { it.id == currentFolderId }
+                val projName = activeProject?.name ?: group?.name.orEmpty()
+                val isProject = activeProject != null || fs.isProjectFolder(projName)
+
+                if (isProject && projName.isNotEmpty()) {
+                    val imported = fs.importProjectFile(uri, projName, currentFileSubfolder)
+                    if (imported != null) {
+                        Toast.makeText(context, "Imported ${imported.name} into $projName", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    val targetFolder = if (currentFileSubfolder.isNotEmpty()) currentFileSubfolder else projName
+                    val imported = fs.importFromUri(uri, targetFolder)
+                    if (imported != null) {
+                        Toast.makeText(context, "Imported ${imported.name}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                reloadFiles()
             }
         }
     }
@@ -387,7 +389,7 @@ fun TabOverviewScreen(
         } else {
             val generated = generateProjectHtmlPreview(projectName, project)
             try {
-                val savePath = if (projectFolder.isNotBlank()) "$projectFolder/index.html" else "index.html"
+                val savePath = if (projectFolder.isNotBlank()) "Projects/$projectFolder/index.html" else "index.html"
                 val f = fs.getFile(savePath)
                 f.parentFile?.mkdirs()
                 f.writeText(generated)
@@ -1171,14 +1173,27 @@ fun TabOverviewScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
+                                    val projName = activeProject?.name ?: currentFolder.name
+                                    val isProject = activeProject != null || fs.isProjectFolder(projName)
+
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
-                                        Text("Files in ${currentFolder.name} (${folderFiles.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        Icon(
+                                            imageVector = if (isProject) Icons.Rounded.FolderSpecial else Icons.Rounded.InsertDriveFile,
+                                            contentDescription = null,
+                                            tint = Color(0xFF10B981),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "${if (isProject) "Project: " else "Files in "}${currentFolder.name} (${folderFiles.size})",
+                                            color = GVONETextPrimary,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Button(
                                             onClick = { runProjectHtml(activeProject, currentFolder) },
                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF065F46)),
@@ -1186,78 +1201,103 @@ fun TabOverviewScreen(
                                             shape = RoundedCornerShape(8.dp),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                             modifier = Modifier
-                                                .height(32.dp)
+                                                .height(30.dp)
                                                 .testTag("folder_files_run_html_btn")
                                         ) {
                                             Icon(Icons.Rounded.PlayArrow, contentDescription = "Run .html", modifier = Modifier.size(14.dp), tint = Color(0xFF6EE7B7))
                                             Spacer(modifier = Modifier.width(3.dp))
-                                            Text("Run .html", color = Color(0xFFECFDF5), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("Run", color = Color(0xFFECFDF5), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+
+                                        TextButton(
+                                            onClick = { fileImportLauncher.launch("*/*") },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                            modifier = Modifier.testTag("folder_files_import_btn")
+                                        ) {
+                                            Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF38BDF8))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("Import", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                         }
 
                                         TextButton(
                                             onClick = { showCreateFileDialog = true },
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                            modifier = Modifier.testTag("folder_files_new_file_btn")
                                         ) {
-                                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF10B981))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("New File", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF10B981))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("New File", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                         }
                                     }
                                 }
                             }
 
-                            if (currentFileSubfolder.isNotEmpty()) {
-                                item(span = { GridItemSpan(2) }) {
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = Color(0xFF1E293B),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                            val projName = activeProject?.name ?: currentFolder.name
+                            val isProject = activeProject != null || fs.isProjectFolder(projName)
+                            val breadcrumbText = if (isProject) {
+                                if (currentFileSubfolder.isEmpty()) "Projects / $projName" else "Projects / $projName / $currentFileSubfolder"
+                            } else {
+                                if (currentFileSubfolder.isEmpty()) currentFolder.name else currentFileSubfolder
+                            }
+
+                            item(span = { GridItemSpan(2) }) {
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFF1E293B),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                    Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 4.dp)
+                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                        IconButton(
+                                            onClick = {
+                                                if (currentFileSubfolder.contains("/")) {
+                                                    currentFileSubfolder = currentFileSubfolder.substringBeforeLast("/")
+                                                } else if (currentFileSubfolder.isNotEmpty()) {
+                                                    currentFileSubfolder = ""
+                                                } else {
+                                                    // Back from project root to projects list
+                                                    currentFolderId = null
+                                                    activeProject = null
+                                                }
+                                            },
+                                            modifier = Modifier.size(28.dp)
                                         ) {
-                                            IconButton(
-                                                onClick = {
-                                                    currentFileSubfolder = if (currentFileSubfolder.contains("/")) currentFileSubfolder.substringBeforeLast("/") else ""
-                                                },
-                                                modifier = Modifier.size(28.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                                    contentDescription = "Up to parent",
-                                                    tint = Color(0xFF38BDF8),
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.width(4.dp))
                                             Icon(
-                                                imageVector = Icons.Rounded.FolderOpen,
-                                                contentDescription = null,
-                                                tint = Color(0xFFF59E0B),
+                                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                                contentDescription = "Up to parent",
+                                                tint = Color(0xFF38BDF8),
                                                 modifier = Modifier.size(16.dp)
                                             )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = currentFileSubfolder,
-                                                color = Color.White,
-                                                fontSize = 12.sp,
-                                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            TextButton(
-                                                onClick = { currentFileSubfolder = "" },
-                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("Root", color = Color(0xFF94A3B8), fontSize = 11.sp)
-                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            imageVector = Icons.Rounded.FolderOpen,
+                                            contentDescription = null,
+                                            tint = Color(0xFFF59E0B),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = breadcrumbText,
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(
+                                            onClick = { currentFileSubfolder = "" },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(if (isProject) "Project Root" else "Root", color = Color(0xFF94A3B8), fontSize = 11.sp)
                                         }
                                     }
                                 }
@@ -1289,16 +1329,27 @@ fun TabOverviewScreen(
                                                     modifier = Modifier.size(28.dp)
                                                 )
                                             }
-                                            Text("No files in this group yet", color = GVONETextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                            Text("Create documents, code, notes, or assets for ${currentFolder.name}.", color = GVONETextSecondary, fontSize = 12.sp)
-                                            Button(
-                                                onClick = { showCreateFileDialog = true },
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                                                shape = RoundedCornerShape(12.dp)
-                                            ) {
-                                                Icon(Icons.Rounded.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text("Create File", fontSize = 12.sp)
+                                            Text("No files in this project directory yet", color = GVONETextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("Create new files or import related files into ${currentFolder.name}.", color = GVONETextSecondary, fontSize = 12.sp)
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Button(
+                                                    onClick = { fileImportLauncher.launch("*/*") },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ) {
+                                                    Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("Import File", fontSize = 12.sp)
+                                                }
+                                                Button(
+                                                    onClick = { showCreateFileDialog = true },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ) {
+                                                    Icon(Icons.Rounded.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("New File", fontSize = 12.sp)
+                                                }
                                             }
                                         }
                                     }
@@ -1318,7 +1369,15 @@ fun TabOverviewScreen(
                                         },
                                         onClick = {
                                             if (file.isDirectory) {
-                                                currentFileSubfolder = file.path
+                                                val proj = activeProject?.name ?: currentFolder.name
+                                                val isProj = activeProject != null || fs.isProjectFolder(proj)
+                                                if (isProj) {
+                                                    val projectRel = fs.getProjectRelativePath(proj)
+                                                    val sub = file.path.removePrefix(projectRel).trim('/')
+                                                    currentFileSubfolder = sub
+                                                } else {
+                                                    currentFileSubfolder = file.path
+                                                }
                                             } else {
                                                 if (onOpenFileInTab != null) {
                                                     onOpenFileInTab(file, false)
@@ -1331,7 +1390,15 @@ fun TabOverviewScreen(
                                         },
                                         onOpenInNewTab = {
                                             if (file.isDirectory) {
-                                                currentFileSubfolder = file.path
+                                                val proj = activeProject?.name ?: currentFolder.name
+                                                val isProj = activeProject != null || fs.isProjectFolder(proj)
+                                                if (isProj) {
+                                                    val projectRel = fs.getProjectRelativePath(proj)
+                                                    val sub = file.path.removePrefix(projectRel).trim('/')
+                                                    currentFileSubfolder = sub
+                                                } else {
+                                                    currentFileSubfolder = file.path
+                                                }
                                             } else {
                                                 onOpenFileInTab?.invoke(file, true) ?: run {
                                                     fileToPreview = file
@@ -1589,27 +1656,37 @@ fun TabOverviewScreen(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.InsertDriveFile,
+                                        imageVector = Icons.Rounded.FolderSpecial,
                                         contentDescription = null,
                                         tint = Color(0xFF10B981),
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                     Text(
-                                        text = "Files & Workspace (${allFiles.size})",
+                                        text = "Software Projects (${allFiles.size})",
                                         color = GVONETextPrimary,
-                                        fontSize = 13.sp,
+                                        fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
 
                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     TextButton(
-                                        onClick = { showCreateFileDialog = true },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        onClick = { fileImportLauncher.launch("*/*") },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.testTag("root_import_file_btn")
                                     ) {
-                                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF10B981))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("New File", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF38BDF8))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Import", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    TextButton(
+                                        onClick = { showCreateFileDialog = true },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.testTag("root_new_file_btn")
+                                    ) {
+                                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF10B981))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("New Project", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                     if (onOpenIde != null) {
                                         Surface(
@@ -1632,11 +1709,11 @@ fun TabOverviewScreen(
                                     if (onOpenFilesSheet != null) {
                                         TextButton(
                                             onClick = onOpenFilesSheet,
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                                         ) {
-                                            Icon(Icons.Rounded.FolderSpecial, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF38BDF8))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Storage Browser", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            Icon(Icons.Rounded.FolderSpecial, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF38BDF8))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("Storage", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                         }
                                     }
                                 }
@@ -1750,7 +1827,11 @@ fun TabOverviewScreen(
                                     },
                                     onClick = {
                                         if (file.isDirectory) {
-                                            currentFileSubfolder = file.path
+                                            val projName = file.name
+                                            activeProject = QuickMenuProject(id = projName, name = projName)
+                                            val existingGroup = tabGroups.find { it.id == projName || it.name.equals(projName, ignoreCase = true) }
+                                            currentFolderId = existingGroup?.id ?: projName
+                                            currentFileSubfolder = ""
                                         } else {
                                             if (onOpenFileInTab != null) {
                                                 onOpenFileInTab(file, false)
@@ -1763,7 +1844,11 @@ fun TabOverviewScreen(
                                     },
                                     onOpenInNewTab = {
                                         if (file.isDirectory) {
-                                            currentFileSubfolder = file.path
+                                            val projName = file.name
+                                            activeProject = QuickMenuProject(id = projName, name = projName)
+                                            val existingGroup = tabGroups.find { it.id == projName || it.name.equals(projName, ignoreCase = true) }
+                                            currentFolderId = existingGroup?.id ?: projName
+                                            currentFileSubfolder = ""
                                         } else {
                                             onOpenFileInTab?.invoke(file, true) ?: run {
                                                 fileToPreview = file
@@ -2256,12 +2341,29 @@ fun TabOverviewScreen(
             onDismiss = { showCreateFileDialog = false },
             onConfirm = { fileName, content ->
                 coroutineScope.launch {
-                    val targetPath = if (currentFolderId != null && currentFolder != null) {
-                        "${currentFolder.name}/$fileName"
+                    val group = tabGroups.find { it.id == currentFolderId }
+                    val projName = activeProject?.name ?: group?.name.orEmpty()
+                    val isProject = (currentFolderId != null) && (activeProject != null || fs.isProjectFolder(projName))
+
+                    if (isProject && projName.isNotEmpty()) {
+                        fs.createProjectFile(
+                            projectName = projName,
+                            subfolder = currentFileSubfolder,
+                            fileName = fileName,
+                            content = content
+                        )
+                    } else if (currentFolderId != null && currentFolder != null) {
+                        val subPath = if (currentFileSubfolder.isNotEmpty()) currentFileSubfolder else currentFolder.name
+                        fs.writeFileContent("$subPath/$fileName", content)
                     } else {
-                        fileName
+                        val cleanProj = fileName.substringBeforeLast('.')
+                        fs.createProjectFile(
+                            projectName = cleanProj.ifEmpty { "NewProject" },
+                            subfolder = "",
+                            fileName = fileName,
+                            content = content
+                        )
                     }
-                    fs.writeFileContent(targetPath, content)
                     reloadFiles()
                     showCreateFileDialog = false
                 }
