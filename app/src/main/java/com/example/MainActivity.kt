@@ -65,7 +65,7 @@ import com.example.ui.viewmodel.BrowserViewModel
 import com.example.ui.viewmodel.FileSelectionPurpose
 
 class MainActivity : ComponentActivity() {
-    private val browserViewModel: BrowserViewModel by viewModels()
+    internal val browserViewModel: BrowserViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         cleanupCorruptedVariationsSeed()
