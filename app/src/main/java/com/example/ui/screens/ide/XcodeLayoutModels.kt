@@ -40,9 +40,7 @@ enum class XcodeInspectorTab(
     val icon: ImageVector,
     val description: String
 ) {
-    PROJECT("Project", Icons.Rounded.FolderSpecial, "Active project files, tabs, chats, extensions and bots"),
     ATTRIBUTES("Attributes", Icons.Rounded.Info, "Identity, title, URL, size and metadata"),
-    FILES("All Files", Icons.Rounded.FolderCopy, "Browse all workspace files, folders, and assets"),
     CONSOLE("Debug Console", Icons.Rounded.Terminal, "Unified web console logs, IDE build & execution output"),
     DOM_INSPECT("DOM & Elements", Icons.Rounded.Code, "Visual outlines, inspect element, and tag tree"),
     NETWORK_SECURITY("Security", Icons.Rounded.Security, "HTTPS TLS status, Tor proxy, and cookies"),

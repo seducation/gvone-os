@@ -214,41 +214,12 @@ fun XcodeInspectorPanel(
                     .weight(1f)
             ) {
                 when (selectedTab) {
-                    XcodeInspectorTab.PROJECT -> {
-                        ProjectInspectorView(
-                            fileSystem = fileSystem,
-                            onOpenFileInTab = onOpenFileInTab,
-                            onOpenFileInIde = onOpenFileInIde,
-                            onExecuteTerminalCommand = onExecuteTerminalCommand,
-                            onClose = onClose
-                        )
-                    }
                     XcodeInspectorTab.ATTRIBUTES -> {
                         AttributesInspectorView(
                             currentTab = currentTab,
                             activeEditorTab = activeEditorTab,
                             workspaceMode = workspaceMode
                         )
-                    }
-                    XcodeInspectorTab.FILES -> {
-                        if (fileSystem != null) {
-                            UnifiedFileExplorerView(
-                                fileSystem = fileSystem,
-                                onOpenFileInTab = { file, inNewTab ->
-                                    onOpenFileInTab?.invoke(file, inNewTab)
-                                    onClose()
-                                },
-                                onOpenFileInIde = { file ->
-                                    onOpenFileInIde?.invoke(file)
-                                    onClose()
-                                },
-                                onClosePanel = onClose
-                            )
-                        } else {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("Workspace file system loading...", color = Color(0xFF94A3B8), fontSize = 12.sp)
-                            }
-                        }
                     }
                     XcodeInspectorTab.CONSOLE -> {
                         UnifiedDebugConsoleView(

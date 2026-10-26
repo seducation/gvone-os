@@ -61,8 +61,6 @@ import com.example.ui.screens.ide.ProjectInspectorView
 
 enum class SafariActionTab(val label: String, val icon: ImageVector) {
     MAIN("Main", Icons.Rounded.Dashboard),
-    PROJECT("Project", Icons.Rounded.FolderSpecial),
-    FILES("All Files", Icons.Rounded.FolderCopy),
     ATTRIBUTES("Attributes", Icons.Rounded.Tune),
     CONSOLE("Console", Icons.Rounded.Terminal),
     DOM_INSPECT("DOM", Icons.Rounded.Code),
@@ -1258,61 +1256,6 @@ fun SafariActionsSheet(
                 }
             }
         }
-
-        SafariActionTab.PROJECT -> {
-            Surface(
-                modifier = Modifier
-                    .widthIn(max = 560.dp)
-                    .fillMaxWidth()
-                    .heightIn(max = 480.dp)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                color = Color.Transparent
-            ) {
-                ProjectInspectorView(
-                    fileSystem = fileSystem,
-                    onOpenFileInTab = onOpenFileInTab,
-                    onOpenFileInIde = { _ ->
-                        onOpenIde()
-                        onClose()
-                    },
-                    onExecuteTerminalCommand = { cmd ->
-                        onOpenTerminal()
-                    },
-                    onClose = onClose
-                )
-            }
-        }
-
-        SafariActionTab.FILES -> {
-            Surface(
-                modifier = Modifier
-                    .widthIn(max = 560.dp)
-                    .fillMaxWidth()
-                    .heightIn(max = 480.dp)
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                color = Color.Transparent
-            ) {
-                if (fileSystem != null) {
-                    UnifiedFileExplorerView(
-                        fileSystem = fileSystem,
-                        onOpenFileInTab = { file, inNewTab ->
-                            onOpenFileInTab?.invoke(file, inNewTab)
-                            onClose()
-                        },
-                        onOpenFileInIde = { _ ->
-                            onOpenIde()
-                            onClose()
-                        },
-                        onClosePanel = onClose
-                    )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("File system loading...", color = Color(0xFF94A3B8), fontSize = 13.sp)
-                    }
-                }
-            }
-        }
-
         SafariActionTab.ATTRIBUTES -> {
             Surface(
                 modifier = Modifier
