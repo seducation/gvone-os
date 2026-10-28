@@ -36,6 +36,21 @@ fun CombinedActionsInspectorSheet(
         val activeEditorTab = remember(ideOpenTabs, ideActiveTabId) {
             ideOpenTabs.find { it.id == ideActiveTabId }
         }
+        val requestedTabStr = viewModel.inspectorRequestedTab.value
+        val computedInitialTab = remember(activeSheet, requestedTabStr) {
+            if (activeSheet == ActiveSheet.Inspector) {
+                when (requestedTabStr?.uppercase()) {
+                    "PROBLEMS" -> SafariActionTab.PROBLEMS
+                    "EXTENSIONS", "SIDE_PANEL", "SIDEPANEL", "SIDE_PANELS" -> SafariActionTab.EXTENSIONS
+                    "CONSOLE" -> SafariActionTab.CONSOLE
+                    "DOM", "DOM_INSPECT" -> SafariActionTab.DOM_INSPECT
+                    "SECURITY" -> SafariActionTab.SECURITY
+                    else -> SafariActionTab.ATTRIBUTES
+                }
+            } else {
+                SafariActionTab.MAIN
+            }
+        }
         SafariActionsSheet(
             tab = currentTab,
             isTorActive = isTorActive,
@@ -89,7 +104,7 @@ fun CombinedActionsInspectorSheet(
             activeEditorTab = activeEditorTab,
             workspaceMode = workspaceMode,
             activeWebView = currentTab?.let { viewModel.getActiveWebView(it.id) },
-            initialTab = if (activeSheet == ActiveSheet.Inspector) SafariActionTab.ATTRIBUTES else SafariActionTab.MAIN,
+            initialTab = computedInitialTab,
             onClose = { viewModel.closeSheet() }
         )
     }

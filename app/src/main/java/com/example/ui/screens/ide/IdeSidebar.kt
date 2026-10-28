@@ -90,6 +90,13 @@ fun IdeSidebar(
     // Extensions state
     val extensions = remember {
         mutableStateListOf(
+            IdeExtension("youtube_enhancer", "YouTube Media & Ad Enhancer", "v2.5.0", "GVONE Web", "Blocks video ads, enables background audio playback, bypasses Shorts loop, auto-skips sponsor segments, and cinema mode", Icons.Rounded.PlayCircle, true, "Media & YouTube"),
+            IdeExtension("youtube_audio_pip", "YouTube Audio & Shorts Pill", "v1.4.0", "GVONE Media", "Floating audio mini-player, background audio lock, and gesture-driven shorts controller", Icons.Rounded.SmartDisplay, true, "Media & YouTube"),
+            IdeExtension("adblock_pro", "AdBlocker Pro & Tracker Shield", "v3.6.0", "uBlock/GVONE", "Blocks intrusive popups, banner ads, tracking beacons, and script miners across all tabs", Icons.Rounded.Shield, true, "Privacy & Security"),
+            IdeExtension("dark_reader", "Dark Reader & Night Shift", "v4.9.0", "DarkReader", "Inverts luminance to provide high-contrast dark theme on all web pages and YouTube", Icons.Rounded.DarkMode, true, "Appearance"),
+            IdeExtension("data_saver", "Data Saver Pro & Stream Saver", "v2.1.0", "GVONE", "Optimizes media streams, compresses web images, defers offscreen content to save mobile data", Icons.Rounded.DataUsage, true, "Performance"),
+            IdeExtension("page_translator", "Smart Page Translator", "v1.8.0", "GVONE AI", "Instant one-tap translation for articles, foreign web pages, and YouTube video captions", Icons.Rounded.Translate, true, "Productivity"),
+            IdeExtension("web_inspector", "Safari Web Inspector & DevTools", "v2.0.0", "WebKit", "DOM tree inspection, network request timeline, console logs, and storage viewer", Icons.Rounded.DeveloperMode, true, "Developer"),
             IdeExtension("prettier", "Prettier - Code Formatter", "v3.2.0", "Prettier Team", "Opinionated code formatter for Kotlin, Python, JS, HTML, CSS, JSON", Icons.Rounded.FormatPaint, true, "Formatters"),
             IdeExtension("eslint", "ESLint & Code Linter", "v8.56.0", "OpenJS Foundation", "Identifies syntax errors, code smells, and TODO/FIXME markers", Icons.Rounded.Rule, true, "Linters"),
             IdeExtension("gitlens", "GitLens - Git supercharged", "v14.0.0", "GitKraken", "Supercharge Git with blame annotations, commit history, and diff navigation", Icons.Rounded.AccountTree, true, "Git"),
@@ -535,7 +542,13 @@ fun IdeSidebar(
                                             Toast.makeText(context, "Open a web file to live preview", Toast.LENGTH_SHORT).show()
                                         }
                                     },
-                                    activeTab = activeTab
+                                    activeTab = activeTab,
+                                    onOpenProblems = { extId ->
+                                        Toast.makeText(context, "Extension problems view opened: ${extId ?: "All"}", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onOpenSidePanel = { extId ->
+                                        Toast.makeText(context, "Opened $extId Side Panel", Toast.LENGTH_SHORT).show()
+                                    }
                                 )
                             }
                         }

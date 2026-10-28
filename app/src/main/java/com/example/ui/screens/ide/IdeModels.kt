@@ -101,6 +101,32 @@ data class IdeTreeNode(
 )
 
 /**
+ * Severity level for extension and linter diagnostics.
+ */
+enum class ProblemSeverity(val label: String, val colorHex: Long) {
+    ERROR("Error", 0xFFEF4444),
+    WARNING("Warning", 0xFFF59E0B),
+    INFO("Info", 0xFF38BDF8)
+}
+
+/**
+ * Diagnostic problem or issue reported by an extension (ESLint, Prettier, AdBlocker, etc.).
+ */
+data class ExtensionProblem(
+    val id: String,
+    val extensionId: String,
+    val extensionName: String,
+    val file: String,
+    val line: Int,
+    val column: Int = 1,
+    val message: String,
+    val ruleId: String? = null,
+    val severity: ProblemSeverity = ProblemSeverity.ERROR,
+    val quickFixAvailable: Boolean = true,
+    val quickFixActionLabel: String = "Quick Fix"
+)
+
+/**
  * Extension for the IDE Extensions Manager (Prettier, ESLint, GitLens, etc.).
  */
 data class IdeExtension(
@@ -111,7 +137,10 @@ data class IdeExtension(
     val description: String,
     val icon: ImageVector,
     val isEnabled: Boolean = true,
-    val category: String = "Formatter"
+    val category: String = "Formatter",
+    val problems: List<ExtensionProblem> = emptyList(),
+    val hasSidePanel: Boolean = true,
+    val sidePanelTitle: String? = null
 )
 
 /**

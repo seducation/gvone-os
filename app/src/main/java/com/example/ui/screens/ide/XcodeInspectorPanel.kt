@@ -78,6 +78,12 @@ fun XcodeInspectorPanel(
         }
     }
 
+    LaunchedEffect(initialTab) {
+        selectedTab = initialTab
+    }
+    val extensionProblems = ExtensionProblemsManager.problems.collectAsState().value
+    val problemsCount = extensionProblems.size
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -170,10 +176,15 @@ fun XcodeInspectorPanel(
             ) {
                 XcodeInspectorTab.values().forEach { tab ->
                     val isSelected = selectedTab == tab
+                    val tabBadge = if (tab == XcodeInspectorTab.PROBLEMS && problemsCount > 0) " ($problemsCount)" else ""
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = if (isSelected) Color(0xFF1E293B) else Color.Transparent,
-                        border = if (isSelected) BorderStroke(1.dp, Color(0xFFF59E0B)) else BorderStroke(0.5.dp, Color(0xFF283548)),
+                        border = if (isSelected) {
+                            BorderStroke(1.dp, if (tab == XcodeInspectorTab.PROBLEMS && problemsCount > 0) Color(0xFFEF4444) else Color(0xFFF59E0B))
+                        } else {
+                            BorderStroke(0.5.dp, Color(0xFF283548))
+                        },
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
                             .clickable { selectedTab = tab }
@@ -187,14 +198,24 @@ fun XcodeInspectorPanel(
                             Icon(
                                 imageVector = tab.icon,
                                 contentDescription = tab.title,
-                                tint = if (isSelected) Color(0xFFF59E0B) else Color(0xFF64748B),
+                                tint = if (isSelected) {
+                                    if (tab == XcodeInspectorTab.PROBLEMS && problemsCount > 0) Color(0xFFEF4444) else Color(0xFFF59E0B)
+                                } else if (tab == XcodeInspectorTab.PROBLEMS && problemsCount > 0) {
+                                    Color(0xFFEF4444)
+                                } else {
+                                    Color(0xFF64748B)
+                                },
                                 modifier = Modifier.size(13.dp)
                             )
                             Text(
-                                text = tab.title,
+                                text = "${tab.title}$tabBadge",
                                 fontSize = 11.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color(0xFFE2E8F0) else Color(0xFF64748B)
+                                color = if (isSelected) {
+                                    if (tab == XcodeInspectorTab.PROBLEMS && problemsCount > 0) Color(0xFFEF4444) else Color(0xFFE2E8F0)
+                                } else {
+                                    Color(0xFF64748B)
+                                }
                             )
                         }
                     }
@@ -311,6 +332,19 @@ fun XcodeInspectorPanel(
                                     Toast.makeText(context, "Storage and cookies wiped", Toast.LENGTH_SHORT).show()
                                 }
                             }
+                        )
+                    }
+                    XcodeInspectorTab.PROBLEMS -> {
+                        ExtensionProblemsInspectorView(
+                            onOpenFileInEditor = { file, line ->
+                                Toast.makeText(context, "Jump to $file:$line", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                    XcodeInspectorTab.EXTENSIONS -> {
+                        ExtensionSidePanelsInspectorView(
+                            activeWebView = activeWebView,
+                            activeTab = currentTab
                         )
                     }
                     XcodeInspectorTab.SAFETY_RULES -> {

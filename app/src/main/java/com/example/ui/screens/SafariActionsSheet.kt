@@ -58,10 +58,15 @@ import com.example.ui.components.DevConsoleLog
 import com.example.data.terminal.TerminalLine
 import com.example.ui.screens.files.UnifiedFileExplorerView
 import com.example.ui.screens.ide.ProjectInspectorView
+import com.example.ui.screens.ide.ExtensionProblemsInspectorView
+import com.example.ui.screens.ide.ExtensionSidePanelsInspectorView
+import com.example.ui.screens.ide.ExtensionProblemsManager
 
 enum class SafariActionTab(val label: String, val icon: ImageVector) {
     MAIN("Main", Icons.Rounded.Dashboard),
     ATTRIBUTES("Attributes", Icons.Rounded.Tune),
+    PROBLEMS("Problems", Icons.Rounded.WarningAmber),
+    EXTENSIONS("Side Panel", Icons.Rounded.Extension),
     CONSOLE("Console", Icons.Rounded.Terminal),
     DOM_INSPECT("DOM", Icons.Rounded.Code),
     SECURITY("Security", Icons.Rounded.Security),
@@ -174,6 +179,14 @@ fun SafariActionsSheet(
     var zoomPercentage by remember { mutableIntStateOf(100) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
     var selectedTab by remember { mutableStateOf(initialTab) }
+
+    LaunchedEffect(initialTab) {
+        selectedTab = initialTab
+    }
+
+    val extensionProblems by ExtensionProblemsManager.problems.collectAsState()
+    val extensionProblemsCount = extensionProblems.size
+    val context = LocalContext.current
 
     // Extension toggles
     var adBlockerActive by remember { mutableStateOf(true) }
@@ -301,7 +314,9 @@ fun SafariActionsSheet(
                 ) {
                     SafariActionTab.values().forEach { tabItem ->
                         val isSelected = selectedTab == tabItem
+                        val isProblemsTab = tabItem == SafariActionTab.PROBLEMS
                         val badgeCount = when (tabItem) {
+                            SafariActionTab.PROBLEMS -> extensionProblemsCount
                             SafariActionTab.NOTIFICATION -> 3
                             SafariActionTab.GIT -> 2
                             else -> 0
@@ -312,11 +327,19 @@ fun SafariActionsSheet(
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(
                                     if (isSelected) {
-                                        Brush.horizontalGradient(
-                                            colors = listOf(Color(0xFF00E5FF), Color(0xFF0083B0))
-                                        )
+                                        if (isProblemsTab && extensionProblemsCount > 0) {
+                                            Brush.horizontalGradient(listOf(Color(0xFFEF4444), Color(0xFFDC2626)))
+                                        } else {
+                                            Brush.horizontalGradient(
+                                                colors = listOf(Color(0xFF00E5FF), Color(0xFF0083B0))
+                                            )
+                                        }
                                     } else {
-                                        Brush.linearGradient(listOf(Color(0xFF1A2232), Color(0xFF1A2232)))
+                                        if (isProblemsTab && extensionProblemsCount > 0) {
+                                            Brush.linearGradient(listOf(Color(0xFF3B1515), Color(0xFF3B1515)))
+                                        } else {
+                                            Brush.linearGradient(listOf(Color(0xFF1A2232), Color(0xFF1A2232)))
+                                        }
                                     }
                                 )
                                 .clickable { selectedTab = tabItem }
@@ -331,14 +354,26 @@ fun SafariActionsSheet(
                                 Icon(
                                     imageVector = tabItem.icon,
                                     contentDescription = null,
-                                    tint = if (isSelected) Color.White else GVONETextSecondary,
+                                    tint = if (isSelected) {
+                                        Color.White
+                                    } else if (isProblemsTab && extensionProblemsCount > 0) {
+                                        Color(0xFFEF4444)
+                                    } else {
+                                        GVONETextSecondary
+                                    },
                                     modifier = Modifier.size(15.dp)
                                 )
                                 Text(
                                     text = if (badgeCount > 0) "${tabItem.label} ($badgeCount)" else tabItem.label,
-                                    color = if (isSelected) Color.White else GVONETextSecondary,
+                                    color = if (isSelected) {
+                                        Color.White
+                                    } else if (isProblemsTab && extensionProblemsCount > 0) {
+                                        Color(0xFFEF4444)
+                                    } else {
+                                        GVONETextSecondary
+                                    },
                                     fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontWeight = if (isSelected || (isProblemsTab && extensionProblemsCount > 0)) FontWeight.Bold else FontWeight.Medium,
                                     maxLines = 1
                                 )
                             }
@@ -491,15 +526,32 @@ fun SafariActionsSheet(
                                         modifier = Modifier.size(22.dp)
                                     )
                                     Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(
+                                                text = "Extensions",
+                                                color = Color.White,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            if (extensionProblemsCount > 0) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    color = Color(0xFFEF4444),
+                                                    modifier = Modifier.padding(start = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "$extensionProblemsCount ISSUES",
+                                                        color = Color.White,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
                                         Text(
-                                            text = "Extensions",
-                                            color = Color.White,
-                                            fontSize = 15.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Text(
-                                            text = if (adBlockerActive) "AdBlocker & Privacy Shield active" else "Try a recommended extension",
-                                            color = Color(0xFF94A3B8),
+                                            text = if (extensionProblemsCount > 0) "$extensionProblemsCount issues found • Tap to view diagnostics" else if (adBlockerActive) "AdBlocker & Privacy Shield active" else "Try a recommended extension",
+                                            color = if (extensionProblemsCount > 0) Color(0xFFFCA5A5) else Color(0xFF94A3B8),
                                             fontSize = 12.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
@@ -530,6 +582,45 @@ fun SafariActionsSheet(
                                         .padding(horizontal = 14.dp, vertical = 10.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
+                                    // Quick Inspector Navigation Pills
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { selectedTab = SafariActionTab.PROBLEMS },
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.6f)),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.WarningAmber, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Problems ($extensionProblemsCount)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        Button(
+                                            onClick = { selectedTab = SafariActionTab.EXTENSIONS },
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Extension, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Side Panels", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
+                                    HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
+
+                                    ExtensionToggleRow(
+                                        title = "YouTube Media & Ad Enhancer",
+                                        subtitle = "Skip sponsor segments, auto ad bypass, cinema mode",
+                                        icon = Icons.Rounded.PlayCircle,
+                                        isEnabled = true,
+                                        onToggle = { isEnabled: Boolean ->
+                                            Toast.makeText(context, if (isEnabled) "YouTube Enhancer enabled" else "YouTube Enhancer disabled", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
                                     ExtensionToggleRow(
                                         title = "Ad & Tracker Blocker",
                                         subtitle = "Blocks intrusive ads, popups & telemetry",
@@ -1401,6 +1492,41 @@ fun SafariActionsSheet(
                             Toast.makeText(sheetContext, "Browsing data cleared", Toast.LENGTH_SHORT).show()
                         }
                     }
+                )
+            }
+        }
+
+        SafariActionTab.PROBLEMS -> {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                color = Color.Transparent
+            ) {
+                val sheetContext = LocalContext.current
+                ExtensionProblemsInspectorView(
+                    onOpenFileInEditor = { file, line ->
+                        Toast.makeText(sheetContext, "Opening $file:$line in Code Studio", Toast.LENGTH_SHORT).show()
+                        onOpenIde()
+                    }
+                )
+            }
+        }
+
+        SafariActionTab.EXTENSIONS -> {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                color = Color.Transparent
+            ) {
+                ExtensionSidePanelsInspectorView(
+                    activeWebView = activeWebView,
+                    activeTab = tab
                 )
             }
         }

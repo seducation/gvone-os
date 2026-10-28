@@ -42,8 +42,10 @@ enum class XcodeInspectorTab(
 ) {
     PROJECT("Project", Icons.Rounded.FolderSpecial, "Active project files, tabs, chats, extensions and bots"),
     ATTRIBUTES("Attributes", Icons.Rounded.Info, "Identity, title, URL, size and metadata"),
+    PROBLEMS("Problems", Icons.Rounded.Warning, "Diagnostics, lint errors, and extension problems"),
     CONSOLE("Debug Console", Icons.Rounded.Terminal, "Unified web console logs, IDE build & execution output"),
     DOM_INSPECT("DOM & Elements", Icons.Rounded.Code, "Visual outlines, inspect element, and tag tree"),
+    EXTENSIONS("Side Panels", Icons.Rounded.Extension, "Dedicated interactive side panels for active extensions"),
     NETWORK_SECURITY("Security", Icons.Rounded.Security, "HTTPS TLS status, Tor proxy, and cookies"),
     SAFETY_RULES("CNS Rules", Icons.Rounded.Shield, "Autonomous agent firewall and permission checks")
 }

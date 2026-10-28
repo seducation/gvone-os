@@ -65,6 +65,7 @@ import com.example.data.files.*
 import com.example.data.model.BrowserTab
 import com.example.data.model.Environment
 import com.example.data.model.QuickMenuProject
+import com.example.data.model.QuickMenuStorage
 import com.example.data.model.TabGroup
 import com.example.data.model.TabSortOption
 import com.example.data.model.isInternalHomeUrl
@@ -129,6 +130,7 @@ fun TabOverviewScreen(
     onCloseTabsToRight: (tabId: String) -> Unit,
     onNavigateToUrl: ((String) -> Unit)? = null,
     onSelectProjectTarget: ((QuickMenuProject) -> Unit)? = null,
+    onOpenInspectorWithTab: ((String) -> Unit)? = null,
     onCloseOverview: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -149,6 +151,13 @@ fun TabOverviewScreen(
     // Extensions state for Navigator panel
     val extensions = remember {
         mutableStateListOf(
+            IdeExtension("youtube_enhancer", "YouTube Media & Ad Enhancer", "v2.5.0", "GVONE Web", "Blocks video ads, enables background audio playback, bypasses Shorts loop, auto-skips sponsor segments, and cinema mode", Icons.Rounded.PlayCircle, true, "Media & YouTube"),
+            IdeExtension("youtube_audio_pip", "YouTube Audio & Shorts Pill", "v1.4.0", "GVONE Media", "Floating audio mini-player, background audio lock, and gesture-driven shorts controller", Icons.Rounded.SmartDisplay, true, "Media & YouTube"),
+            IdeExtension("adblock_pro", "AdBlocker Pro & Tracker Shield", "v3.6.0", "uBlock/GVONE", "Blocks intrusive popups, banner ads, tracking beacons, and script miners across all tabs", Icons.Rounded.Shield, true, "Privacy & Security"),
+            IdeExtension("dark_reader", "Dark Reader & Night Shift", "v4.9.0", "DarkReader", "Inverts luminance to provide high-contrast dark theme on all web pages and YouTube", Icons.Rounded.DarkMode, true, "Appearance"),
+            IdeExtension("data_saver", "Data Saver Pro & Stream Saver", "v2.1.0", "GVONE", "Optimizes media streams, compresses web images, defers offscreen content to save mobile data", Icons.Rounded.DataUsage, true, "Performance"),
+            IdeExtension("page_translator", "Smart Page Translator", "v1.8.0", "GVONE AI", "Instant one-tap translation for articles, foreign web pages, and YouTube video captions", Icons.Rounded.Translate, true, "Productivity"),
+            IdeExtension("web_inspector", "Safari Web Inspector & DevTools", "v2.0.0", "WebKit", "DOM tree inspection, network request timeline, console logs, and storage viewer", Icons.Rounded.DeveloperMode, true, "Developer"),
             IdeExtension("prettier", "Prettier Formatter", "v3.2.0", "Prettier", "Opinionated code formatter for Kotlin, Python, JS, HTML, CSS, JSON", Icons.Rounded.FormatPaint, true, "Formatters"),
             IdeExtension("eslint", "ESLint Linter", "v8.56.0", "OpenJS", "Identifies syntax errors, code smells, and TODO markers", Icons.Rounded.Rule, true, "Linters"),
             IdeExtension("gitlens", "Git & Drive Cloud Lens", "v14.0.0", "GitKraken", "Cloud Drive commit tracking, Git blame, and diff history", Icons.Rounded.CloudSync, true, "Drive & Git"),
@@ -356,20 +365,23 @@ fun TabOverviewScreen(
         val targetName = currentFolder?.name ?: activeProject?.name
         val matched = terminalSessions.filter { sess ->
             (targetId != null && sess.tabGroupId == targetId) ||
-            (targetName != null && sess.tabGroupId.equals(targetName, ignoreCase = true)) ||
-            (activeProject != null && activeProject!!.chats.contains(sess.title))
+            (targetName != null && sess.tabGroupId.equals(targetName, ignoreCase = true))
         }
         if (matched.isNotEmpty()) {
             matched
         } else if (activeProject != null && activeProject!!.chats.isNotEmpty()) {
-            activeProject!!.chats.mapIndexed { index, chatTitle ->
-                TerminalSession(
-                    id = "proj_chat_${activeProject!!.id}_$index",
-                    title = chatTitle,
-                    tabGroupId = activeProject!!.id,
-                    createdAt = System.currentTimeMillis() - (index * 3600_000L)
-                )
-            }
+            activeProject!!.chats
+                .filterNot { title ->
+                    title.matches(Regex("^(Chat|Session)\\s*\\d*$", RegexOption.IGNORE_CASE))
+                }
+                .mapIndexed { index, chatTitle ->
+                    TerminalSession(
+                        id = "proj_chat_${activeProject!!.id}_$index",
+                        title = chatTitle,
+                        tabGroupId = activeProject!!.id,
+                        createdAt = System.currentTimeMillis() - (index * 3600_000L)
+                    )
+                }
         } else {
             emptyList()
         }
@@ -873,6 +885,58 @@ fun TabOverviewScreen(
                         }
                     }
 
+                    // Chats in search results
+                    if (searchResultsChats.isNotEmpty()) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
+                            ) {
+                                Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                Text("Chats (${searchResultsChats.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        items(searchResultsChats, key = { "search_chat_${it.id}" }, span = { GridItemSpan(2) }) { chatSession ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(12.dp))
+                                    .clickable { onSelectChat(chatSession.id) }
+                                    .testTag("search_chat_${chatSession.id}"),
+                                color = Color(0xFF141923)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0x2238BDF8)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(chatSession.title, color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        val preview = chatSession.lines.lastOrNull()?.text?.trim()
+                                        if (!preview.isNullOrBlank()) {
+                                            Text(preview, color = GVONETextSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = "Open", tint = Color(0xFF64748B), modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+
                     if (totalMatches == 0) {
                         item(span = { GridItemSpan(2) }) {
                             Box(
@@ -881,7 +945,7 @@ fun TabOverviewScreen(
                                     .padding(vertical = 32.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("No matching tabs or files found.", color = GVONETextSecondary, fontSize = 13.sp)
+                                Text("No matching tabs, chats, or files found.", color = GVONETextSecondary, fontSize = 13.sp)
                             }
                         }
                     }
@@ -1624,35 +1688,260 @@ fun TabOverviewScreen(
                     // SECTION 3: CHATS (when category == 1)
                     if (selectedCategory == 1) {
                         item(span = { GridItemSpan(2) }) {
-                            Box(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 48.dp),
-                                contentAlignment = Alignment.Center
+                                    .padding(top = 12.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                    modifier = Modifier.padding(24.dp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.Terminal,
                                         contentDescription = null,
                                         tint = Color(0xFF38BDF8),
-                                        modifier = Modifier.size(48.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        text = "Terminal Chats",
+                                        text = "Terminal Chats (${terminalSessions.size})",
                                         color = GVONETextPrimary,
-                                        fontSize = 16.sp,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { onNewChat(null) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.AddComment,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(15.dp),
+                                        tint = Color(0xFF38BDF8)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "New Chat",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    Text(
-                                        text = "Terminal sessions are now managed locally within the Terminal Screen.",
-                                        color = GVONETextSecondary,
-                                        fontSize = 13.sp,
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
+                                }
+                            }
+                        }
+
+                        if (terminalSessions.isEmpty()) {
+                            item(span = { GridItemSpan(2) }) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 48.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.padding(24.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(56.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0x2238BDF8)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Terminal,
+                                                contentDescription = null,
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(32.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = "No Terminal Chats",
+                                            color = GVONETextPrimary,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = "Start AI bot and terminal chat sessions to write code, execute commands, or run scripts.",
+                                            color = GVONETextSecondary,
+                                            fontSize = 13.sp,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                        Button(
+                                            onClick = { onNewChat(null) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.AddComment,
+                                                contentDescription = null,
+                                                tint = Color.Black,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Start New Chat",
+                                                fontSize = 12.sp,
+                                                color = Color.Black,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            items(terminalSessions, key = { "root_chat_${it.id}" }, span = { GridItemSpan(2) }) { chatSession ->
+                                val isSelected = chatSession.id == activeTerminalSessionId
+                                val isChecked = selectedChatIds.contains(chatSession.id)
+                                val group = tabGroups.find { it.id == chatSession.tabGroupId }
+                                val projectName = if (chatSession.tabGroupId != null) {
+                                    QuickMenuStorage.getProjects(context).find { it.id == chatSession.tabGroupId }?.name ?: group?.name
+                                } else null
+
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E293B),
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                        .clickable {
+                                            if (isSelectionMode) {
+                                                selectedChatIds = if (isChecked) selectedChatIds - chatSession.id else selectedChatIds + chatSession.id
+                                            } else {
+                                                onSelectChat(chatSession.id)
+                                            }
+                                        }
+                                        .testTag("chat_item_${chatSession.id}"),
+                                    color = if (isSelected) Color(0xFF131D2D) else Color(0xFF141923)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        if (isSelectionMode) {
+                                            Checkbox(
+                                                checked = isChecked,
+                                                onCheckedChange = { checked ->
+                                                    selectedChatIds = if (checked) selectedChatIds + chatSession.id else selectedChatIds - chatSession.id
+                                                },
+                                                colors = CheckboxDefaults.colors(
+                                                    checkedColor = Color(0xFF38BDF8),
+                                                    uncheckedColor = Color(0xFF475569)
+                                                ),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isSelected) Color(0x3338BDF8) else Color(0x1F38BDF8)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Terminal,
+                                                contentDescription = null,
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
+
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = chatSession.title,
+                                                    color = if (isSelected) Color(0xFF38BDF8) else GVONETextPrimary,
+                                                    fontSize = 13.5.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
+                                                if (projectName != null) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = Color(0x22A78BFA),
+                                                        modifier = Modifier.padding(horizontal = 2.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = projectName,
+                                                            color = Color(0xFFA78BFA),
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            val previewText = chatSession.lines.lastOrNull()?.text?.trim()
+                                            Text(
+                                                text = if (!previewText.isNullOrBlank()) previewText else "No messages in session",
+                                                color = GVONETextSecondary,
+                                                fontSize = 11.5.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+
+                                        if (!isSelectionMode) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                            ) {
+                                                IconButton(
+                                                    onClick = { chatToRename = chatSession },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Edit,
+                                                        contentDescription = "Rename Chat",
+                                                        tint = Color(0xFF64748B),
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+                                                IconButton(
+                                                    onClick = { onDeleteChat(chatSession.id) },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.DeleteOutline,
+                                                        contentDescription = "Delete Chat",
+                                                        tint = Color(0xFFEF4444),
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                                    contentDescription = "Open Chat",
+                                                    tint = Color(0xFF64748B),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2083,7 +2372,19 @@ fun TabOverviewScreen(
                                     onLaunchLivePreview = {
                                         Toast.makeText(context, "Live Preview active", Toast.LENGTH_SHORT).show()
                                     },
-                                    activeTab = activeTab
+                                    activeTab = activeTab,
+                                    onOpenProblems = { extId ->
+                                        onCloseOverview()
+                                        onOpenInspectorWithTab?.invoke("PROBLEMS") ?: run {
+                                            Toast.makeText(context, "Opening Problems in Inspector", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onOpenSidePanel = { extId ->
+                                        onCloseOverview()
+                                        onOpenInspectorWithTab?.invoke("EXTENSIONS") ?: run {
+                                            Toast.makeText(context, "Opening $extId Side Panel in Inspector", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -2279,25 +2580,37 @@ fun TabOverviewScreen(
                         }
                     }
 
-                    // BOTTOM RIGHT: Action FAB (Add Tab / Add File)
+                    // BOTTOM RIGHT: Action FAB (Add Tab / Add Chat / Add File)
                     FloatingActionButton(
                         onClick = {
-                            if (selectedCategory == 2) {
-                                showCreateFileDialog = true
-                            } else {
-                                onNewTab(currentFolderId)
+                            when (selectedCategory) {
+                                1 -> onNewChat(currentFolderId)
+                                2 -> showCreateFileDialog = true
+                                else -> onNewTab(currentFolderId)
                             }
                         },
-                        containerColor = if (selectedCategory == 2) Color(0xFF10B981) else if (isPrivateMode) GVONESecondary else GVONEPrimary,
-                        contentColor = Color.White,
+                        containerColor = when (selectedCategory) {
+                            1 -> Color(0xFF38BDF8)
+                            2 -> Color(0xFF10B981)
+                            else -> if (isPrivateMode) GVONESecondary else GVONEPrimary
+                        },
+                        contentColor = if (selectedCategory == 1) Color.Black else Color.White,
                         shape = CircleShape,
                         modifier = Modifier
                             .size(44.dp)
-                            .testTag("new_tab_fab")
+                            .testTag("action_fab")
                     ) {
                         Icon(
-                            imageVector = if (selectedCategory == 2) Icons.Rounded.NoteAdd else Icons.Rounded.Add,
-                            contentDescription = if (selectedCategory == 2) "New File" else "New Tab",
+                            imageVector = when (selectedCategory) {
+                                1 -> Icons.Rounded.AddComment
+                                2 -> Icons.Rounded.NoteAdd
+                                else -> Icons.Rounded.Add
+                            },
+                            contentDescription = when (selectedCategory) {
+                                1 -> "New Chat"
+                                2 -> "New File"
+                                else -> "New Tab"
+                            },
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -2515,6 +2828,56 @@ fun TabOverviewScreen(
                     fileToDelete = null
                 }
             }
+        )
+    }
+
+    chatToRename?.let { chat ->
+        var renameText by remember(chat.id) { mutableStateOf(chat.title) }
+        AlertDialog(
+            onDismissRequest = { chatToRename = null },
+            title = {
+                Text(
+                    text = "Rename Chat",
+                    color = GVONETextPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = GVONETextPrimary,
+                        unfocusedTextColor = GVONETextPrimary,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF334155),
+                        cursorColor = Color(0xFF38BDF8)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val trimmed = renameText.trim()
+                        if (trimmed.isNotBlank()) {
+                            onRenameChat(chat.id, trimmed)
+                        }
+                        chatToRename = null
+                    }
+                ) {
+                    Text("Rename", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { chatToRename = null }) {
+                    Text("Cancel", color = GVONETextSecondary)
+                }
+            },
+            containerColor = Color(0xFF141923),
+            shape = RoundedCornerShape(16.dp)
         )
     }
 }
