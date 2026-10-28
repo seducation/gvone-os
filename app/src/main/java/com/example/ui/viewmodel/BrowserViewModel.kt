@@ -228,17 +228,18 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                     } else it.title
                 } else it.title
 
-                val effectiveGroupId = it.tabGroupId ?: activeProj?.id
-                it.copy(title = newTitle, lines = current, lastActiveAt = System.currentTimeMillis(), tabGroupId = effectiveGroupId)
+                // Preserve session's existing tabGroupId. NEVER reassign global/unscoped sessions to active project
+                it.copy(title = newTitle, lines = current, lastActiveAt = System.currentTimeMillis(), tabGroupId = it.tabGroupId)
             } else it
         }
         _terminalSessions.value = updatedSessions
         terminalRepository.saveSessions(updatedSessions)
 
-        // Ensure active project reflects the chat title
+        // Ensure active project reflects the chat title ONLY IF this session actually belongs to this project
         if (activeProj != null) {
             val curSess = updatedSessions.find { it.id == activeId }
-            if (curSess != null && !activeProj.chats.contains(curSess.title)) {
+            val isProjectSession = curSess != null && (curSess.tabGroupId == activeProj.id || curSess.tabGroupId.equals(activeProj.name, ignoreCase = true))
+            if (isProjectSession && curSess != null && !activeProj.chats.contains(curSess.title)) {
                 val allProjects = QuickMenuStorage.getProjects(getApplication())
                 val updatedProj = activeProj.copy(chats = activeProj.chats + curSess.title)
                 QuickMenuStorage.saveProjects(getApplication(), allProjects.map { if (it.id == activeProj.id) updatedProj else it })
@@ -276,11 +277,20 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val count = _terminalSessions.value.size + 1
         val newId = "chat_${System.currentTimeMillis()}"
         val activeProj = _selectedProjectTarget.value
-        val effectiveGroupId = groupId ?: activeProj?.id
-        val chatTitle = title ?: if (activeProj != null) "${activeProj.name} Chat $count" else "Chat $count"
+        // Strictly honor groupId. When null, this is an unscoped global/root chat session
+        val effectiveGroupId = groupId
+        val chatTitle = title ?: if (effectiveGroupId != null && activeProj != null && (effectiveGroupId == activeProj.id || effectiveGroupId.equals(activeProj.name, ignoreCase = true))) {
+            "${activeProj.name} Chat $count"
+        } else {
+            "Chat $count"
+        }
         val bannerLines = listOf(
             TerminalLine("GVONE AI CHAT & TERMINAL v2.4", TerminalLineType.SYSTEM),
-            TerminalLine("● Chat session initialized. Type prompts or slash commands below.", TerminalLineType.SUCCESS)
+            TerminalLine(
+                if (effectiveGroupId != null && activeProj != null) "● Scoped to project: ${activeProj.name}. Type prompts or slash commands below."
+                else "● Chat session initialized. Type prompts or slash commands below.",
+                TerminalLineType.SUCCESS
+            )
         )
         val newSession = com.example.data.terminal.TerminalSession(
             id = newId,
@@ -297,7 +307,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         terminalRepository.saveSessions(updatedSessions)
 
         // If scoped to a project, register in project's chats manifest
-        if (activeProj != null && (effectiveGroupId == activeProj.id || effectiveGroupId == activeProj.name)) {
+        if (effectiveGroupId != null && activeProj != null && (effectiveGroupId == activeProj.id || effectiveGroupId.equals(activeProj.name, ignoreCase = true))) {
             val allProjects = QuickMenuStorage.getProjects(getApplication())
             if (!activeProj.chats.contains(chatTitle)) {
                 val updatedProj = activeProj.copy(chats = activeProj.chats + chatTitle)
