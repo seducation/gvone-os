@@ -38,8 +38,11 @@ class TerminalShellEngine(
     fun resolvePath(raw: String): String {
         val trimmed = raw.trim()
         if (trimmed == "/" || trimmed == "~" || trimmed.isBlank()) return ""
-        val clean = if (trimmed.startsWith("~/")) trimmed.removePrefix("~/") else trimmed
-        if (clean.startsWith("/")) return clean.removePrefix("/")
+        val clean = if (trimmed.startsWith("~/")) trimmed.removePrefix("~/") else trimmed.removePrefix("/")
+        // If clean already starts with a known top-level directory or Projects, treat as root-relative
+        if (clean.startsWith("Projects") || clean.startsWith("Documents") || clean.startsWith("Downloads") || clean.startsWith("Images")) {
+            return clean
+        }
         return if (currentDirectory.isBlank() || currentDirectory == "/") clean else "$currentDirectory/$clean"
     }
 
@@ -49,7 +52,7 @@ class TerminalShellEngine(
     suspend fun changeDirectory(arg: String): TerminalLine {
         val trimmed = arg.trim()
         when {
-            trimmed.isBlank() || trimmed == "~" -> {
+            trimmed.isBlank() || trimmed == "~" || trimmed == "root" || trimmed.equals("unselect", ignoreCase = true) -> {
                 currentDirectory = ""
                 return TerminalLine("Changed directory to root (~)", TerminalLineType.OUTPUT)
             }
@@ -67,8 +70,9 @@ class TerminalShellEngine(
             }
             else -> {
                 val target = resolvePath(trimmed)
-                val items = fileSystem.listFiles(StorageLocation.MY_FILES, target)
-                // If it exists or is root/default folder, permit navigation
+                try {
+                    fileSystem.listFiles(StorageLocation.MY_FILES, target)
+                } catch (_: Exception) {}
                 currentDirectory = target
                 return TerminalLine("Changed directory to $promptPath", TerminalLineType.SUCCESS)
             }

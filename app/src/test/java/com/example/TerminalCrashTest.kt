@@ -75,4 +75,39 @@ class TerminalCrashTest {
         composeTestRule.onNodeWithTag("terminal_input_field", useUnmergedTree = true).performTextInput("hello")
         composeTestRule.waitForIdle()
     }
+
+    @Test
+    fun testSelectTargetAndTypeInTerminal() {
+        val scenario = androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java)
+        scenario.onActivity { activity ->
+            activity.browserViewModel.openSheet(ActiveSheet.Terminal)
+            activity.browserViewModel.setTerminalTargetDirectory("Projects/KotlinCalculator")
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("terminal_input_field", useUnmergedTree = true).performTextInput("echo test")
+        composeTestRule.waitForIdle()
+    }
+
+    @Test
+    fun testClickProjectChatInProjectInspector() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val vm = BrowserViewModel(app)
+        composeTestRule.setContent {
+            com.example.ui.screens.ide.ProjectInspectorView(
+                fileSystem = vm.fileSystem,
+                onClose = {}
+            )
+        }
+        composeTestRule.waitForIdle()
+    }
+
+    @Test
+    fun testClickProjectChatInTabOverview() {
+        val scenario = androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java)
+        scenario.onActivity { activity ->
+            activity.browserViewModel.openSheet(ActiveSheet.TabOverview)
+        }
+        composeTestRule.waitForIdle()
+    }
 }

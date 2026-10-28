@@ -216,6 +216,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         // Automatically sync into active chat session and persist
         val activeId = _activeTerminalSessionId.value
+        val activeProj = _selectedProjectTarget.value
         val updatedSessions = _terminalSessions.value.map {
             if (it.id == activeId) {
                 // If title is default generic "Chat X" and a user command is executed, update title intelligently
@@ -227,32 +228,56 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                     } else it.title
                 } else it.title
 
-                it.copy(title = newTitle, lines = current, lastActiveAt = System.currentTimeMillis())
+                val effectiveGroupId = it.tabGroupId ?: activeProj?.id
+                it.copy(title = newTitle, lines = current, lastActiveAt = System.currentTimeMillis(), tabGroupId = effectiveGroupId)
             } else it
         }
         _terminalSessions.value = updatedSessions
         terminalRepository.saveSessions(updatedSessions)
+
+        // Ensure active project reflects the chat title
+        if (activeProj != null) {
+            val curSess = updatedSessions.find { it.id == activeId }
+            if (curSess != null && !activeProj.chats.contains(curSess.title)) {
+                val allProjects = QuickMenuStorage.getProjects(getApplication())
+                val updatedProj = activeProj.copy(chats = activeProj.chats + curSess.title)
+                QuickMenuStorage.saveProjects(getApplication(), allProjects.map { if (it.id == activeProj.id) updatedProj else it })
+                _selectedProjectTarget.value = updatedProj
+            }
+        }
     }
 
     fun selectTerminalSession(sessionId: String) {
         val sessions = _terminalSessions.value
-        val target = sessions.find { it.id == sessionId } ?: return
-        val currentActiveId = _activeTerminalSessionId.value
-        val updated = sessions.map {
-            if (it.id == currentActiveId) {
-                it.copy(lines = _terminalLines.value, lastActiveAt = System.currentTimeMillis())
-            } else it
+        val target = sessions.find { it.id == sessionId }
+        if (target != null) {
+            val currentActiveId = _activeTerminalSessionId.value
+            val updated = sessions.map {
+                if (it.id == currentActiveId) {
+                    it.copy(lines = _terminalLines.value, lastActiveAt = System.currentTimeMillis())
+                } else it
+            }
+            _terminalSessions.value = updated
+            _activeTerminalSessionId.value = sessionId
+            _terminalLines.value = target.lines
+            terminalRepository.saveSessions(updated)
+        } else if (sessionId.startsWith("proj_chat_")) {
+            val activeProj = _selectedProjectTarget.value
+            val title = if (activeProj != null && sessionId.contains(activeProj.id)) {
+                val idxStr = sessionId.substringAfterLast('_')
+                val idx = idxStr.toIntOrNull() ?: 0
+                activeProj.chats.getOrNull(idx) ?: "Project Chat"
+            } else "Project Chat"
+            createNewTerminalSession(title = title, groupId = activeProj?.id)
         }
-        _terminalSessions.value = updated
-        _activeTerminalSessionId.value = sessionId
-        _terminalLines.value = target.lines
-        terminalRepository.saveSessions(updated)
     }
 
     fun createNewTerminalSession(title: String? = null, groupId: String? = null): String {
         val count = _terminalSessions.value.size + 1
         val newId = "chat_${System.currentTimeMillis()}"
-        val chatTitle = title ?: "Chat $count"
+        val activeProj = _selectedProjectTarget.value
+        val effectiveGroupId = groupId ?: activeProj?.id
+        val chatTitle = title ?: if (activeProj != null) "${activeProj.name} Chat $count" else "Chat $count"
         val bannerLines = listOf(
             TerminalLine("GVONE AI CHAT & TERMINAL v2.4", TerminalLineType.SYSTEM),
             TerminalLine("● Chat session initialized. Type prompts or slash commands below.", TerminalLineType.SUCCESS)
@@ -261,7 +286,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             id = newId,
             title = chatTitle,
             lines = bannerLines,
-            tabGroupId = groupId,
+            tabGroupId = effectiveGroupId,
             createdAt = System.currentTimeMillis(),
             lastActiveAt = System.currentTimeMillis()
         )
@@ -270,6 +295,17 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _activeTerminalSessionId.value = newId
         _terminalLines.value = bannerLines
         terminalRepository.saveSessions(updatedSessions)
+
+        // If scoped to a project, register in project's chats manifest
+        if (activeProj != null && (effectiveGroupId == activeProj.id || effectiveGroupId == activeProj.name)) {
+            val allProjects = QuickMenuStorage.getProjects(getApplication())
+            if (!activeProj.chats.contains(chatTitle)) {
+                val updatedProj = activeProj.copy(chats = activeProj.chats + chatTitle)
+                val updatedProjects = allProjects.map { if (it.id == activeProj.id) updatedProj else it }
+                QuickMenuStorage.saveProjects(getApplication(), updatedProjects)
+                _selectedProjectTarget.value = updatedProj
+            }
+        }
         return newId
     }
 
@@ -471,7 +507,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         if (project != null) {
             val dir = "Projects/${project.name}"
             _terminalTargetDirectory.value = dir
-            prefs.edit().putString("terminal_target_dir", dir).apply()
+            prefs.edit()
+                .putString("terminal_target_dir", dir)
+                .putString("selected_project_id", project.id)
+                .apply()
             viewModelScope.launch {
                 shellEngine.changeDirectory(dir)
             }
@@ -483,7 +522,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun clearProjectTarget() {
         _selectedProjectTarget.value = null
         _terminalTargetDirectory.value = ""
-        prefs.edit().putString("terminal_target_dir", "").apply()
+        prefs.edit()
+            .putString("terminal_target_dir", "")
+            .remove("selected_project_id")
+            .apply()
         viewModelScope.launch {
             shellEngine.changeDirectory("~")
         }
@@ -517,17 +559,31 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             dir.trim().removePrefix("/")
         }
         _terminalTargetDirectory.value = sanitized
-        prefs.edit().putString("terminal_target_dir", sanitized).apply()
 
-        // Sync with active project if target starts with Projects/
+        // Sync with active project if target starts with Projects/ or matches a project
         if (sanitized.isNotEmpty()) {
             val allProjects = QuickMenuStorage.getProjects(getApplication())
             val matchingProj = allProjects.find { 
                 sanitized.equals("Projects/${it.name}", ignoreCase = true) || sanitized.equals(it.name, ignoreCase = true) 
             }
             _selectedProjectTarget.value = matchingProj
+            if (matchingProj != null) {
+                prefs.edit()
+                    .putString("terminal_target_dir", sanitized)
+                    .putString("selected_project_id", matchingProj.id)
+                    .apply()
+            } else {
+                prefs.edit()
+                    .putString("terminal_target_dir", sanitized)
+                    .remove("selected_project_id")
+                    .apply()
+            }
         } else {
             _selectedProjectTarget.value = null
+            prefs.edit()
+                .putString("terminal_target_dir", "")
+                .remove("selected_project_id")
+                .apply()
         }
 
         viewModelScope.launch {
@@ -1262,6 +1318,32 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             _terminalSessions.value = listOf(initialSession)
             _activeTerminalSessionId.value = "chat_1"
             terminalRepository.saveSessions(listOf(initialSession))
+        }
+
+        // Restore persistent Target Directory & Scoped Project Target
+        val savedTargetDir = prefs.getString("terminal_target_dir", "") ?: ""
+        val savedProjId = prefs.getString("selected_project_id", null)
+        val allProjects = QuickMenuStorage.getProjects(application)
+        val matchingProj = if (!savedProjId.isNullOrBlank()) {
+            allProjects.find { it.id == savedProjId }
+        } else if (savedTargetDir.isNotBlank()) {
+            allProjects.find { 
+                savedTargetDir.equals("Projects/${it.name}", ignoreCase = true) || savedTargetDir.equals(it.name, ignoreCase = true) 
+            }
+        } else null
+
+        if (matchingProj != null) {
+            _selectedProjectTarget.value = matchingProj
+            val targetDir = "Projects/${matchingProj.name}"
+            _terminalTargetDirectory.value = targetDir
+            viewModelScope.launch {
+                shellEngine.changeDirectory(targetDir)
+            }
+        } else if (savedTargetDir.isNotBlank()) {
+            _terminalTargetDirectory.value = savedTargetDir
+            viewModelScope.launch {
+                shellEngine.changeDirectory(savedTargetDir)
+            }
         }
 
         val initialPersonalTabs = listOf(

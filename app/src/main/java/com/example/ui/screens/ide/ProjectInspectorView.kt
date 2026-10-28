@@ -41,6 +41,10 @@ import com.example.data.files.GVONEFileSystem
 import com.example.data.files.StorageLocation
 import com.example.data.model.QuickMenuProject
 import com.example.data.model.QuickMenuStorage
+import com.example.data.terminal.TerminalSession
+import com.example.data.terminal.TerminalRepository
+import com.example.data.terminal.TerminalLine
+import com.example.data.terminal.TerminalLineType
 import kotlinx.coroutines.launch
 
 private enum class ProjectSubTab(val label: String) {
@@ -60,9 +64,11 @@ private enum class ProjectSubTab(val label: String) {
 @Composable
 fun ProjectInspectorView(
     fileSystem: GVONEFileSystem?,
+    initialProjectId: String? = null,
     onOpenFileInTab: ((GVONEFileItem, Boolean) -> Unit)? = null,
     onOpenFileInIde: ((GVONEFileItem) -> Unit)? = null,
     onExecuteTerminalCommand: ((String) -> Unit)? = null,
+    onOpenChatSession: ((String) -> Unit)? = null,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -72,10 +78,36 @@ fun ProjectInspectorView(
     var projects by remember {
         mutableStateOf(QuickMenuStorage.getProjects(context))
     }
-    var selectedProjectId by remember {
-        mutableStateOf(projects.firstOrNull()?.id.orEmpty())
+    var selectedProjectId by remember(initialProjectId) {
+        mutableStateOf(initialProjectId ?: projects.firstOrNull()?.id.orEmpty())
     }
     val activeProject = projects.find { it.id == selectedProjectId } ?: projects.firstOrNull()
+
+    val terminalRepo = remember(context) { TerminalRepository(context) }
+    var terminalSessions by remember {
+        mutableStateOf(terminalRepo.getSavedSessions())
+    }
+
+    val projectChats = remember(activeProject, terminalSessions) {
+        if (activeProject == null) emptyList<TerminalSession>()
+        else {
+            val sessionsMatched = terminalSessions.filter { sess ->
+                sess.tabGroupId == activeProject.id ||
+                sess.tabGroupId.equals(activeProject.name, ignoreCase = true) ||
+                activeProject.chats.contains(sess.title)
+            }
+            val sessionTitles = sessionsMatched.map { it.title }.toSet()
+            val synthetic = activeProject.chats.filterNot { it in sessionTitles }.mapIndexed { idx, title ->
+                TerminalSession(
+                    id = "proj_chat_${activeProject.id}_$idx",
+                    title = title,
+                    tabGroupId = activeProject.id,
+                    createdAt = activeProject.createdAt
+                )
+            }
+            sessionsMatched + synthetic
+        }
+    }
 
     var activeSubTab by remember { mutableStateOf(ProjectSubTab.FILES) }
 
@@ -189,7 +221,7 @@ fun ProjectInspectorView(
                 val count = when (subTab) {
                     ProjectSubTab.FILES -> if (fileItems.isNotEmpty()) fileItems.size else activeProject.files.size
                     ProjectSubTab.TABS -> activeProject.tabs.size
-                    ProjectSubTab.CHATS -> activeProject.chats.size
+                    ProjectSubTab.CHATS -> projectChats.size
                     ProjectSubTab.EXTENSIONS -> activeProject.extensions.size
                     ProjectSubTab.BOTS -> activeProject.bots.size
                 }
@@ -575,45 +607,181 @@ fun ProjectInspectorView(
             }
 
             ProjectSubTab.CHATS -> {
-                // CHATS SUB-TAB
+                // CHATS SUB-TAB (Live project-associated chats from Terminal & AI Sessions)
                 Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Project Conversations", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
-                        TextButton(
-                            onClick = {
-                                onExecuteTerminalCommand?.invoke("/chat")
-                                onClose()
-                            },
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                            modifier = Modifier.height(24.dp)
-                        ) {
-                            Text("Open in Terminal", fontSize = 10.5.sp, color = Color(0xFF38BDF8))
+                        Text(
+                            text = "Project Conversations (${projectChats.size})",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8)
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = {
+                                    val chatCount = projectChats.size + 1
+                                    val chatTitle = "${activeProject.name} Chat $chatCount"
+                                    val bannerLines = listOf(
+                                        TerminalLine("GVONE AI CHAT & TERMINAL v2.4", TerminalLineType.SYSTEM),
+                                        TerminalLine("● Scoped to project: ${activeProject.name}", TerminalLineType.SUCCESS)
+                                    )
+                                    val newSess = TerminalSession(
+                                        id = "chat_${System.currentTimeMillis()}",
+                                        title = chatTitle,
+                                        lines = bannerLines,
+                                        tabGroupId = activeProject.id,
+                                        createdAt = System.currentTimeMillis(),
+                                        lastActiveAt = System.currentTimeMillis()
+                                    )
+                                    val nextSessions = terminalSessions + newSess
+                                    terminalSessions = nextSessions
+                                    terminalRepo.saveSessions(nextSessions)
+
+                                    val updatedChats = (activeProject.chats + chatTitle).distinct()
+                                    val updatedProj = activeProject.copy(chats = updatedChats)
+                                    val updatedProjects = projects.map { if (it.id == activeProject.id) updatedProj else it }
+                                    projects = updatedProjects
+                                    QuickMenuStorage.saveProjects(context, updatedProjects)
+
+                                    onOpenChatSession?.invoke(newSess.id) ?: run {
+                                        onExecuteTerminalCommand?.invoke("/chat")
+                                        onClose()
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(26.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                            ) {
+                                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("New Chat", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            TextButton(
+                                onClick = {
+                                    onExecuteTerminalCommand?.invoke("/chat")
+                                    onClose()
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                modifier = Modifier.height(26.dp)
+                            ) {
+                                Text("Terminal", fontSize = 11.sp, color = Color(0xFF38BDF8))
+                            }
                         }
                     }
-                    if (activeProject.chats.isEmpty()) {
+
+                    if (projectChats.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No chats recorded for this project.", color = Color(0xFF64748B), fontSize = 11.5.sp)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Rounded.ChatBubbleOutline, contentDescription = null, tint = Color(0xFF475569), modifier = Modifier.size(28.dp))
+                                Text("No conversations recorded for ${activeProject.name}", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                Text("Tap '+ New Chat' to start an AI session for this project", color = Color(0xFF64748B), fontSize = 10.5.sp)
+                            }
                         }
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            items(activeProject.chats) { chatSnippet ->
+                            items(projectChats, key = { it.id }) { chatSession ->
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
-                                    color = Color(0xFF1A1429),
-                                    border = BorderStroke(0.6.dp, Color(0xFF2E2248)),
-                                    modifier = Modifier.fillMaxWidth()
+                                    color = Color(0xFF141C2B),
+                                    border = BorderStroke(0.6.dp, Color(0xFF23324A)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable {
+                                            onOpenChatSession?.invoke(chatSession.id) ?: run {
+                                                onExecuteTerminalCommand?.invoke("/chat")
+                                                onClose()
+                                            }
+                                        }
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Icon(Icons.Rounded.Chat, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(15.dp))
-                                        Text(chatSnippet, fontSize = 11.sp, color = Color(0xFFE2E8F0), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF281C3D)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(Icons.Rounded.Chat, contentDescription = null, tint = Color(0xFFC4B5FD), modifier = Modifier.size(15.dp))
+                                            }
+
+                                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                Text(
+                                                    text = chatSession.title,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color(0xFFF1F5F9),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                val lastLineText = chatSession.lines.lastOrNull()?.text?.trim()
+                                                if (!lastLineText.isNullOrBlank()) {
+                                                    Text(
+                                                        text = lastLineText,
+                                                        fontSize = 10.5.sp,
+                                                        color = Color(0xFF94A3B8),
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            IconButton(
+                                                onClick = {
+                                                    onOpenChatSession?.invoke(chatSession.id) ?: run {
+                                                        onExecuteTerminalCommand?.invoke("/chat")
+                                                        onClose()
+                                                    }
+                                                },
+                                                modifier = Modifier.size(26.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                                                    contentDescription = "Open Chat Session",
+                                                    tint = Color(0xFF38BDF8),
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                            }
+
+                                            IconButton(
+                                                onClick = {
+                                                    val nextSessions = terminalSessions.filterNot { it.id == chatSession.id }
+                                                    terminalSessions = nextSessions
+                                                    terminalRepo.saveSessions(nextSessions)
+
+                                                    val updatedChats = activeProject.chats.filterNot { it == chatSession.title }
+                                                    val updatedProj = activeProject.copy(chats = updatedChats)
+                                                    val updatedProjects = projects.map { if (it.id == activeProject.id) updatedProj else it }
+                                                    projects = updatedProjects
+                                                    QuickMenuStorage.saveProjects(context, updatedProjects)
+                                                    Toast.makeText(context, "Removed chat from project", Toast.LENGTH_SHORT).show()
+                                                },
+                                                modifier = Modifier.size(26.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Close,
+                                                    contentDescription = "Remove Chat",
+                                                    tint = Color(0xFFEF4444),
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }

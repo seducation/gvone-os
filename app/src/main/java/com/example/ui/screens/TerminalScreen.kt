@@ -214,46 +214,28 @@ fun TerminalScreen(
         }
     }
 
-    // Multi-session management
-    var sessions by remember {
-        val initialLines = viewModel.terminalLines.value.ifEmpty {
-            val isSuccess = viewModel.webAppBridge.connectionState.value == WebAppConnectionState.READY
-            createInitialBanner(viewModel.webAppBridge.connectionState.value.name, isSuccess, isLogMode = viewModel.isLogMode.value)
-        }
-        mutableStateOf(
-            listOf(
-                TerminalSession(
-                    id = "sess_1",
-                    title = "Session 1",
-                    lines = initialLines
-                )
-            )
-        )
-    }
-    var activeSessionId by remember { mutableStateOf("sess_1") }
+    // Multi-session management synchronized directly with BrowserViewModel & TerminalRepository
+    val sessions by viewModel.terminalSessions.collectAsStateWithLifecycle()
+    val activeSessionId by viewModel.activeTerminalSessionId.collectAsStateWithLifecycle()
     val activeSession = sessions.find { it.id == activeSessionId }
         ?: sessions.firstOrNull()
-        ?: TerminalSession("sess_default", "Session 1", globalTerminalLines)
-
-    // Synchronize global terminal lines into active session in real-time
-    LaunchedEffect(globalTerminalLines) {
-        if (globalTerminalLines.isNotEmpty()) {
-            sessions = sessions.map {
-                if (it.id == activeSessionId) it.copy(lines = globalTerminalLines) else it
-            }
-        }
-    }
+        ?: TerminalSession("chat_default", "Chat 1", globalTerminalLines)
 
     val addressBarInput by viewModel.addressBarInput.collectAsStateWithLifecycle()
-    // Active input state synchronized with floating address bar
+    // Active input state for terminal CLI prompt
     var inputText by remember { mutableStateOf(TextFieldValue(addressBarInput)) }
 
+    // Synchronize external address bar input on initial open or when explicitly seeded, without interrupting active typing
+    var lastSyncedAddressInput by remember { mutableStateOf(addressBarInput) }
     LaunchedEffect(addressBarInput) {
-        if (inputText.text != addressBarInput) {
-            inputText = TextFieldValue(
-                text = addressBarInput,
-                selection = androidx.compose.ui.text.TextRange(addressBarInput.length)
-            )
+        if (addressBarInput != lastSyncedAddressInput) {
+            lastSyncedAddressInput = addressBarInput
+            if (inputText.text.isEmpty() && addressBarInput.isNotEmpty()) {
+                inputText = TextFieldValue(
+                    text = addressBarInput,
+                    selection = androidx.compose.ui.text.TextRange(addressBarInput.length)
+                )
+            }
         }
     }
 
@@ -406,9 +388,6 @@ fun TerminalScreen(
         if (activeSession.lines.isEmpty()) {
             val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
             val bannerLines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
-            sessions = sessions.map {
-                if (it.id == activeSessionId) it.copy(lines = bannerLines) else it
-            }
             viewModel.appendTerminalLines(bannerLines)
         }
     }
@@ -488,11 +467,7 @@ fun TerminalScreen(
         } else {
             newLines.filterNot { viewModel.isVerboseLogLine(it) }
         }
-        val updated = activeSession.lines + linesToAdd
-        sessions = sessions.map {
-            if (it.id == activeSessionId) it.copy(lines = updated) else it
-        }
-        viewModel.appendTerminalLines(newLines)
+        viewModel.appendTerminalLines(linesToAdd)
     }
 
     fun appendLines(newLines: List<TerminalLine>, dummy: ((List<TerminalLine>) -> Unit)? = null) {
@@ -521,11 +496,7 @@ fun TerminalScreen(
                 text = promptPrefix,
                 type = TerminalLineType.COMMAND
             )
-            appendLines(listOf(emptyCommandLine)) { newLines ->
-                sessions = sessions.map {
-                    if (it.id == activeSessionId) it.copy(lines = newLines) else it
-                }
-            }
+            appendLines(listOf(emptyCommandLine))
             return
         }
 
@@ -657,9 +628,6 @@ fun TerminalScreen(
             }
 
             "/clear", "/cls" -> {
-                sessions = sessions.map {
-                    if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
-                }
                 viewModel.clearTerminalLines()
                 inputText = TextFieldValue("")
                 return
@@ -892,20 +860,12 @@ fun TerminalScreen(
                                         shellEngine.changeDirectory("~")
                                         currentCwd = shellEngine.promptPath
                                         val feedbackLine = TerminalLine("📁 Target cleared: Returned to global root workspace (~)", TerminalLineType.INFO)
-                                        val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
-                                        if (activeSess != null) {
-                                            val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
-                                            sessions = sessions.map { if (it.id == activeSess.id) updated else it }
-                                        }
+                                        viewModel.appendTerminalLines(listOf(feedbackLine))
                                     } else {
                                         shellEngine.changeDirectory(chosenDir)
                                         currentCwd = shellEngine.promptPath
                                         val feedbackLine = TerminalLine("📁 Target set to: $chosenDir (AI tasks, tabs and file edits scoped)", TerminalLineType.SUCCESS)
-                                        val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
-                                        if (activeSess != null) {
-                                            val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
-                                            sessions = sessions.map { if (it.id == activeSess.id) updated else it }
-                                        }
+                                        viewModel.appendTerminalLines(listOf(feedbackLine))
                                     }
                                 }
                             },
@@ -958,31 +918,21 @@ fun TerminalScreen(
                     onOpenConversationHistory = {
                         showConversationHistorySheet = true
                     },
-                    onSelectSession = { activeSessionId = it },
+                    onSelectSession = { viewModel.selectTerminalSession(it) },
                     onNewSession = {
-                        val newId = "sess_${sessions.size + 1}"
-                        val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
-                        val newSess = TerminalSession(
-                            id = newId,
-                            title = "Session ${sessions.size + 1}",
-                            lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
-                        )
-                        sessions = sessions + newSess
-                        activeSessionId = newId
+                        val activeProj = viewModel.selectedProjectTarget.value
+                        val title = if (activeProj != null) "${activeProj.name} Chat ${sessions.size + 1}" else "Chat ${sessions.size + 1}"
+                        val groupId = activeProj?.id
+                        viewModel.createNewTerminalSession(title = title, groupId = groupId)
                     },
                     onCloseSession = { sessId ->
                         if (sessions.size > 1) {
-                            val remaining = sessions.filterNot { it.id == sessId }
-                            sessions = remaining
-                            activeSessionId = remaining.firstOrNull()?.id ?: "sess_1"
+                            viewModel.deleteTerminalSession(sessId)
                         } else {
                             onClose()
                         }
                     },
                     onClearScreen = {
-                        sessions = sessions.map {
-                            if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
-                        }
                         viewModel.clearTerminalLines()
                     },
                     onClose = onClose,
@@ -1012,9 +962,7 @@ fun TerminalScreen(
                             },
                             type = TerminalLineType.SUCCESS
                         )
-                        sessions = sessions.map {
-                            if (it.id == activeSessionId) it.copy(lines = it.lines + bridgeLine) else it
-                        }
+                        viewModel.appendTerminalLines(listOf(bridgeLine))
                     },
                     onCnsClick = { showCnsDashboard = true },
                     xcodeConsoleFilter = xcodeConsoleFilter,
@@ -1736,7 +1684,6 @@ fun TerminalScreen(
                             value = inputText,
                             onValueChange = {
                                 inputText = it
-                                viewModel.setAddressBarInput(it.text)
                             },
                             textStyle = TextStyle(
                                 color = TermTextPrimary,
@@ -1935,10 +1882,7 @@ fun TerminalScreen(
                             }
                         }
                         "clear" -> {
-                            sessions = sessions.map {
-                                if (it.id == activeSessionId) it.copy(lines = emptyList()) else it
-                            }
-                            viewModel.terminalRepository.clearSavedSessionLines()
+                            viewModel.clearTerminalLines()
                         }
                         else -> {
                             // Insert character
@@ -2023,20 +1967,12 @@ fun TerminalScreen(
                                     shellEngine.changeDirectory("~")
                                     currentCwd = shellEngine.promptPath
                                     val feedbackLine = TerminalLine("📁 Target cleared: Returned to global root workspace (~)", TerminalLineType.INFO)
-                                    val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
-                                    if (activeSess != null) {
-                                        val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
-                                        sessions = sessions.map { if (it.id == activeSess.id) updated else it }
-                                    }
+                                    viewModel.appendTerminalLines(listOf(feedbackLine))
                                 } else {
                                     shellEngine.changeDirectory(chosenDir)
                                     currentCwd = shellEngine.promptPath
                                     val feedbackLine = TerminalLine("📁 Target set to: $chosenDir (AI tasks, tabs and file edits scoped)", TerminalLineType.SUCCESS)
-                                    val activeSess = sessions.find { it.id == activeSessionId } ?: sessions.firstOrNull()
-                                    if (activeSess != null) {
-                                        val updated = activeSess.copy(lines = activeSess.lines + feedbackLine)
-                                        sessions = sessions.map { if (it.id == activeSess.id) updated else it }
-                                    }
+                                    viewModel.appendTerminalLines(listOf(feedbackLine))
                                 }
                             }
                         },
@@ -2212,41 +2148,19 @@ fun TerminalScreen(
             sessions = sessions,
             activeSessionId = activeSessionId,
             onSelectSession = { sessId ->
-                activeSessionId = sessId
+                viewModel.selectTerminalSession(sessId)
             },
             onNewSession = {
-                val newId = "sess_${sessions.size + 1}"
-                val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
-                val newSess = TerminalSession(
-                    id = newId,
-                    title = "Session ${sessions.size + 1}",
-                    lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
-                )
-                sessions = sessions + newSess
-                activeSessionId = newId
+                val activeProj = viewModel.selectedProjectTarget.value
+                val title = if (activeProj != null) "${activeProj.name} Chat ${sessions.size + 1}" else "Chat ${sessions.size + 1}"
+                val groupId = activeProj?.id
+                viewModel.createNewTerminalSession(title = title, groupId = groupId)
             },
             onRenameSession = { sessId, newTitle ->
-                sessions = sessions.map {
-                    if (it.id == sessId) it.copy(title = newTitle) else it
-                }
+                viewModel.renameTerminalSession(sessId, newTitle)
             },
             onDeleteSession = { sessId ->
-                if (sessions.size > 1) {
-                    val updated = sessions.filterNot { it.id == sessId }
-                    sessions = updated
-                    if (activeSessionId == sessId) {
-                        activeSessionId = updated.first().id
-                    }
-                } else {
-                    val isSuccess = bridgeConnectionState == WebAppConnectionState.READY
-                    val resetSess = TerminalSession(
-                        id = "sess_${System.currentTimeMillis()}",
-                        title = "Session 1",
-                        lines = createInitialBanner(bridgeConnectionState.name, isSuccess, isLogMode = isLogMode)
-                    )
-                    sessions = listOf(resetSess)
-                    activeSessionId = resetSess.id
-                }
+                viewModel.deleteTerminalSession(sessId)
             }
         )
     }

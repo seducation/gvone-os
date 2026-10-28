@@ -6,6 +6,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -19,14 +21,10 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.zIndex
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -82,7 +80,7 @@ import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 import java.io.File
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TabOverviewScreen(
     tabs: List<BrowserTab>,
@@ -160,6 +158,7 @@ fun TabOverviewScreen(
     }
 
     // Files state
+    var activeStorageLocation by rememberSaveable { mutableStateOf(StorageLocation.MY_FILES) }
     var allFiles by remember { mutableStateOf<List<GVONEFileItem>>(emptyList()) }
     var folderFiles by remember { mutableStateOf<List<GVONEFileItem>>(emptyList()) }
     var currentFileSubfolder by remember { mutableStateOf("") }
@@ -205,58 +204,31 @@ fun TabOverviewScreen(
         coroutineScope.launch {
             isFilesLoading = true
             try {
-                val rootFiles = fs.listFiles(StorageLocation.MY_FILES, currentFolder = currentFileSubfolder)
-                allFiles = rootFiles
                 if (currentFolderId != null) {
                     val group = tabGroups.find { it.id == currentFolderId }
-                    val groupFolderName = group?.name ?: activeProject?.name ?: ""
-                    val directGroupFiles = if (groupFolderName.isNotEmpty()) {
+                    val groupFolderName = activeProject?.name ?: group?.name.orEmpty()
+                    val isProject = activeProject != null || fs.isProjectFolder(groupFolderName)
+
+                    if (isProject && groupFolderName.isNotEmpty()) {
+                        // STRICT ISOLATION: Only files and directories belonging to this specific project
+                        folderFiles = fs.listProjectFiles(
+                            projectName = groupFolderName,
+                            subfolder = currentFileSubfolder
+                        )
+                    } else {
                         val subPath = if (currentFileSubfolder.isNotEmpty()) currentFileSubfolder else groupFolderName
-                        fs.listFiles(StorageLocation.MY_FILES, currentFolder = subPath)
-                    } else {
-                        emptyList()
-                    }
-                    val matchedFsFiles = if (directGroupFiles.isNotEmpty()) {
-                        directGroupFiles
-                    } else {
-                        rootFiles.filter { it.path.contains(groupFolderName, ignoreCase = true) || it.name.contains(groupFolderName, ignoreCase = true) }
-                    }
-
-                    val projectFiles = if (activeProject != null && (activeProject?.id == currentFolderId || groupFolderName.equals(activeProject?.name, ignoreCase = true))) {
-                        activeProject!!.files.mapIndexed { idx, fileName ->
-                            rootFiles.find { it.name.equals(fileName, ignoreCase = true) }
-                                ?: fs.getFileItem(fileName)
-                                ?: GVONEFileItem(
-                                    id = "proj_file_${activeProject!!.id}_$idx",
-                                    name = fileName,
-                                    path = "${activeProject!!.name}/$fileName",
-                                    absolutePath = "",
-                                    parentPath = activeProject!!.name,
-                                    isDirectory = false,
-                                    size = (1024L + idx * 512L),
-                                    formattedSize = "1.5 KB",
-                                    lastModified = System.currentTimeMillis() - (idx * 1800_000L),
-                                    formattedDate = "Today",
-                                    extension = fileName.substringAfterLast('.', "txt"),
-                                    fileType = when (fileName.substringAfterLast('.', "").lowercase()) {
-                                        "md" -> FileType.MARKDOWN
-                                        "txt" -> FileType.TEXT
-                                        "json" -> FileType.JSON
-                                        "pdf" -> FileType.PDF
-                                        "png", "jpg", "jpeg", "webp" -> FileType.IMAGE
-                                        "zip", "tar", "gz" -> FileType.ARCHIVE
-                                        else -> FileType.CODE
-                                    }
-                                )
+                        folderFiles = if (subPath.isNotEmpty()) {
+                            fs.listFiles(StorageLocation.MY_FILES, currentFolder = subPath)
+                        } else {
+                            emptyList()
                         }
-                    } else {
-                        emptyList()
                     }
-
-                    folderFiles = (matchedFsFiles + projectFiles).distinctBy { it.name }
                 } else {
                     folderFiles = emptyList()
                 }
+
+                // In root Navigator panel: Load all files from activeStorageLocation and currentFileSubfolder
+                allFiles = fs.listFiles(activeStorageLocation, currentFolder = currentFileSubfolder)
             } catch (_: Exception) {
                 allFiles = emptyList()
                 folderFiles = emptyList()
@@ -266,12 +238,39 @@ fun TabOverviewScreen(
         }
     }
 
-    LaunchedEffect(currentFolderId, tabGroups, activeProject, currentFileSubfolder) {
+    // File import launcher for importing external files directly into the active project/workspace
+    val fileImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val group = tabGroups.find { it.id == currentFolderId }
+                val projName = activeProject?.name ?: group?.name.orEmpty()
+                val isProject = activeProject != null || fs.isProjectFolder(projName)
+
+                if (isProject && projName.isNotEmpty()) {
+                    val imported = fs.importProjectFile(uri, projName, currentFileSubfolder)
+                    if (imported != null) {
+                        Toast.makeText(context, "Imported ${imported.name} into $projName", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    val targetFolder = if (currentFileSubfolder.isNotEmpty()) currentFileSubfolder else projName
+                    val imported = fs.importFromUri(uri, targetFolder)
+                    if (imported != null) {
+                        Toast.makeText(context, "Imported ${imported.name}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                reloadFiles()
+            }
+        }
+    }
+
+    LaunchedEffect(currentFolderId, tabGroups, activeProject, currentFileSubfolder, activeStorageLocation) {
         reloadFiles()
     }
 
     // Handle back inside TabOverviewScreen gracefully
-    BackHandler(enabled = isSearchActive || searchQuery.isNotEmpty() || isSelectionMode || currentFolderId != null) {
+    BackHandler(enabled = isSearchActive || searchQuery.isNotEmpty() || isSelectionMode || currentFolderId != null || (selectedCategory == 2 && currentFileSubfolder.isNotEmpty())) {
         when {
             searchQuery.isNotEmpty() -> searchQuery = ""
             isSearchActive -> isSearchActive = false
@@ -281,9 +280,13 @@ fun TabOverviewScreen(
                 selectedChatIds = emptySet()
                 selectedFileIds = emptySet()
             }
+            selectedCategory == 2 && currentFileSubfolder.isNotEmpty() -> {
+                currentFileSubfolder = if (currentFileSubfolder.contains("/")) currentFileSubfolder.substringBeforeLast("/") else ""
+            }
             currentFolderId != null -> {
                 currentFolderId = null
                 activeProject = null
+                currentFileSubfolder = ""
             }
         }
     }
@@ -348,17 +351,27 @@ fun TabOverviewScreen(
     }
 
     // Filtered chats for active folder view (including project chats)
-    val folderChats = remember(activeProject, currentFolderId, currentFolder) {
-        if (activeProject != null && (activeProject?.id == currentFolderId || currentFolder?.name.equals(activeProject?.name, ignoreCase = true))) {
+    val folderChats = remember(terminalSessions, activeProject, currentFolderId, currentFolder) {
+        val targetId = currentFolderId ?: activeProject?.id
+        val targetName = currentFolder?.name ?: activeProject?.name
+        val matched = terminalSessions.filter { sess ->
+            (targetId != null && sess.tabGroupId == targetId) ||
+            (targetName != null && sess.tabGroupId.equals(targetName, ignoreCase = true)) ||
+            (activeProject != null && activeProject!!.chats.contains(sess.title))
+        }
+        if (matched.isNotEmpty()) {
+            matched
+        } else if (activeProject != null && activeProject!!.chats.isNotEmpty()) {
             activeProject!!.chats.mapIndexed { index, chatTitle ->
                 TerminalSession(
                     id = "proj_chat_${activeProject!!.id}_$index",
                     title = chatTitle,
+                    tabGroupId = activeProject!!.id,
                     createdAt = System.currentTimeMillis() - (index * 3600_000L)
                 )
             }
         } else {
-            emptyList<TerminalSession>()
+            emptyList()
         }
     }
 
@@ -368,8 +381,8 @@ fun TabOverviewScreen(
     }
 
     // Ungrouped chats for root view
-    val ungroupedChats = remember {
-        emptyList<TerminalSession>()
+    val ungroupedChats = remember(terminalSessions) {
+        terminalSessions.filter { it.tabGroupId == null }
     }
 
     // Direct HTML runner for projects and folders
@@ -392,7 +405,7 @@ fun TabOverviewScreen(
         } else {
             val generated = generateProjectHtmlPreview(projectName, project)
             try {
-                val savePath = if (projectFolder.isNotBlank()) "$projectFolder/index.html" else "index.html"
+                val savePath = if (projectFolder.isNotBlank()) "Projects/$projectFolder/index.html" else "index.html"
                 val f = fs.getFile(savePath)
                 f.parentFile?.mkdirs()
                 f.writeText(generated)
@@ -452,540 +465,598 @@ fun TabOverviewScreen(
 
     var isShortcutsExpanded by rememberSaveable { mutableStateOf(false) }
 
-    Column(
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < -20f && isShortcutsExpanded) {
+                    isShortcutsExpanded = false
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (available.y > 10f && !isShortcutsExpanded) {
+                    isShortcutsExpanded = true
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF0B0E14))
             .statusBarsPadding()
             .navigationBarsPadding()
-            .imePadding()
+            .nestedScroll(nestedScrollConnection)
     ) {
-        // --- STATIC TOP CONTAINER (Sections 1-5): Fixed, never scrolls ---
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             // --- TOP NAVIGATION / BREADCRUMB BAR ---
             if (currentFolderId != null && currentFolder != null) {
                 // FOLDER VIEW HEADER: "‹ All Tabs" | "📁 Folder Name (count)" | "＋" | "⋮"
-                FolderViewHeader(
-                    folder = currentFolder,
-                    tabCount = folderTabs.size,
-                    chatCount = folderChats.size,
-                    fileCount = folderFiles.size,
-                    onBack = {
-                        currentFolderId = null
-                        activeProject = null
-                    },
-                    onRunHtml = { runProjectHtml(activeProject, currentFolder) },
-                    onSendToDrive = {
-                        val res = driveManager.sendProjectToDrive(
-                            projectName = currentFolder.name,
-                            project = activeProject,
-                            tabs = folderTabs,
-                            files = folderFiles,
-                            extensions = extensions
-                        )
-                        Toast.makeText(context, "☁️ ${res.message}", Toast.LENGTH_LONG).show()
-                    },
-                    onAddTab = { onNewTab(currentFolder.id) },
-                    onAddFile = { showCreateFileDialog = true },
-                    onRename = { groupToRename = currentFolder },
-                    onCloseAllInFolder = { onCloseTabsInGroup(currentFolder.id) },
-                    onDeleteFolder = { groupToDelete = currentFolder }
-                )
-            } else {
-                // ROOT "ALL TABS" HEADER
-                RootAllTabsHeader(
-                    isSearchActive = isSearchActive,
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    onToggleSearch = {
-                        isSearchActive = !isSearchActive
-                        if (!isSearchActive) searchQuery = ""
-                    },
-                    isSelectionMode = isSelectionMode,
-                    selectedCount = totalSelectedCount,
-                    onToggleSelectionMode = {
-                        isSelectionMode = !isSelectionMode
-                        if (!isSelectionMode) {
-                            selectedTabIds = emptySet()
-                            selectedChatIds = emptySet()
-                            selectedFileIds = emptySet()
-                        }
-                    },
-                    showSortMenu = showSortMenu,
-                    onToggleSortMenu = { showSortMenu = !showSortMenu },
-                    onSortTabs = onSortTabs,
-                    currentEnvironment = currentEnvironment,
-                    onManageEnvironmentClick = { showEnvironmentSheet = true },
-                    onCreateEnvironmentClick = { showCreateEnvironmentDialog = true },
-                    onCreateFolderClick = {
-                        initialTabsForNewGroup = emptyList()
-                        showCreateGroupDialog = true
-                    },
-                    onCloseOverview = onCloseOverview
-                )
-            }
-        }
-
-        // -----------------------------------------------------------------
-        // SINGLE VERTICAL SCROLL CONTAINER (LazyColumn)
-        // Everything between Header and Bottom Bar scrolls together smoothly
-        // -----------------------------------------------------------------
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(bottom = 24.dp)
-        ) {
-            // (1) Pinned Shortcuts Row & (2) Quick Menu Card
-            // Scrolls together with content in root view when not searching
-            if (!isSearching && currentFolderId == null) {
-                item(key = "overview_shortcuts_item") {
-                    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                        SafariShortcutsCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("overview_shortcuts_card"),
-                            customShortcuts = customShortcuts,
-                            onShortcutClick = { shortcut ->
-                                onNavigateToUrl?.invoke(shortcut.url) ?: run {
-                                    onNewTab(null)
-                                }
-                                onCloseOverview()
-                            },
-                            onAddCustomShortcut = { newShortcut ->
-                                customShortcuts = customShortcuts + newShortcut
-                            },
-                            onRemoveShortcut = { target ->
-                                customShortcuts = customShortcuts.filter { it.title != target.title || it.url != target.url }
-                            },
-                            testTagPrefix = "overview_shortcut",
-                            expanded = isShortcutsExpanded,
-                            onExpandedChange = { isShortcutsExpanded = it }
-                        )
-                    }
-                }
-
-                item(key = "overview_quick_menu_item") {
-                    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                        QuickMenuCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("overview_quick_menu_card"),
-                            onOpenProject = { project ->
-                                activeProject = project
-                                onSelectProjectTarget?.invoke(project)
-                                val existingGroup = tabGroups.find { it.id == project.id || it.name.equals(project.name, ignoreCase = true) }
-                                if (existingGroup != null) {
-                                    currentFolderId = existingGroup.id
-                                } else {
-                                    onCreateGroup(project.name, "#38BDF8", emptyList())
-                                    currentFolderId = project.id
-                                }
-                                selectedCategory = 0
-                            },
-                            onRunProject = { project ->
-                                runProjectHtml(project, null)
-                            },
-                            onSendToDrive = { project ->
-                                val projectTabs = tabs.filter { it.tabGroupId == project.id || project.tabs.contains(it.title) }
-                                val projectFiles = allFiles.filter { it.parentPath == project.name || project.files.contains(it.name) }
-                                val res = driveManager.sendProjectToDrive(
-                                    projectName = project.name,
-                                    project = project,
-                                    tabs = projectTabs,
-                                    files = projectFiles,
-                                    extensions = extensions
-                                )
-                                Toast.makeText(context, "☁️ ${res.message}", Toast.LENGTH_LONG).show()
-                            }
-                        )
-                    }
-                }
-            }
-
-            // (3) STICKY Category Switcher: Tabs | Chats | Files | Bots | Extensions
-            // Pins smoothly underneath the fixed header when scrolling down
-            if (!isSearching) {
-                stickyHeader(key = "category_switcher_sticky") {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Color(0xFF0B0E14)
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(24.dp))
-                                        .background(Color(0xFF141923))
-                                        .border(1.dp, Color(0xFF2C384D), RoundedCornerShape(24.dp))
-                                        .horizontalScroll(rememberScrollState())
-                                        .padding(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    val activeTabCount = if (currentFolderId != null) folderTabs.size else modeTabs.size
-                                    val activeChatCount = if (currentFolderId != null) folderChats.size else terminalSessions.size
-                                    val activeFileCount = if (currentFolderId != null) folderFiles.size else allFiles.size
-
-                                    val navCategories = listOf(
-                                        Triple(0, "Tabs ($activeTabCount)", Icons.Rounded.Public),
-                                        Triple(1, "Chats ($activeChatCount)", Icons.Rounded.Terminal),
-                                        Triple(2, "Files ($activeFileCount)", Icons.Rounded.InsertDriveFile),
-                                        Triple(3, "Bots (5)", Icons.Rounded.AutoAwesome),
-                                        Triple(4, "Extensions (${extensions.size})", Icons.Rounded.Extension)
-                                    )
-
-                                    navCategories.forEach { (catId, title, icon) ->
-                                        val isSelected = selectedCategory == catId
-                                        val bgGradient = when (catId) {
-                                            0 -> Brush.horizontalGradient(listOf(Color(0xFF00E5FF), Color(0xFF0083B0)))
-                                            1 -> Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Color(0xFF0284C7)))
-                                            2 -> Brush.horizontalGradient(listOf(Color(0xFF10B981), Color(0xFF059669)))
-                                            3 -> Brush.horizontalGradient(listOf(Color(0xFFA855F7), Color(0xFF7C3AED)))
-                                            else -> Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))
-                                        }
-
-                                        Box(
-                                            modifier = Modifier
-                                                .height(36.dp)
-                                                .clip(RoundedCornerShape(18.dp))
-                                                .background(
-                                                    if (isSelected) bgGradient
-                                                    else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
-                                                )
-                                                .clickable { selectedCategory = catId }
-                                                .padding(horizontal = 12.dp)
-                                                .testTag("category_pill_${title.substringBefore(" ").lowercase()}"),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = icon,
-                                                    contentDescription = null,
-                                                    tint = if (isSelected) Color.White else GVONETextSecondary,
-                                                    modifier = Modifier.size(15.dp)
-                                                )
-                                                Text(
-                                                    text = title,
-                                                    color = if (isSelected) Color.White else GVONETextSecondary,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1
-                                                )
-                                            }
-                                        }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pointerInput(isShortcutsExpanded) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { change, dragAmount ->
+                                    if (dragAmount > 12f && !isShortcutsExpanded) {
+                                        isShortcutsExpanded = true
+                                        change.consume()
+                                    } else if (dragAmount < -12f && isShortcutsExpanded) {
+                                        isShortcutsExpanded = false
+                                        change.consume()
                                     }
                                 }
+                            )
+                        }
+                ) {
+                    FolderViewHeader(
+                        folder = currentFolder,
+                        tabCount = folderTabs.size,
+                        chatCount = folderChats.size,
+                        fileCount = folderFiles.size,
+                        onBack = {
+                            currentFolderId = null
+                            activeProject = null
+                        },
+                        onRunHtml = { runProjectHtml(activeProject, currentFolder) },
+                        onSendToDrive = {
+                            val res = driveManager.sendProjectToDrive(
+                                projectName = currentFolder.name,
+                                project = activeProject,
+                                tabs = folderTabs,
+                                files = folderFiles,
+                                extensions = extensions
+                            )
+                            Toast.makeText(context, "☁️ ${res.message}", Toast.LENGTH_LONG).show()
+                        },
+                        onAddTab = { onNewTab(currentFolder.id) },
+                        onAddFile = { showCreateFileDialog = true },
+                        onRename = { groupToRename = currentFolder },
+                        onCloseAllInFolder = { onCloseTabsInGroup(currentFolder.id) },
+                        onDeleteFolder = { groupToDelete = currentFolder }
+                    )
+                }
+            } else {
+                // ROOT "ALL TABS" HEADER
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pointerInput(isShortcutsExpanded) {
+                            detectVerticalDragGestures(
+                                onVerticalDrag = { change, dragAmount ->
+                                    if (dragAmount > 12f && !isShortcutsExpanded) {
+                                        isShortcutsExpanded = true
+                                        change.consume()
+                                    } else if (dragAmount < -12f && isShortcutsExpanded) {
+                                        isShortcutsExpanded = false
+                                        change.consume()
+                                    }
+                                }
+                            )
+                        }
+                ) {
+                    RootAllTabsHeader(
+                        isSearchActive = isSearchActive,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { searchQuery = it },
+                        onToggleSearch = {
+                            isSearchActive = !isSearchActive
+                            if (!isSearchActive) searchQuery = ""
+                        },
+                        isSelectionMode = isSelectionMode,
+                        selectedCount = totalSelectedCount,
+                        onToggleSelectionMode = {
+                            isSelectionMode = !isSelectionMode
+                            if (!isSelectionMode) {
+                                selectedTabIds = emptySet()
+                                selectedChatIds = emptySet()
+                                selectedFileIds = emptySet()
                             }
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(6.dp)
-                                    .background(Brush.verticalGradient(listOf(Color(0xFF0B0E14), Color.Transparent)))
+                        },
+                        showSortMenu = showSortMenu,
+                        onToggleSortMenu = { showSortMenu = !showSortMenu },
+                        onSortTabs = onSortTabs,
+                        currentEnvironment = currentEnvironment,
+                        onManageEnvironmentClick = { showEnvironmentSheet = true },
+                        onCreateEnvironmentClick = { showCreateEnvironmentDialog = true },
+                        onCreateFolderClick = {
+                            initialTabsForNewGroup = emptyList()
+                            showCreateGroupDialog = true
+                        },
+                        onCloseOverview = onCloseOverview
+                    )
+                }
+
+                // Shortcuts UI: positioned below header
+                if (!isSearching) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    SafariShortcutsCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("overview_shortcuts_card"),
+                        customShortcuts = customShortcuts,
+                        onShortcutClick = { shortcut ->
+                            onNavigateToUrl?.invoke(shortcut.url) ?: run {
+                                onNewTab(null)
+                            }
+                            onCloseOverview()
+                        },
+                        onAddCustomShortcut = { newShortcut ->
+                            customShortcuts = customShortcuts + newShortcut
+                        },
+                        onRemoveShortcut = { target ->
+                            customShortcuts = customShortcuts.filter { it.title != target.title || it.url != target.url }
+                        },
+                        testTagPrefix = "overview_shortcut",
+                        expanded = isShortcutsExpanded,
+                        onExpandedChange = { isShortcutsExpanded = it }
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Quick Menu vertical list card (Projects & Schedule)
+                    QuickMenuCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("overview_quick_menu_card"),
+                        onOpenProject = { project ->
+                            activeProject = project
+                            onSelectProjectTarget?.invoke(project)
+                            val existingGroup = tabGroups.find { it.id == project.id || it.name.equals(project.name, ignoreCase = true) }
+                            if (existingGroup != null) {
+                                currentFolderId = existingGroup.id
+                            } else {
+                                onCreateGroup(project.name, "#38BDF8", emptyList())
+                                currentFolderId = project.id
+                            }
+                            selectedCategory = 0 // Open in Tabs category
+                        },
+                        onRunProject = { project ->
+                            runProjectHtml(project, null)
+                        },
+                        onSendToDrive = { project ->
+                            val projectTabs = tabs.filter { it.tabGroupId == project.id || project.tabs.contains(it.title) }
+                            val projectFiles = allFiles.filter { it.parentPath == project.name || project.files.contains(it.name) }
+                            val res = driveManager.sendProjectToDrive(
+                                projectName = project.name,
+                                project = project,
+                                tabs = projectTabs,
+                                files = projectFiles,
+                                extensions = extensions
+                            )
+                            Toast.makeText(context, "☁️ ${res.message}", Toast.LENGTH_LONG).show()
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // --- CATEGORY PILL BAR: Tabs | Chats | Files | Bots | Extensions ---
+            if (!isSearching) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color(0xFF141923))
+                        .border(1.dp, Color(0xFF2C384D), RoundedCornerShape(24.dp))
+                        .horizontalScroll(rememberScrollState())
+                        .padding(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    val activeTabCount = if (currentFolderId != null) folderTabs.size else modeTabs.size
+                    val activeChatCount = if (currentFolderId != null) folderChats.size else terminalSessions.size
+                    val activeFileCount = if (currentFolderId != null) folderFiles.size else allFiles.size
+
+                    val navCategories = listOf(
+                        Triple(0, "Tabs ($activeTabCount)", Icons.Rounded.Public),
+                        Triple(1, "Chats ($activeChatCount)", Icons.Rounded.Terminal),
+                        Triple(2, if (currentFolderId != null) "Files ($activeFileCount)" else "All Files ($activeFileCount)", Icons.Rounded.FolderCopy),
+                        Triple(3, "Bots (5)", Icons.Rounded.AutoAwesome),
+                        Triple(4, "Extensions (${extensions.size})", Icons.Rounded.Extension)
+                    )
+
+                    navCategories.forEach { (catId, title, icon) ->
+                        val isSelected = selectedCategory == catId
+                        val bgGradient = when (catId) {
+                            0 -> Brush.horizontalGradient(listOf(Color(0xFF00E5FF), Color(0xFF0083B0)))
+                            1 -> Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Color(0xFF0284C7)))
+                            2 -> Brush.horizontalGradient(listOf(Color(0xFF10B981), Color(0xFF059669)))
+                            3 -> Brush.horizontalGradient(listOf(Color(0xFFA855F7), Color(0xFF7C3AED)))
+                            else -> Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .height(36.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(
+                                    if (isSelected) bgGradient
+                                    else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                                )
+                                .clickable { selectedCategory = catId }
+                                .padding(horizontal = 12.dp)
+                                .testTag("category_pill_${title.substringBefore(" ").lowercase()}"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) Color.White else GVONETextSecondary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = title,
+                                    color = if (isSelected) Color.White else GVONETextSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- CONTENT AREA ---
+            if (isSearching) {
+                // SEARCH RESULTS VIEW: Tabs, Chats & Files
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    val totalMatches = searchResultsTabs.size + searchResultsChats.size + searchResultsFiles.size
+                    item(span = { GridItemSpan(2) }) {
+                        Text(
+                            text = "Search Results ($totalMatches)",
+                            color = GVONETextSecondary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
+
+                    // Tabs in search results
+                    if (searchResultsTabs.isNotEmpty()) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                            ) {
+                                Icon(Icons.Rounded.Public, contentDescription = null, tint = GVONESecondary, modifier = Modifier.size(16.dp))
+                                Text("Tabs (${searchResultsTabs.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        items(searchResultsTabs, key = { "tab_${it.id}" }) { tab ->
+                            val folder = tabGroups.find { it.id == tab.tabGroupId }
+                            TabCard(
+                                tab = tab,
+                                folderName = folder?.name,
+                                folderColorHex = folder?.colorHex,
+                                isSelected = tab.id == currentTabId,
+                                isSelectionMode = isSelectionMode,
+                                isChecked = selectedTabIds.contains(tab.id),
+                                onToggleCheck = {
+                                    selectedTabIds = if (selectedTabIds.contains(tab.id)) {
+                                        selectedTabIds - tab.id
+                                    } else {
+                                        selectedTabIds + tab.id
+                                    }
+                                },
+                                onSelect = {
+                                    if (isSelectionMode) {
+                                        selectedTabIds = if (selectedTabIds.contains(tab.id)) {
+                                            selectedTabIds - tab.id
+                                        } else {
+                                            selectedTabIds + tab.id
+                                        }
+                                    } else {
+                                        onTabSelected(tab.id)
+                                    }
+                                },
+                                onClose = { onTabClose(tab.id) },
+                                onMoveToGroup = { tabToMove = tab },
+                                onDuplicate = { onDuplicateTab(tab.id) },
+                                onCloseOthers = { onCloseOtherTabs(tab.id) },
+                                onCloseToRight = { onCloseTabsToRight(tab.id) },
+                                onRemoveFromGroup = if (tab.tabGroupId != null) { { onMoveTabToGroup(tab.id, null) } } else null
                             )
                         }
                     }
-                }
-            }
 
-            // (4) CONTENT ITEMS (Search Results, Folder View, or Category View)
-            if (isSearching) {
-                // SEARCH RESULTS VIEW
-                val totalMatches = searchResultsTabs.size + searchResultsChats.size + searchResultsFiles.size
-                item(key = "search_header") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Rounded.Search, contentDescription = null, tint = GVONEPrimary, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Search Results ($totalMatches)",
-                            color = GVONETextPrimary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                if (searchResultsTabs.isNotEmpty()) {
-                    item(key = "search_tabs_label") {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
-                        ) {
-                            Icon(Icons.Rounded.Public, contentDescription = null, tint = GVONESecondary, modifier = Modifier.size(16.dp))
-                            Text("Tabs (${searchResultsTabs.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    items(searchResultsTabs.chunked(2), key = { pair -> "search_tab_" + pair.map { it.id }.joinToString("_") }) { pair ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            val first = pair[0]
-                            val folder1 = tabGroups.find { it.id == first.tabGroupId }
-                            Box(modifier = Modifier.weight(1f)) {
-                                TabCard(
-                                    tab = first,
-                                    folderName = folder1?.name,
-                                    folderColorHex = folder1?.colorHex,
-                                    isSelected = first.id == currentTabId,
-                                    isSelectionMode = isSelectionMode,
-                                    isChecked = selectedTabIds.contains(first.id),
-                                    onToggleCheck = {
-                                        selectedTabIds = if (selectedTabIds.contains(first.id)) selectedTabIds - first.id else selectedTabIds + first.id
-                                    },
-                                    onSelect = {
-                                        if (isSelectionMode) {
-                                            selectedTabIds = if (selectedTabIds.contains(first.id)) selectedTabIds - first.id else selectedTabIds + first.id
-                                        } else {
-                                            onTabSelected(first.id)
-                                        }
-                                    },
-                                    onClose = { onTabClose(first.id) },
-                                    onMoveToGroup = { tabToMove = first },
-                                    onDuplicate = { onDuplicateTab(first.id) },
-                                    onCloseOthers = { onCloseOtherTabs(first.id) },
-                                    onCloseToRight = { onCloseTabsToRight(first.id) }
-                                )
-                            }
-                            if (pair.size > 1) {
-                                val second = pair[1]
-                                val folder2 = tabGroups.find { it.id == second.tabGroupId }
-                                Box(modifier = Modifier.weight(1f)) {
-                                    TabCard(
-                                        tab = second,
-                                        folderName = folder2?.name,
-                                        folderColorHex = folder2?.colorHex,
-                                        isSelected = second.id == currentTabId,
-                                        isSelectionMode = isSelectionMode,
-                                        isChecked = selectedTabIds.contains(second.id),
-                                        onToggleCheck = {
-                                            selectedTabIds = if (selectedTabIds.contains(second.id)) selectedTabIds - second.id else selectedTabIds + second.id
-                                        },
-                                        onSelect = {
-                                            if (isSelectionMode) {
-                                                selectedTabIds = if (selectedTabIds.contains(second.id)) selectedTabIds - second.id else selectedTabIds + second.id
-                                            } else {
-                                                onTabSelected(second.id)
-                                            }
-                                        },
-                                        onClose = { onTabClose(second.id) },
-                                        onMoveToGroup = { tabToMove = second },
-                                        onDuplicate = { onDuplicateTab(second.id) },
-                                        onCloseOthers = { onCloseOtherTabs(second.id) },
-                                        onCloseToRight = { onCloseTabsToRight(second.id) }
-                                    )
-                                }
-                            } else {
-                                Spacer(modifier = Modifier.weight(1f))
+                    // Files in search results
+                    if (searchResultsFiles.isNotEmpty()) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
+                            ) {
+                                Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                                Text("Files (${searchResultsFiles.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
                         }
-                    }
-                }
 
-                if (searchResultsFiles.isNotEmpty()) {
-                    item(key = "search_files_label") {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
-                        ) {
-                            Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
-                            Text("Files (${searchResultsFiles.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    items(searchResultsFiles.chunked(2), key = { pair -> "search_file_" + pair.map { it.id }.joinToString("_") }) { pair ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            val f1 = pair[0]
-                            Box(modifier = Modifier.weight(1f)) {
-                                TabFileCard(
-                                    file = f1,
-                                    isSelectionMode = isSelectionMode,
-                                    isChecked = selectedFileIds.contains(f1.id),
-                                    onToggleCheck = {
-                                        selectedFileIds = if (selectedFileIds.contains(f1.id)) selectedFileIds - f1.id else selectedFileIds + f1.id
-                                    },
-                                    onClick = {
-                                        if (f1.isDirectory) {
-                                            currentFileSubfolder = f1.path
-                                            selectedCategory = 2
-                                        } else {
-                                            if (onOpenFileInTab != null) onOpenFileInTab(f1, false)
-                                            else if (onOpenFileInIde != null) onOpenFileInIde(f1)
-                                            else fileToPreview = f1
-                                        }
-                                    },
-                                    onOpenInNewTab = {
-                                        if (f1.isDirectory) {
-                                            currentFileSubfolder = f1.path
-                                            selectedCategory = 2
-                                        } else {
-                                            onOpenFileInTab?.invoke(f1, true) ?: run { fileToPreview = f1 }
-                                        }
-                                    },
-                                    onPreview = { fileToPreview = f1 },
-                                    onRename = { fileToRename = f1 },
-                                    onDelete = { fileToDelete = f1 },
-                                    onShare = {
-                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_SUBJECT, f1.name)
-                                            putExtra(Intent.EXTRA_TEXT, "GVONE File: ${f1.name}\nPath: ${f1.path}")
-                                        }
-                                        context.startActivity(Intent.createChooser(shareIntent, "Share ${f1.name}"))
+                        items(searchResultsFiles, key = { "search_file_${it.id}" }) { file ->
+                            TabFileCard(
+                                file = file,
+                                isSelectionMode = isSelectionMode,
+                                isChecked = selectedFileIds.contains(file.id),
+                                onToggleCheck = {
+                                    selectedFileIds = if (selectedFileIds.contains(file.id)) {
+                                        selectedFileIds - file.id
+                                    } else {
+                                        selectedFileIds + file.id
                                     }
-                                )
-                            }
-                            if (pair.size > 1) {
-                                val f2 = pair[1]
-                                Box(modifier = Modifier.weight(1f)) {
-                                    TabFileCard(
-                                        file = f2,
-                                        isSelectionMode = isSelectionMode,
-                                        isChecked = selectedFileIds.contains(f2.id),
-                                        onToggleCheck = {
-                                            selectedFileIds = if (selectedFileIds.contains(f2.id)) selectedFileIds - f2.id else selectedFileIds + f2.id
-                                        },
-                                        onClick = {
-                                            if (f2.isDirectory) {
-                                                currentFileSubfolder = f2.path
-                                                selectedCategory = 2
-                                            } else {
-                                                if (onOpenFileInTab != null) onOpenFileInTab(f2, false)
-                                                else if (onOpenFileInIde != null) onOpenFileInIde(f2)
-                                                else fileToPreview = f2
-                                            }
-                                        },
-                                        onOpenInNewTab = {
-                                            if (f2.isDirectory) {
-                                                currentFileSubfolder = f2.path
-                                                selectedCategory = 2
-                                            } else {
-                                                onOpenFileInTab?.invoke(f2, true) ?: run { fileToPreview = f2 }
-                                            }
-                                        },
-                                        onPreview = { fileToPreview = f2 },
-                                        onRename = { fileToRename = f2 },
-                                        onDelete = { fileToDelete = f2 },
-                                        onShare = {
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "text/plain"
-                                                putExtra(Intent.EXTRA_SUBJECT, f2.name)
-                                                putExtra(Intent.EXTRA_TEXT, "GVONE File: ${f2.name}\nPath: ${f2.path}")
-                                            }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Share ${f2.name}"))
+                                },
+                                onClick = {
+                                    if (file.isDirectory) {
+                                        currentFileSubfolder = file.path
+                                        selectedCategory = 2
+                                    } else {
+                                        if (onOpenFileInTab != null) {
+                                            onOpenFileInTab(file, false)
+                                        } else if (onOpenFileInIde != null) {
+                                            onOpenFileInIde(file)
+                                        } else {
+                                            fileToPreview = file
                                         }
-                                    )
+                                    }
+                                },
+                                onOpenInNewTab = {
+                                    if (file.isDirectory) {
+                                        currentFileSubfolder = file.path
+                                        selectedCategory = 2
+                                    } else {
+                                        onOpenFileInTab?.invoke(file, true) ?: run {
+                                            fileToPreview = file
+                                        }
+                                    }
+                                },
+                                onPreview = { fileToPreview = file },
+                                onRename = { fileToRename = file },
+                                onDelete = { fileToDelete = file },
+                                onShare = {
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, file.name)
+                                        putExtra(Intent.EXTRA_TEXT, "GVONE File: ${file.name}\nPath: ${file.path}")
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Share ${file.name}"))
                                 }
-                            } else {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
+                            )
                         }
                     }
-                }
 
-                if (totalMatches == 0) {
-                    item(key = "search_empty") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("No matching tabs or files found.", color = GVONETextSecondary, fontSize = 13.sp)
+                    if (totalMatches == 0) {
+                        item(span = { GridItemSpan(2) }) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("No matching tabs or files found.", color = GVONETextSecondary, fontSize = 13.sp)
+                            }
                         }
                     }
                 }
             } else if (currentFolderId != null && currentFolder != null) {
-                // INSIDE DEDICATED FOLDER VIEW
+                // INSIDE DEDICATED FOLDER VIEW: Tabs, Chats, or Files in this folder
                 val hasItems = folderTabs.isNotEmpty() || folderChats.isNotEmpty() || folderFiles.isNotEmpty()
                 if (!hasItems && selectedCategory != 2) {
-                    item(key = "folder_empty") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 48.dp),
-                            contentAlignment = Alignment.Center
+                    // Empty folder state
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.padding(24.dp)
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.padding(24.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF161F2E)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(64.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF161F2E)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.FolderOpen,
-                                        contentDescription = null,
-                                        tint = parseHexColor(currentFolder.colorHex),
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                }
-                                Text(
-                                    text = "This group is empty",
-                                    color = GVONETextPrimary,
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold
+                                Icon(
+                                    imageVector = Icons.Rounded.FolderOpen,
+                                    contentDescription = null,
+                                    tint = parseHexColor(currentFolder.colorHex),
+                                    modifier = Modifier.size(36.dp)
                                 )
-                                Text(
-                                    text = "Tap '＋' below or 'New Tab' above to add tabs to this group.",
-                                    color = GVONETextSecondary,
-                                    fontSize = 13.sp,
-                                    textAlign = TextAlign.Center
-                                )
+                            }
+                            Text(
+                                text = "No tabs or files in this group",
+                                color = GVONETextPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Add tabs or files to \"${currentFolder.name}\" to keep your work organized.",
+                                color = GVONETextSecondary,
+                                fontSize = 13.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Button(
                                     onClick = { onNewTab(currentFolder.id) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = parseHexColor(currentFolder.colorHex)),
+                                    colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Open Tab in Group")
+                                    Text("Add Tab")
+                                }
+                                Button(
+                                    onClick = { showCreateFileDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Rounded.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Add File")
                                 }
                             }
                         }
                     }
                 } else {
-                    when (selectedCategory) {
-                        0 -> {
-                            // Folder Tabs
-                            item(key = "folder_tabs_header") {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(bottom = 80.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // SECTION 0: Tabs in this group
+                        if (selectedCategory == 0) {
+                            if (folderTabs.isNotEmpty()) {
+                                item(span = { GridItemSpan(2) }) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp, bottom = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Public, contentDescription = null, tint = GVONESecondary, modifier = Modifier.size(16.dp))
+                                            Text("Tabs (${folderTabs.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        TextButton(
+                                            onClick = { onNewTab(currentFolder.id) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = GVONESecondary)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("New Tab", color = GVONESecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+
+                                items(folderTabs, key = { "tab_${it.id}" }) { tab ->
+                                    TabCard(
+                                        tab = tab,
+                                        isSelected = tab.id == currentTabId,
+                                        isSelectionMode = isSelectionMode,
+                                        isChecked = selectedTabIds.contains(tab.id),
+                                        onToggleCheck = {
+                                            selectedTabIds = if (selectedTabIds.contains(tab.id)) {
+                                                selectedTabIds - tab.id
+                                            } else {
+                                                selectedTabIds + tab.id
+                                            }
+                                        },
+                                        onSelect = {
+                                            if (isSelectionMode) {
+                                                selectedTabIds = if (selectedTabIds.contains(tab.id)) {
+                                                    selectedTabIds - tab.id
+                                                } else {
+                                                    selectedTabIds + tab.id
+                                                }
+                                            } else {
+                                                if (tabs.any { it.id == tab.id }) {
+                                                    onTabSelected(tab.id)
+                                                } else {
+                                                    onNavigateToUrl?.invoke(tab.url) ?: onTabSelected(tab.id)
+                                                }
+                                            }
+                                        },
+                                        onClose = { onTabClose(tab.id) },
+                                        onMoveToGroup = { tabToMove = tab },
+                                        onDuplicate = { onDuplicateTab(tab.id) },
+                                        onCloseOthers = { onCloseOtherTabs(tab.id) },
+                                        onCloseToRight = { onCloseTabsToRight(tab.id) },
+                                        onRemoveFromGroup = { onMoveTabToGroup(tab.id, null) }
+                                    )
+                                }
+                            } else {
+                                item(span = { GridItemSpan(2) }) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 32.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text("No tabs in this group.", color = GVONETextSecondary, fontSize = 13.sp)
+                                            Button(
+                                                onClick = { onNewTab(currentFolder.id) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = GVONEPrimary),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ) {
+                                                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Add Tab", fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // SECTION 1: Chats in this group (Interactive Bot & Terminal Sessions)
+                        if (selectedCategory == 1) {
+                            item(span = { GridItemSpan(2) }) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                                        .padding(top = 4.dp, bottom = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
@@ -993,176 +1064,264 @@ fun TabOverviewScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.FolderOpen,
-                                            contentDescription = null,
-                                            tint = parseHexColor(currentFolder.colorHex),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Text(
-                                            text = "${currentFolder.name} (${folderTabs.size})",
-                                            color = GVONETextPrimary,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        Icon(Icons.Rounded.Chat, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(16.dp))
+                                        Text("Chats in ${currentFolder.name} (${folderChats.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     }
                                     TextButton(
-                                        onClick = { onNewTab(currentFolder.id) },
+                                        onClick = { onNewChat(currentFolder.id) },
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                     ) {
-                                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = parseHexColor(currentFolder.colorHex))
+                                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFA78BFA))
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("New Tab", color = parseHexColor(currentFolder.colorHex), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("New Chat", color = Color(0xFFA78BFA), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
 
-                            items(folderTabs.chunked(2), key = { pair -> "folder_tab_" + pair.map { it.id }.joinToString("_") }) { pair ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    val t1 = pair[0]
-                                    Box(modifier = Modifier.weight(1f)) {
-                                        TabCard(
-                                            tab = t1,
-                                            folderName = currentFolder.name,
-                                            folderColorHex = currentFolder.colorHex,
-                                            isSelected = t1.id == currentTabId,
-                                            isSelectionMode = isSelectionMode,
-                                            isChecked = selectedTabIds.contains(t1.id),
-                                            onToggleCheck = {
-                                                selectedTabIds = if (selectedTabIds.contains(t1.id)) selectedTabIds - t1.id else selectedTabIds + t1.id
-                                            },
-                                            onSelect = {
-                                                if (isSelectionMode) {
-                                                    selectedTabIds = if (selectedTabIds.contains(t1.id)) selectedTabIds - t1.id else selectedTabIds + t1.id
-                                                } else {
-                                                    onTabSelected(t1.id)
-                                                }
-                                            },
-                                            onClose = { onTabClose(t1.id) },
-                                            onMoveToGroup = { tabToMove = t1 },
-                                            onDuplicate = { onDuplicateTab(t1.id) },
-                                            onCloseOthers = { onCloseOtherTabs(t1.id) },
-                                            onCloseToRight = { onCloseTabsToRight(t1.id) }
-                                        )
-                                    }
-                                    if (pair.size > 1) {
-                                        val t2 = pair[1]
-                                        Box(modifier = Modifier.weight(1f)) {
-                                            TabCard(
-                                                tab = t2,
-                                                folderName = currentFolder.name,
-                                                folderColorHex = currentFolder.colorHex,
-                                                isSelected = t2.id == currentTabId,
-                                                isSelectionMode = isSelectionMode,
-                                                isChecked = selectedTabIds.contains(t2.id),
-                                                onToggleCheck = {
-                                                    selectedTabIds = if (selectedTabIds.contains(t2.id)) selectedTabIds - t2.id else selectedTabIds + t2.id
-                                                },
-                                                onSelect = {
-                                                    if (isSelectionMode) {
-                                                        selectedTabIds = if (selectedTabIds.contains(t2.id)) selectedTabIds - t2.id else selectedTabIds + t2.id
-                                                    } else {
-                                                        onTabSelected(t2.id)
-                                                    }
-                                                },
-                                                onClose = { onTabClose(t2.id) },
-                                                onMoveToGroup = { tabToMove = t2 },
-                                                onDuplicate = { onDuplicateTab(t2.id) },
-                                                onCloseOthers = { onCloseOtherTabs(t2.id) },
-                                                onCloseToRight = { onCloseTabsToRight(t2.id) }
-                                            )
-                                        }
-                                    } else {
-                                        Spacer(modifier = Modifier.weight(1f))
-                                    }
-                                }
-                            }
-                        }
-                        1 -> {
-                            // Folder Chats
-                            item(key = "folder_chats_header") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Folder Chats (${folderChats.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
                             if (folderChats.isEmpty()) {
-                                item(key = "folder_chats_empty") {
+                                item(span = { GridItemSpan(2) }) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 32.dp),
+                                            .padding(vertical = 48.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text("No chats associated with this folder.", color = GVONETextSecondary, fontSize = 13.sp)
-                                    }
-                                }
-                            } else {
-                                items(folderChats, key = { it.id }) { chat ->
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = Color(0xFF141926),
-                                        border = BorderStroke(1.dp, if (chat.id == activeTerminalSessionId) Color(0xFF38BDF8) else Color(0xFF222B3D)),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                                            .clickable { onSelectChat(chat.id) }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier.padding(24.dp)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Rounded.Terminal,
                                                 contentDescription = null,
                                                 tint = Color(0xFF38BDF8),
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(48.dp)
                                             )
+                                            Text(
+                                                text = "No chats in ${currentFolder.name}",
+                                                color = GVONETextPrimary,
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = "Start AI bot and terminal chats for this project to write scripts and automate workflows.",
+                                                color = GVONETextSecondary,
+                                                fontSize = 13.sp,
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                            )
+                                            Button(
+                                                onClick = { onNewChat(currentFolder.id) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA78BFA)),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ) {
+                                                Icon(Icons.Rounded.AddComment, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Start Chat", fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                items(folderChats, key = { "folder_chat_${it.id}" }, span = { GridItemSpan(2) }) { chatSession ->
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .border(1.dp, Color(0xFF2A203F), RoundedCornerShape(12.dp))
+                                            .clickable { onSelectChat(chatSession.id) }
+                                            .testTag("folder_chat_item_${chatSession.id}"),
+                                        color = Color(0xFF191428)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0x33A78BFA)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.SmartToy,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFFA78BFA),
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = chat.title,
-                                                    color = Color.White,
+                                                    text = chatSession.title,
+                                                    color = GVONETextPrimary,
                                                     fontSize = 13.sp,
-                                                    fontWeight = FontWeight.SemiBold
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                                 Text(
-                                                    text = "Session ID: ${chat.id.takeLast(6)}",
+                                                    text = "AI Grok Bot & Terminal Session",
                                                     color = GVONETextSecondary,
                                                     fontSize = 11.sp
                                                 )
                                             }
-                                            IconButton(
-                                                onClick = { onDeleteChat(chat.id) },
-                                                modifier = Modifier.size(28.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Close,
-                                                    contentDescription = "Close chat",
-                                                    tint = GVONETextSecondary,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
+                                            Icon(
+                                                imageVector = Icons.Rounded.ChevronRight,
+                                                contentDescription = "Open Chat",
+                                                tint = Color(0xFF94A3B8),
+                                                modifier = Modifier.size(16.dp)
+                                            )
                                         }
                                     }
                                 }
                             }
                         }
-                        2 -> {
-                            // Folder Files
+
+                        // SECTION 2: Files in this group
+                        if (selectedCategory == 2) {
+                            item(span = { GridItemSpan(2) }) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val projName = activeProject?.name ?: currentFolder.name
+                                    val isProject = activeProject != null || fs.isProjectFolder(projName)
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isProject) Icons.Rounded.FolderSpecial else Icons.Rounded.InsertDriveFile,
+                                            contentDescription = null,
+                                            tint = Color(0xFF10B981),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "${if (isProject) "Project: " else "Files in "}${currentFolder.name} (${folderFiles.size})",
+                                            color = GVONETextPrimary,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Button(
+                                            onClick = { runProjectHtml(activeProject, currentFolder) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF065F46)),
+                                            border = BorderStroke(1.dp, Color(0xFF059669)),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                            modifier = Modifier
+                                                .height(30.dp)
+                                                .testTag("folder_files_run_html_btn")
+                                        ) {
+                                            Icon(Icons.Rounded.PlayArrow, contentDescription = "Run .html", modifier = Modifier.size(14.dp), tint = Color(0xFF6EE7B7))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("Run", color = Color(0xFFECFDF5), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+
+                                        TextButton(
+                                            onClick = { fileImportLauncher.launch("*/*") },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                            modifier = Modifier.testTag("folder_files_import_btn")
+                                        ) {
+                                            Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF38BDF8))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("Import", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+
+                                        TextButton(
+                                            onClick = { showCreateFileDialog = true },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                            modifier = Modifier.testTag("folder_files_new_file_btn")
+                                        ) {
+                                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF10B981))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("New File", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            }
+
+                            val projName = activeProject?.name ?: currentFolder.name
+                            val isProject = activeProject != null || fs.isProjectFolder(projName)
+                            val breadcrumbText = if (isProject) {
+                                if (currentFileSubfolder.isEmpty()) "Projects / $projName" else "Projects / $projName / $currentFileSubfolder"
+                            } else {
+                                if (currentFileSubfolder.isEmpty()) currentFolder.name else currentFileSubfolder
+                            }
+
+                            item(span = { GridItemSpan(2) }) {
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFF1E293B),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                if (currentFileSubfolder.contains("/")) {
+                                                    currentFileSubfolder = currentFileSubfolder.substringBeforeLast("/")
+                                                } else if (currentFileSubfolder.isNotEmpty()) {
+                                                    currentFileSubfolder = ""
+                                                } else {
+                                                    // Back from project root to projects list
+                                                    currentFolderId = null
+                                                    activeProject = null
+                                                }
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                                contentDescription = "Up to parent",
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            imageVector = Icons.Rounded.FolderOpen,
+                                            contentDescription = null,
+                                            tint = Color(0xFFF59E0B),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = breadcrumbText,
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(
+                                            onClick = { currentFileSubfolder = "" },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(if (isProject) "Project Root" else "Root", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
+
                             if (folderFiles.isEmpty()) {
-                                item(key = "folder_files_empty") {
+                                item(span = { GridItemSpan(2) }) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -1177,360 +1336,294 @@ fun TabOverviewScreen(
                                                 modifier = Modifier
                                                     .size(48.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFF1E293B)),
+                                                    .background(Color(0xFF10B981).copy(alpha = 0.15f)),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(24.dp))
+                                                Icon(
+                                                    imageVector = Icons.Rounded.FolderOpen,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFF10B981),
+                                                    modifier = Modifier.size(28.dp)
+                                                )
                                             }
-                                            Text("No Files in this Folder", color = GVONETextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                            TextButton(onClick = { showCreateFileDialog = true }) {
-                                                Text("Add File to Folder", color = Color(0xFF10B981))
+                                            Text("No files in this project directory yet", color = GVONETextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("Create new files or import related files into ${currentFolder.name}.", color = GVONETextSecondary, fontSize = 12.sp)
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Button(
+                                                    onClick = { fileImportLauncher.launch("*/*") },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ) {
+                                                    Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("Import File", fontSize = 12.sp)
+                                                }
+                                                Button(
+                                                    onClick = { showCreateFileDialog = true },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ) {
+                                                    Icon(Icons.Rounded.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("New File", fontSize = 12.sp)
+                                                }
                                             }
                                         }
                                     }
                                 }
                             } else {
-                                items(folderFiles.chunked(2), key = { pair -> "folder_file_" + pair.map { it.id }.joinToString("_") }) { pair ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        val f1 = pair[0]
-                                        Box(modifier = Modifier.weight(1f)) {
-                                            TabFileCard(
-                                                file = f1,
-                                                isSelectionMode = isSelectionMode,
-                                                isChecked = selectedFileIds.contains(f1.id),
-                                                onToggleCheck = {
-                                                    selectedFileIds = if (selectedFileIds.contains(f1.id)) selectedFileIds - f1.id else selectedFileIds + f1.id
-                                                },
-                                                onClick = {
-                                                    if (f1.isDirectory) {
-                                                        currentFileSubfolder = f1.path
-                                                    } else {
-                                                        if (onOpenFileInTab != null) onOpenFileInTab(f1, false)
-                                                        else if (onOpenFileInIde != null) onOpenFileInIde(f1)
-                                                        else fileToPreview = f1
-                                                    }
-                                                },
-                                                onOpenInNewTab = {
-                                                    if (f1.isDirectory) {
-                                                        currentFileSubfolder = f1.path
-                                                    } else {
-                                                        onOpenFileInTab?.invoke(f1, true) ?: run { fileToPreview = f1 }
-                                                    }
-                                                },
-                                                onPreview = { fileToPreview = f1 },
-                                                onRename = { fileToRename = f1 },
-                                                onDelete = { fileToDelete = f1 },
-                                                onShare = {
-                                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                        type = "text/plain"
-                                                        putExtra(Intent.EXTRA_SUBJECT, f1.name)
-                                                        putExtra(Intent.EXTRA_TEXT, "GVONE File: ${f1.name}\nPath: ${f1.path}")
-                                                    }
-                                                    context.startActivity(Intent.createChooser(shareIntent, "Share ${f1.name}"))
-                                                }
-                                            )
-                                        }
-                                        if (pair.size > 1) {
-                                            val f2 = pair[1]
-                                            Box(modifier = Modifier.weight(1f)) {
-                                                TabFileCard(
-                                                    file = f2,
-                                                    isSelectionMode = isSelectionMode,
-                                                    isChecked = selectedFileIds.contains(f2.id),
-                                                    onToggleCheck = {
-                                                        selectedFileIds = if (selectedFileIds.contains(f2.id)) selectedFileIds - f2.id else selectedFileIds + f2.id
-                                                    },
-                                                    onClick = {
-                                                        if (f2.isDirectory) {
-                                                            currentFileSubfolder = f2.path
-                                                        } else {
-                                                            if (onOpenFileInTab != null) onOpenFileInTab(f2, false)
-                                                            else if (onOpenFileInIde != null) onOpenFileInIde(f2)
-                                                            else fileToPreview = f2
-                                                        }
-                                                    },
-                                                    onOpenInNewTab = {
-                                                        if (f2.isDirectory) {
-                                                            currentFileSubfolder = f2.path
-                                                        } else {
-                                                            onOpenFileInTab?.invoke(f2, true) ?: run { fileToPreview = f2 }
-                                                        }
-                                                    },
-                                                    onPreview = { fileToPreview = f2 },
-                                                    onRename = { fileToRename = f2 },
-                                                    onDelete = { fileToDelete = f2 },
-                                                    onShare = {
-                                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                            type = "text/plain"
-                                                            putExtra(Intent.EXTRA_SUBJECT, f2.name)
-                                                            putExtra(Intent.EXTRA_TEXT, "GVONE File: ${f2.name}\nPath: ${f2.path}")
-                                                        }
-                                                        context.startActivity(Intent.createChooser(shareIntent, "Share ${f2.name}"))
-                                                    }
-                                                )
+                                items(folderFiles, key = { "folder_file_${it.id}" }) { file ->
+                                    TabFileCard(
+                                        file = file,
+                                        isSelectionMode = isSelectionMode,
+                                        isChecked = selectedFileIds.contains(file.id),
+                                        onToggleCheck = {
+                                            selectedFileIds = if (selectedFileIds.contains(file.id)) {
+                                                selectedFileIds - file.id
+                                            } else {
+                                                selectedFileIds + file.id
                                             }
-                                        } else {
-                                            Spacer(modifier = Modifier.weight(1f))
+                                        },
+                                        onClick = {
+                                            if (file.isDirectory) {
+                                                val proj = activeProject?.name ?: currentFolder.name
+                                                val isProj = activeProject != null || fs.isProjectFolder(proj)
+                                                if (isProj) {
+                                                    val projectRel = fs.getProjectRelativePath(proj)
+                                                    val sub = file.path.removePrefix(projectRel).trim('/')
+                                                    currentFileSubfolder = sub
+                                                } else {
+                                                    currentFileSubfolder = file.path
+                                                }
+                                            } else {
+                                                if (onOpenFileInTab != null) {
+                                                    onOpenFileInTab(file, false)
+                                                } else if (onOpenFileInIde != null) {
+                                                    onOpenFileInIde(file)
+                                                } else {
+                                                    fileToPreview = file
+                                                }
+                                            }
+                                        },
+                                        onOpenInNewTab = {
+                                            if (file.isDirectory) {
+                                                val proj = activeProject?.name ?: currentFolder.name
+                                                val isProj = activeProject != null || fs.isProjectFolder(proj)
+                                                if (isProj) {
+                                                    val projectRel = fs.getProjectRelativePath(proj)
+                                                    val sub = file.path.removePrefix(projectRel).trim('/')
+                                                    currentFileSubfolder = sub
+                                                } else {
+                                                    currentFileSubfolder = file.path
+                                                }
+                                            } else {
+                                                onOpenFileInTab?.invoke(file, true) ?: run {
+                                                    fileToPreview = file
+                                                }
+                                            }
+                                        },
+                                        onPreview = { fileToPreview = file },
+                                        onRename = { fileToRename = file },
+                                        onDelete = { fileToDelete = file },
+                                        onShare = {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_SUBJECT, file.name)
+                                                putExtra(Intent.EXTRA_TEXT, "GVONE File: ${file.name}\nPath: ${file.path}")
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Share ${file.name}"))
                                         }
-                                    }
-                                }
-                            }
-                        }
-                        else -> {
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(24.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("No bots or extensions available inside folders.", color = GVONETextSecondary, fontSize = 13.sp)
+                                    )
                                 }
                             }
                         }
                     }
                 }
             } else {
-                // ROOT ALL TABS VIEW: Unified scrolling
-                when (selectedCategory) {
-                    0 -> {
-                        // TABS
-                        if (ungroupedTabs.isEmpty() && tabGroups.isEmpty()) {
-                            item(key = "tabs_all_empty") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 48.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(56.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(0xFF161F2E)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(Icons.Rounded.Public, contentDescription = null, tint = GVONESecondary, modifier = Modifier.size(28.dp))
-                                        }
-                                        Text("No open tabs", color = GVONETextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                        Text("Tap 'New Tab' above or '+' below to open a tab.", color = GVONETextSecondary, fontSize = 12.sp, textAlign = TextAlign.Center)
-                                    }
-                                }
-                            }
-                        } else {
-                            if (tabGroups.isNotEmpty()) {
-                                item(key = "tab_groups_header") {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Icon(Icons.Rounded.FolderCopy, contentDescription = null, tint = GVONEPrimary, modifier = Modifier.size(16.dp))
-                                            Text("Tab Groups (${tabGroups.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                        TextButton(
-                                            onClick = {
-                                                initialTabsForNewGroup = emptyList()
-                                                showCreateGroupDialog = true
-                                            },
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                        ) {
-                                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = GVONEPrimary)
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("New Folder", color = GVONEPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                        }
-                                    }
-                                }
-                                items(tabGroups, key = { "group_${it.id}" }) { group ->
-                                    val tabsInThisGroup = modeTabs.filter { it.tabGroupId == group.id }
-                                    val isDropTarget = hoveredFolderId == group.id
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                                            .onGloballyPositioned { coordinates ->
-                                                folderBounds[group.id] = coordinates.boundsInRoot()
-                                            }
-                                    ) {
-                                        TabFolderCard(
-                                            group = group,
-                                            tabsInGroup = tabsInThisGroup,
-                                            isActiveGroup = activeGroupId == group.id,
-                                            isDropTarget = isDropTarget,
-                                            onClick = { currentFolderId = group.id },
-                                            onRename = { groupToRename = group },
-                                            onAddTab = { onNewTab(group.id) },
-                                            onDelete = { groupToDelete = group }
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Ungrouped Tabs Header
-                            item(key = "ungrouped_tabs_header") {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Icon(Icons.Rounded.Public, contentDescription = null, tint = GVONESecondary, modifier = Modifier.size(16.dp))
-                                        Text("Ungrouped Tabs (${ungroupedTabs.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                    TextButton(
-                                        onClick = { onNewTab(null) },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                    ) {
-                                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = GVONESecondary)
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("New Tab", color = GVONESecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
-                            }
-
-                            if (ungroupedTabs.isEmpty()) {
-                                item(key = "ungrouped_empty") {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 16.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text("All tabs are neatly organized in groups.", color = GVONETextSecondary, fontSize = 12.sp)
-                                    }
-                                }
-                            } else {
-                                items(ungroupedTabs.chunked(2), key = { pair -> "ungrouped_pair_" + pair.map { it.id }.joinToString("_") }) { pair ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        val t1 = pair[0]
-                                        Box(modifier = Modifier.weight(1f)) {
-                                            TabCard(
-                                                tab = t1,
-                                                isSelected = t1.id == currentTabId,
-                                                isSelectionMode = isSelectionMode,
-                                                isChecked = selectedTabIds.contains(t1.id),
-                                                onToggleCheck = {
-                                                    selectedTabIds = if (selectedTabIds.contains(t1.id)) selectedTabIds - t1.id else selectedTabIds + t1.id
-                                                },
-                                                onSelect = {
-                                                    if (isSelectionMode) {
-                                                        selectedTabIds = if (selectedTabIds.contains(t1.id)) selectedTabIds - t1.id else selectedTabIds + t1.id
-                                                    } else {
-                                                        onTabSelected(t1.id)
-                                                    }
-                                                },
-                                                onClose = { onTabClose(t1.id) },
-                                                onMoveToGroup = { tabToMove = t1 },
-                                                onDuplicate = { onDuplicateTab(t1.id) },
-                                                onCloseOthers = { onCloseOtherTabs(t1.id) },
-                                                onCloseToRight = { onCloseTabsToRight(t1.id) },
-                                                onDragStart = { startPos ->
-                                                    draggingTabId = t1.id
-                                                    dragPosition = startPos
-                                                },
-                                                onDrag = { offsetDelta ->
-                                                    dragPosition += offsetDelta
-                                                    val matched = folderBounds.entries.find { it.value.contains(dragPosition) }
-                                                    hoveredFolderId = matched?.key
-                                                },
-                                                onDragEnd = {
-                                                    hoveredFolderId?.let { targetGId ->
-                                                        onMoveTabToGroup(t1.id, targetGId)
-                                                    }
-                                                    draggingTabId = null
-                                                    hoveredFolderId = null
-                                                }
-                                            )
-                                        }
-                                        if (pair.size > 1) {
-                                            val t2 = pair[1]
-                                            Box(modifier = Modifier.weight(1f)) {
-                                                TabCard(
-                                                    tab = t2,
-                                                    isSelected = t2.id == currentTabId,
-                                                    isSelectionMode = isSelectionMode,
-                                                    isChecked = selectedTabIds.contains(t2.id),
-                                                    onToggleCheck = {
-                                                        selectedTabIds = if (selectedTabIds.contains(t2.id)) selectedTabIds - t2.id else selectedTabIds + t2.id
-                                                    },
-                                                    onSelect = {
-                                                        if (isSelectionMode) {
-                                                            selectedTabIds = if (selectedTabIds.contains(t2.id)) selectedTabIds - t2.id else selectedTabIds + t2.id
-                                                        } else {
-                                                            onTabSelected(t2.id)
-                                                        }
-                                                    },
-                                                    onClose = { onTabClose(t2.id) },
-                                                    onMoveToGroup = { tabToMove = t2 },
-                                                    onDuplicate = { onDuplicateTab(t2.id) },
-                                                    onCloseOthers = { onCloseOtherTabs(t2.id) },
-                                                    onCloseToRight = { onCloseTabsToRight(t2.id) },
-                                                    onDragStart = { startPos ->
-                                                        draggingTabId = t2.id
-                                                        dragPosition = startPos
-                                                    },
-                                                    onDrag = { offsetDelta ->
-                                                        dragPosition += offsetDelta
-                                                        val matched = folderBounds.entries.find { it.value.contains(dragPosition) }
-                                                        hoveredFolderId = matched?.key
-                                                    },
-                                                    onDragEnd = {
-                                                        hoveredFolderId?.let { targetGId ->
-                                                            onMoveTabToGroup(t2.id, targetGId)
-                                                        }
-                                                        draggingTabId = null
-                                                        hoveredFolderId = null
-                                                    }
-                                                )
-                                            }
-                                        } else {
-                                            Spacer(modifier = Modifier.weight(1f))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    1 -> {
-                        // CHATS
-                        item(key = "chats_header") {
+                // ROOT "ALL TABS" VIEW: Tab Group Folders + Ungrouped Tabs + Files
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // SECTION 1: TAB GROUP FOLDERS
+                    if (tabGroups.isNotEmpty()) {
+                        item(span = { GridItemSpan(2) }) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(top = 4.dp, bottom = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Terminal Chats", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.FolderCopy,
+                                        contentDescription = null,
+                                        tint = GVONEPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Tab Groups (${tabGroups.size})",
+                                        color = GVONETextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                TextButton(
+                                    onClick = {
+                                        initialTabsForNewGroup = emptyList()
+                                        showCreateGroupDialog = true
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = GVONEPrimary)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("New Folder", color = GVONEPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
-                        item(key = "chats_content") {
+
+                        // Render each Tab Group folder card
+                        items(tabGroups, key = { "group_${it.id}" }, span = { GridItemSpan(2) }) { group ->
+                            val tabsInThisGroup = modeTabs.filter { it.tabGroupId == group.id }
+                            val isDropTarget = hoveredFolderId == group.id
+
+                            Box(
+                                modifier = Modifier.onGloballyPositioned { coordinates ->
+                                    folderBounds[group.id] = coordinates.boundsInRoot()
+                                }
+                            ) {
+                                TabFolderCard(
+                                    group = group,
+                                    tabsInGroup = tabsInThisGroup,
+                                    isActiveGroup = activeGroupId == group.id,
+                                    isDropTarget = isDropTarget,
+                                    onClick = { currentFolderId = group.id },
+                                    onRename = { groupToRename = group },
+                                    onAddTab = { onNewTab(group.id) },
+                                    onDelete = { groupToDelete = group }
+                                )
+                            }
+                        }
+                    }
+
+                    // SECTION 2: UNGROUPED TABS (when category == 0)
+                    if (selectedCategory == 0) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 12.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Public,
+                                        contentDescription = null,
+                                        tint = GVONESecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Ungrouped Tabs (${ungroupedTabs.size})",
+                                        color = GVONETextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                TextButton(
+                                    onClick = { onNewTab(null) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp), tint = GVONESecondary)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("New Tab", color = GVONESecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+
+                        if (ungroupedTabs.isEmpty()) {
+                            item(span = { GridItemSpan(2) }) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "All tabs are neatly organized in groups.",
+                                        color = GVONETextSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            items(ungroupedTabs, key = { "tab_${it.id}" }) { tab ->
+                                TabCard(
+                                    tab = tab,
+                                    isSelected = tab.id == currentTabId,
+                                    isSelectionMode = isSelectionMode,
+                                    isChecked = selectedTabIds.contains(tab.id),
+                                    onToggleCheck = {
+                                        selectedTabIds = if (selectedTabIds.contains(tab.id)) {
+                                            selectedTabIds - tab.id
+                                        } else {
+                                            selectedTabIds + tab.id
+                                        }
+                                    },
+                                    onSelect = {
+                                        if (isSelectionMode) {
+                                            selectedTabIds = if (selectedTabIds.contains(tab.id)) {
+                                                selectedTabIds - tab.id
+                                            } else {
+                                                selectedTabIds + tab.id
+                                            }
+                                        } else {
+                                            onTabSelected(tab.id)
+                                        }
+                                    },
+                                    onClose = { onTabClose(tab.id) },
+                                    onMoveToGroup = { tabToMove = tab },
+                                    onDuplicate = { onDuplicateTab(tab.id) },
+                                    onCloseOthers = { onCloseOtherTabs(tab.id) },
+                                    onCloseToRight = { onCloseTabsToRight(tab.id) },
+                                    onDragStart = { startPos ->
+                                        draggingTabId = tab.id
+                                        dragPosition = startPos
+                                    },
+                                    onDrag = { offsetDelta ->
+                                        dragPosition += offsetDelta
+                                        val matched = folderBounds.entries.find { it.value.contains(dragPosition) }
+                                        hoveredFolderId = matched?.key
+                                    },
+                                    onDragEnd = {
+                                        hoveredFolderId?.let { targetGId ->
+                                            onMoveTabToGroup(tab.id, targetGId)
+                                        }
+                                        draggingTabId = null
+                                        hoveredFolderId = null
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // SECTION 3: CHATS (when category == 1)
+                    if (selectedCategory == 1) {
+                        item(span = { GridItemSpan(2) }) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1542,65 +1635,232 @@ fun TabOverviewScreen(
                                     verticalArrangement = Arrangement.spacedBy(12.dp),
                                     modifier = Modifier.padding(24.dp)
                                 ) {
-                                    Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(48.dp))
-                                    Text("Terminal Chats", color = GVONETextPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                    Icon(
+                                        imageVector = Icons.Rounded.Terminal,
+                                        contentDescription = null,
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Text(
+                                        text = "Terminal Chats",
+                                        color = GVONETextPrimary,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                     Text(
                                         text = "Terminal sessions are now managed locally within the Terminal Screen.",
                                         color = GVONETextSecondary,
                                         fontSize = 13.sp,
-                                        textAlign = TextAlign.Center
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )
                                 }
                             }
                         }
                     }
-                    2 -> {
-                        // FILES & WORKSPACE
-                        if (currentFileSubfolder.isNotEmpty()) {
-                            item(key = "files_breadcrumb") {
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = Color(0xFF1E293B),
-                                    border = BorderStroke(1.dp, Color(0xFF334155)),
+
+                    // SECTION 4: ALL FILES & WORKSPACE (when category == 2)
+                    if (selectedCategory == 2) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 12.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.FolderCopy,
+                                        contentDescription = null,
+                                        tint = Color(0xFF10B981),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "All Files (${allFiles.size})",
+                                        color = GVONETextPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    TextButton(
+                                        onClick = { fileImportLauncher.launch("*/*") },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.testTag("root_import_file_btn")
+                                    ) {
+                                        Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF38BDF8))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Import", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    TextButton(
+                                        onClick = { showCreateFileDialog = true },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.testTag("root_new_file_btn")
+                                    ) {
+                                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF10B981))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("New File", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    if (onOpenIde != null) {
+                                        Surface(
+                                            onClick = onOpenIde,
+                                            color = Color(0xFFA855F7).copy(alpha = 0.2f),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA855F7)),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.testTag("overview_open_ide_btn")
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Rounded.Code, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFA855F7))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Xcode Editor", color = Color(0xFFA855F7), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                    if (onOpenFilesSheet != null) {
+                                        TextButton(
+                                            onClick = onOpenFilesSheet,
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.FolderSpecial, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFF38BDF8))
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text("Storage", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Storage Location Selector Pills (My Files, Projects, Downloads, Cloud, Favorites)
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val storageLocations = listOf(
+                                    Triple(StorageLocation.MY_FILES, "My Files", Icons.Rounded.FolderShared),
+                                    Triple(StorageLocation.PROJECTS, "Projects", Icons.Rounded.Source),
+                                    Triple(StorageLocation.DOWNLOADS, "Downloads", Icons.Rounded.Download),
+                                    Triple(StorageLocation.CLOUD, "Cloud", Icons.Rounded.Cloud),
+                                    Triple(StorageLocation.FAVORITES, "Favorites", Icons.Rounded.Star)
+                                )
+                                storageLocations.forEach { (loc, label, icon) ->
+                                    val isSelected = activeStorageLocation == loc
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isSelected) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFF161F2E),
+                                        border = BorderStroke(
+                                            1.dp,
+                                            if (isSelected) Color(0xFF10B981) else Color(0xFF263348)
+                                        ),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable {
+                                                activeStorageLocation = loc
+                                                currentFileSubfolder = ""
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                                            .testTag("storage_loc_${label.lowercase().replace(" ", "_")}")
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = icon,
+                                                contentDescription = label,
+                                                tint = if (isSelected) Color(0xFF10B981) else Color(0xFF94A3B8),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = label,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Breadcrumb Navigation Bar
+                        item(span = { GridItemSpan(2) }) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                    if (currentFileSubfolder.isNotEmpty()) {
                                         IconButton(
                                             onClick = {
                                                 currentFileSubfolder = if (currentFileSubfolder.contains("/")) currentFileSubfolder.substringBeforeLast("/") else ""
                                             },
                                             modifier = Modifier.size(28.dp)
                                         ) {
-                                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Up to parent", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                                contentDescription = "Up to parent",
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(16.dp)
+                                            )
                                         }
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = currentFileSubfolder,
-                                            color = Color.White,
-                                            fontSize = 12.sp,
-                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        TextButton(onClick = { currentFileSubfolder = "" }) {
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Rounded.FolderOpen,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    val currentPathLabel = if (currentFileSubfolder.isEmpty()) {
+                                        activeStorageLocation.displayName
+                                    } else {
+                                        "${activeStorageLocation.displayName} / $currentFileSubfolder"
+                                    }
+                                    Text(
+                                        text = currentPathLabel,
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (currentFileSubfolder.isNotEmpty()) {
+                                        TextButton(
+                                            onClick = { currentFileSubfolder = "" },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
                                             Text("Root", color = Color(0xFF94A3B8), fontSize = 11.sp)
                                         }
                                     }
                                 }
                             }
                         }
+
                         if (allFiles.isEmpty()) {
-                            item(key = "files_empty") {
+                            item(span = { GridItemSpan(2) }) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1615,197 +1875,191 @@ fun TabOverviewScreen(
                                             modifier = Modifier
                                                 .size(48.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFF1E293B)),
+                                                .background(Color(0xFF10B981).copy(alpha = 0.15f)),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(24.dp))
+                                            Icon(Icons.Rounded.InsertDriveFile, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(28.dp))
                                         }
-                                        Text("No Files in Workspace", color = GVONETextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                        TextButton(onClick = { showCreateFileDialog = true }) {
-                                            Text("Create First File", color = Color(0xFF10B981))
+                                        Text("No files in ${activeStorageLocation.displayName} yet", color = GVONETextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("Create starter files, notes, or import documents into GVONE.", color = GVONETextSecondary, fontSize = 12.sp)
+                                        Button(
+                                            onClick = { showCreateFileDialog = true },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Create File", fontSize = 12.sp)
                                         }
                                     }
                                 }
                             }
                         } else {
-                            val displayedFiles = if (currentFileSubfolder.isEmpty()) {
-                                allFiles.filter { it.parentPath.isEmpty() || it.parentPath == "/" }
-                            } else {
-                                allFiles.filter { it.parentPath == currentFileSubfolder }
+                            items(allFiles, key = { "root_file_${it.id}" }) { file ->
+                                TabFileCard(
+                                    file = file,
+                                    isSelectionMode = isSelectionMode,
+                                    isChecked = selectedFileIds.contains(file.id),
+                                    onToggleCheck = {
+                                        selectedFileIds = if (selectedFileIds.contains(file.id)) {
+                                            selectedFileIds - file.id
+                                        } else {
+                                            selectedFileIds + file.id
+                                        }
+                                    },
+                                    onClick = {
+                                        if (file.isDirectory) {
+                                            if (activeStorageLocation == StorageLocation.PROJECTS || fs.isProjectFolder(file.name)) {
+                                                val projName = file.name
+                                                activeProject = QuickMenuProject(id = projName, name = projName)
+                                                val existingGroup = tabGroups.find { it.id == projName || it.name.equals(projName, ignoreCase = true) }
+                                                currentFolderId = existingGroup?.id ?: projName
+                                                currentFileSubfolder = ""
+                                            } else {
+                                                currentFileSubfolder = if (currentFileSubfolder.isEmpty()) file.name else "$currentFileSubfolder/${file.name}"
+                                            }
+                                        } else {
+                                            if (onOpenFileInTab != null) {
+                                                onOpenFileInTab(file, false)
+                                            } else if (onOpenFileInIde != null) {
+                                                onOpenFileInIde(file)
+                                            } else {
+                                                fileToPreview = file
+                                            }
+                                        }
+                                    },
+                                    onOpenInNewTab = {
+                                        if (file.isDirectory) {
+                                            if (activeStorageLocation == StorageLocation.PROJECTS || fs.isProjectFolder(file.name)) {
+                                                val projName = file.name
+                                                activeProject = QuickMenuProject(id = projName, name = projName)
+                                                val existingGroup = tabGroups.find { it.id == projName || it.name.equals(projName, ignoreCase = true) }
+                                                currentFolderId = existingGroup?.id ?: projName
+                                                currentFileSubfolder = ""
+                                            } else {
+                                                currentFileSubfolder = if (currentFileSubfolder.isEmpty()) file.name else "$currentFileSubfolder/${file.name}"
+                                            }
+                                        } else {
+                                            onOpenFileInTab?.invoke(file, true) ?: run {
+                                                fileToPreview = file
+                                            }
+                                        }
+                                    },
+                                    onPreview = { fileToPreview = file },
+                                    onRename = { fileToRename = file },
+                                    onDelete = { fileToDelete = file },
+                                    onShare = {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_SUBJECT, file.name)
+                                            putExtra(Intent.EXTRA_TEXT, "File: ${file.name}\nPath: ${file.path}")
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Share ${file.name}"))
+                                    }
+                                )
                             }
-                            items(displayedFiles.chunked(2), key = { pair -> "file_pair_" + pair.map { it.id }.joinToString("_") }) { pair ->
+                        }
+                    }
+
+                    // SECTION 5: CLEAN BOT NAME ITEMS (when category == 3)
+                    if (selectedCategory == 3) {
+                        val bots = GrokBotPersona.values()
+                        items(bots, key = { it.id }, span = { GridItemSpan(2) }) { bot ->
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color(0xFF131A26),
+                                border = BorderStroke(1.dp, Color(0xFF233248)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onOpenBotChat?.invoke(bot) ?: run {
+                                            onCloseOverview()
+                                        }
+                                    }
+                                    .testTag("navigator_bot_item_${bot.id}")
+                            ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    val f1 = pair[0]
-                                    Box(modifier = Modifier.weight(1f)) {
-                                        TabFileCard(
-                                            file = f1,
-                                            isSelectionMode = isSelectionMode,
-                                            isChecked = selectedFileIds.contains(f1.id),
-                                            onToggleCheck = {
-                                                selectedFileIds = if (selectedFileIds.contains(f1.id)) selectedFileIds - f1.id else selectedFileIds + f1.id
-                                            },
-                                            onClick = {
-                                                if (f1.isDirectory) {
-                                                    currentFileSubfolder = f1.path
-                                                } else {
-                                                    if (onOpenFileInTab != null) onOpenFileInTab(f1, false)
-                                                    else if (onOpenFileInIde != null) onOpenFileInIde(f1)
-                                                    else fileToPreview = f1
-                                                }
-                                            },
-                                            onOpenInNewTab = {
-                                                if (f1.isDirectory) {
-                                                    currentFileSubfolder = f1.path
-                                                } else {
-                                                    onOpenFileInTab?.invoke(f1, true) ?: run { fileToPreview = f1 }
-                                                }
-                                            },
-                                            onPreview = { fileToPreview = f1 },
-                                            onRename = { fileToRename = f1 },
-                                            onDelete = { fileToDelete = f1 },
-                                            onShare = {
-                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                    type = "text/plain"
-                                                    putExtra(Intent.EXTRA_SUBJECT, f1.name)
-                                                    putExtra(Intent.EXTRA_TEXT, "GVONE File: ${f1.name}\nPath: ${f1.path}")
-                                                }
-                                                context.startActivity(Intent.createChooser(shareIntent, "Share ${f1.name}"))
-                                            }
-                                        )
-                                    }
-                                    if (pair.size > 1) {
-                                        val f2 = pair[1]
-                                        Box(modifier = Modifier.weight(1f)) {
-                                            TabFileCard(
-                                                file = f2,
-                                                isSelectionMode = isSelectionMode,
-                                                isChecked = selectedFileIds.contains(f2.id),
-                                                onToggleCheck = {
-                                                    selectedFileIds = if (selectedFileIds.contains(f2.id)) selectedFileIds - f2.id else selectedFileIds + f2.id
-                                                },
-                                                onClick = {
-                                                    if (f2.isDirectory) {
-                                                        currentFileSubfolder = f2.path
-                                                    } else {
-                                                        if (onOpenFileInTab != null) onOpenFileInTab(f2, false)
-                                                        else if (onOpenFileInIde != null) onOpenFileInIde(f2)
-                                                        else fileToPreview = f2
-                                                    }
-                                                },
-                                                onOpenInNewTab = {
-                                                    if (f2.isDirectory) {
-                                                        currentFileSubfolder = f2.path
-                                                    } else {
-                                                        onOpenFileInTab?.invoke(f2, true) ?: run { fileToPreview = f2 }
-                                                    }
-                                                },
-                                                onPreview = { fileToPreview = f2 },
-                                                onRename = { fileToRename = f2 },
-                                                onDelete = { fileToDelete = f2 },
-                                                onShare = {
-                                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                        type = "text/plain"
-                                                        putExtra(Intent.EXTRA_SUBJECT, f2.name)
-                                                        putExtra(Intent.EXTRA_TEXT, "GVONE File: ${f2.name}\nPath: ${f2.path}")
-                                                    }
-                                                    context.startActivity(Intent.createChooser(shareIntent, "Share ${f2.name}"))
-                                                }
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(bot.avatarColorHex).copy(alpha = 0.2f))
+                                                .border(1.dp, Color(bot.avatarColorHex), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = bot.icon,
+                                                contentDescription = bot.displayName,
+                                                tint = Color(bot.avatarColorHex),
+                                                modifier = Modifier.size(20.dp)
                                             )
                                         }
-                                    } else {
-                                        Spacer(modifier = Modifier.weight(1f))
+                                        Column {
+                                            Text(
+                                                text = bot.displayName,
+                                                color = Color.White,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = bot.tagline,
+                                                color = Color(0xFF94A3B8),
+                                                fontSize = 11.5.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
-                                }
-                            }
-                        }
-                    }
-                    3 -> {
-                        // BOTS
-                        item(key = "bots_header") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = Color(0xFFA855F7), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("AI Bots (5)", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        val botList = listOf(
-                            Triple("GV-One Assistant", "Primary contextual browser intelligence", Icons.Rounded.AutoAwesome),
-                            Triple("Coder Bot", "Inline HTML, CSS, JS code generator & reviewer", Icons.Rounded.Code),
-                            Triple("Researcher", "Web summarizer and fact synthesis engine", Icons.Rounded.Search),
-                            Triple("Design Critic", "UI/UX analyzer and styling consultant", Icons.Rounded.Palette),
-                            Triple("Shell Companion", "Terminal script & workflow advisor", Icons.Rounded.Terminal)
-                        )
-                        items(botList, key = { it.first }) { bot ->
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0xFF141926),
-                                border = BorderStroke(1.dp, Color(0xFF222B3D)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(Brush.linearGradient(listOf(Color(0xFFA855F7), Color(0xFF6366F1)))),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(bot.third, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(bot.first, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                        Text(bot.second, color = GVONETextSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                    Button(
-                                        onClick = { onNewTab(null) },
+                                    Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                        color = Color(bot.avatarColorHex).copy(alpha = 0.15f),
+                                        border = BorderStroke(0.5.dp, Color(bot.avatarColorHex).copy(alpha = 0.4f))
                                     ) {
-                                        Text("Chat", fontSize = 11.sp)
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "Open Tab",
+                                                color = Color(bot.avatarColorHex),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Rounded.ArrowForward,
+                                                contentDescription = null,
+                                                tint = Color(bot.avatarColorHex),
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                    else -> {
-                        // EXTENSIONS
-                        item(key = "extensions_header") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Rounded.Extension, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Extensions (${extensions.size})", color = GVONETextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        item(key = "extensions_card") {
+
+                    // SECTION 6: EXTENSIONS (when category == 4)
+                    if (selectedCategory == 4) {
+                        item(span = { GridItemSpan(2) }) {
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
                                 color = Color(0xFF0D121F),
                                 border = BorderStroke(1.dp, Color(0xFF233554)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                                    .heightIn(min = 420.dp, max = 580.dp)
                                     .testTag("navigator_extensions_container")
                             ) {
                                 IdeExtensionsView(
@@ -1838,13 +2092,14 @@ fun TabOverviewScreen(
             }
         }
 
-        // --- STATIC BOTTOM BAR (Section 7): Fixed at bottom, never scrolls ---
+        // --- BOTTOM BAR: Actions or Mode Switcher ---
         if (isSelectionMode) {
             // MULTI-SELECT ACTIONS BAR
             Surface(
                 modifier = Modifier
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(16.dp),
                 shape = RoundedCornerShape(24.dp),
                 color = Color(0xFF161F2E),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2C384D)),
@@ -1932,8 +2187,9 @@ fun TabOverviewScreen(
             // NORMAL BOTTOM BAR: [Bottom-Left Environment Pill] [Private/Tabs Switch] and [+] FAB
             Box(
                 modifier = Modifier
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -2175,12 +2431,40 @@ fun TabOverviewScreen(
             onDismiss = { showCreateFileDialog = false },
             onConfirm = { fileName, content ->
                 coroutineScope.launch {
-                    val targetPath = if (currentFolderId != null && currentFolder != null) {
-                        "${currentFolder.name}/$fileName"
+                    val group = tabGroups.find { it.id == currentFolderId }
+                    val projName = activeProject?.name ?: group?.name.orEmpty()
+                    val isProject = (currentFolderId != null) && (activeProject != null || fs.isProjectFolder(projName))
+
+                    if (isProject && projName.isNotEmpty()) {
+                        fs.createProjectFile(
+                            projectName = projName,
+                            subfolder = currentFileSubfolder,
+                            fileName = fileName,
+                            content = content
+                        )
+                    } else if (currentFolderId != null && currentFolder != null) {
+                        val subPath = if (currentFileSubfolder.isNotEmpty()) currentFileSubfolder else currentFolder.name
+                        fs.writeFileContent("$subPath/$fileName", content)
+                    } else if (activeStorageLocation == StorageLocation.MY_FILES) {
+                        val subPath = if (currentFileSubfolder.isNotEmpty()) "$currentFileSubfolder/$fileName" else fileName
+                        fs.writeFileContent(subPath, content)
+                    } else if (activeStorageLocation == StorageLocation.PROJECTS) {
+                        val cleanProj = if (currentFileSubfolder.isNotEmpty()) currentFileSubfolder else fileName.substringBeforeLast('.')
+                        fs.createProjectFile(
+                            projectName = cleanProj.ifEmpty { "NewProject" },
+                            subfolder = "",
+                            fileName = fileName,
+                            content = content
+                        )
                     } else {
-                        fileName
+                        val folderLoc = activeStorageLocation.folderName
+                        val target = if (folderLoc.isNotEmpty()) {
+                            if (currentFileSubfolder.isNotEmpty()) "$folderLoc/$currentFileSubfolder/$fileName" else "$folderLoc/$fileName"
+                        } else {
+                            if (currentFileSubfolder.isNotEmpty()) "$currentFileSubfolder/$fileName" else fileName
+                        }
+                        fs.writeFileContent(target, content)
                     }
-                    fs.writeFileContent(targetPath, content)
                     reloadFiles()
                     showCreateFileDialog = false
                 }

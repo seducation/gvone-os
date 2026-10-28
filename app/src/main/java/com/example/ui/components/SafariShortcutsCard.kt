@@ -237,7 +237,7 @@ fun SafariShortcutsCard(
     }
 
     // Persisted custom shortcuts
-    var persistedCustomShortcuts by remember {
+    var persistedCustomShortcuts: List<MenuShortcut> by remember {
         mutableStateOf(ShortcutStorage.getCustomShortcuts(context))
     }
 
@@ -250,13 +250,13 @@ fun SafariShortcutsCard(
     }
 
     // Full list of all available shortcuts (primary + extra + custom + persistedCustom)
-    val allShortcuts = remember(primary, extra, customShortcuts, persistedCustomShortcuts) {
-        val combined = primary + extra + customShortcuts + persistedCustomShortcuts
+    val allShortcuts: List<MenuShortcut> = remember(primary, extra, customShortcuts, persistedCustomShortcuts) {
+        val combined: List<MenuShortcut> = primary + extra + customShortcuts + persistedCustomShortcuts
         combined.distinctBy { it.url }
     }
 
     // Pinned shortcuts shown in top row
-    val pinnedShortcuts = remember(allShortcuts, pinnedUrls) {
+    val pinnedShortcuts: List<MenuShortcut> = remember(allShortcuts, pinnedUrls) {
         val filtered = allShortcuts.filter { pinnedUrls.contains(it.url) }
         if (filtered.isNotEmpty()) filtered else primary
     }
@@ -291,7 +291,7 @@ fun SafariShortcutsCard(
     }
 
     // Filtered shortcuts based on category and search query
-    val filteredShortcuts = remember(allShortcuts, selectedCategory, filterQuery, pinnedUrls) {
+    val filteredShortcuts: List<MenuShortcut> = remember(allShortcuts, selectedCategory, filterQuery, pinnedUrls) {
         allShortcuts.filter { shortcut ->
             val matchesCategory = when (selectedCategory) {
                 "All" -> true

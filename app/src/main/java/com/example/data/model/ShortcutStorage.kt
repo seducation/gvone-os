@@ -7,59 +7,75 @@ import com.example.ui.screens.MenuShortcut
 import org.json.JSONArray
 import org.json.JSONObject
 
+/**
+ * Persistent storage manager for Safari Shortcuts panel (pinned URLs and custom shortcuts).
+ */
 object ShortcutStorage {
-    private const val PREFS_NAME = "shortcut_storage_prefs"
+    private const val PREFS_NAME = "gvone_shortcuts_prefs"
+    private const val KEY_PINNED_URLS = "pinned_shortcuts_urls"
     private const val KEY_CUSTOM_SHORTCUTS = "custom_shortcuts_json"
-    private const val KEY_PINNED_URLS = "pinned_urls_set"
+
+    fun getPinnedUrls(context: Context, defaultPinned: Set<String>): Set<String> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val stored = prefs.getStringSet(KEY_PINNED_URLS, null)
+        return stored ?: defaultPinned
+    }
+
+    fun savePinnedUrls(context: Context, pinnedUrls: Set<String>) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putStringSet(KEY_PINNED_URLS, pinnedUrls).apply()
+    }
 
     fun getCustomShortcuts(context: Context): List<MenuShortcut> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonStr = prefs.getString(KEY_CUSTOM_SHORTCUTS, null) ?: return emptyList()
-        val list = mutableListOf<MenuShortcut>()
-        try {
-            val array = JSONArray(jsonStr)
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val title = obj.optString("title", "Shortcut")
+        return try {
+            val jsonArray = JSONArray(jsonStr)
+            val list = mutableListOf<MenuShortcut>()
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                val title = obj.optString("title", "")
                 val url = obj.optString("url", "")
-                val initials = obj.optString("initialLetters", if (title.isNotEmpty()) title.take(2).uppercase() else "SC")
+                val initialLetters = obj.optString("initialLetters", if (title.isNotEmpty()) title.take(2).uppercase() else "S")
                 val category = obj.optString("category", "General")
+
+                val colors = when (category) {
+                    "Dev & AI" -> listOf(Color(0xFF6366F1), Color(0xFF8B5CF6))
+                    "Social" -> listOf(Color(0xFF0EA5E9), Color(0xFF3B82F6))
+                    "Media" -> listOf(Color(0xFFEC4899), Color(0xFFF43F5E))
+                    "News" -> listOf(Color(0xFFF59E0B), Color(0xFFD97706))
+                    "Shopping" -> listOf(Color(0xFF10B981), Color(0xFF059669))
+                    else -> listOf(Color(0xFF64748B), Color(0xFF475569))
+                }
+
                 list.add(
                     MenuShortcut(
                         title = title,
                         url = url,
-                        initialLetters = initials,
-                        badgeBg = Brush.linearGradient(listOf(Color(0xFF0284C7), Color(0xFF0369A1))),
+                        initialLetters = initialLetters,
+                        badgeBg = Brush.linearGradient(colors),
                         textColor = Color.White,
                         category = category
                     )
                 )
             }
-        } catch (_: Exception) {}
-        return list
+            list
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     fun saveCustomShortcuts(context: Context, shortcuts: List<MenuShortcut>) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val array = JSONArray()
-        shortcuts.forEach {
+        val jsonArray = JSONArray()
+        shortcuts.forEach { shortcut ->
             val obj = JSONObject()
-            obj.put("title", it.title)
-            obj.put("url", it.url)
-            obj.put("initialLetters", it.initialLetters)
-            obj.put("category", it.category)
-            array.put(obj)
+            obj.put("title", shortcut.title)
+            obj.put("url", shortcut.url)
+            obj.put("initialLetters", shortcut.initialLetters)
+            obj.put("category", shortcut.category)
+            jsonArray.put(obj)
         }
-        prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, array.toString()).apply()
-    }
-
-    fun getPinnedUrls(context: Context, defaultUrls: Set<String>): Set<String> {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getStringSet(KEY_PINNED_URLS, defaultUrls)?.toSet() ?: defaultUrls
-    }
-
-    fun savePinnedUrls(context: Context, urls: Set<String>) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putStringSet(KEY_PINNED_URLS, urls).apply()
+        prefs.edit().putString(KEY_CUSTOM_SHORTCUTS, jsonArray.toString()).apply()
     }
 }
