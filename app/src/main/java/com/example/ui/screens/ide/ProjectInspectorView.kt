@@ -93,22 +93,18 @@ fun ProjectInspectorView(
         else {
             val sessionsMatched = terminalSessions.filter { sess ->
                 sess.tabGroupId == activeProject.id ||
-                sess.tabGroupId.equals(activeProject.name, ignoreCase = true)
+                sess.tabGroupId.equals(activeProject.name, ignoreCase = true) ||
+                activeProject.chats.contains(sess.title)
             }
             val sessionTitles = sessionsMatched.map { it.title }.toSet()
-            val synthetic = activeProject.chats
-                .filterNot { it in sessionTitles }
-                .filter { title ->
-                    !title.matches(Regex("^(Chat|Session)\\s*\\d*$", RegexOption.IGNORE_CASE))
-                }
-                .mapIndexed { idx, title ->
-                    TerminalSession(
-                        id = "proj_chat_${activeProject.id}_$idx",
-                        title = title,
-                        tabGroupId = activeProject.id,
-                        createdAt = activeProject.createdAt
-                    )
-                }
+            val synthetic = activeProject.chats.filterNot { it in sessionTitles }.mapIndexed { idx, title ->
+                TerminalSession(
+                    id = "proj_chat_${activeProject.id}_$idx",
+                    title = title,
+                    tabGroupId = activeProject.id,
+                    createdAt = activeProject.createdAt
+                )
+            }
             sessionsMatched + synthetic
         }
     }
