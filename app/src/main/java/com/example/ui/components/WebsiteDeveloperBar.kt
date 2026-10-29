@@ -91,7 +91,23 @@ fun WebsiteDeveloperBar(
     onStop: (() -> Unit)? = null,
     onSaveFile: (() -> Unit)? = null,
     onFormatCode: (() -> Unit)? = null,
-    onAddressClick: (() -> Unit)? = null
+    onAddressClick: (() -> Unit)? = null,
+    onOpenProblems: (() -> Unit)? = null,
+    problemCount: Int = 0,
+    onZoomIn: (() -> Unit)? = null,
+    onZoomOut: (() -> Unit)? = null,
+    onResetZoom: (() -> Unit)? = null,
+    onRotate: (() -> Unit)? = null,
+    onTogglePreviewMode: (() -> Unit)? = null,
+    isPreviewMode: Boolean = false,
+    onTogglePlayPause: (() -> Unit)? = null,
+    isPlaying: Boolean = false,
+    onBeautifyData: (() -> Unit)? = null,
+    onMinifyData: (() -> Unit)? = null,
+    onCopyData: (() -> Unit)? = null,
+    onShareFile: (() -> Unit)? = null,
+    onSearchDoc: (() -> Unit)? = null,
+    onInvertCanvas: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isExpanded by remember { mutableStateOf(false) }
@@ -154,103 +170,578 @@ fun WebsiteDeveloperBar(
             ) {
                 val isCodeMode = (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR)
 
-                // 1. LEFT CONTROLS: Navigator & Mode-Specific Tools
+                var isCategoryDropdownOpen by remember { mutableStateOf(false) }
+
+                // 1. LEFT CONTROLS: Category Dropdown Menu & Active Category Tools
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    // Navigator Toggle (Opens Tabs, Projects, Files, Bots)
-                    if (onOpenNavigator != null) {
-                        IconButton(
-                            onClick = onOpenNavigator,
+                    // Category Dropdown Trigger (Replaces top-left sidebar button)
+                    Box {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF161F32),
+                            border = BorderStroke(1.dp, Color(0xFF2C3E55)),
                             modifier = Modifier
-                                .size(30.dp)
-                                .testTag("dev_bar_navigator_btn")
+                                .height(30.dp)
+                                .clickable { isCategoryDropdownOpen = true }
+                                .testTag("dev_bar_category_dropdown_btn")
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ViewSidebar,
-                                contentDescription = "Navigator Panel (Tabs & Files)",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(17.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 7.dp)
+                            ) {
+                                Icon(
+                                    imageVector = workspaceMode.icon,
+                                    contentDescription = "Workspace Mode",
+                                    tint = when (workspaceMode) {
+                                        XcodeWorkspaceMode.CODE_EDITOR -> Color(0xFFA855F7)
+                                        XcodeWorkspaceMode.BROWSER -> Color(0xFF38BDF8)
+                                        XcodeWorkspaceMode.BOT_CHAT -> Color(0xFF34D399)
+                                        XcodeWorkspaceMode.PDF_VIEWER -> Color(0xFFEF4444)
+                                        XcodeWorkspaceMode.IMAGE_VIEWER -> Color(0xFFEC4899)
+                                        XcodeWorkspaceMode.MARKDOWN -> Color(0xFF38BDF8)
+                                        XcodeWorkspaceMode.DATA_INSPECTOR -> Color(0xFF10B981)
+                                        XcodeWorkspaceMode.MEDIA_PLAYER -> Color(0xFFF97316)
+                                    },
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = workspaceMode.tag.ifEmpty { workspaceMode.label },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Icon(
+                                    imageVector = Icons.Rounded.ArrowDropDown,
+                                    contentDescription = "Open Categories",
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = isCategoryDropdownOpen,
+                            onDismissRequest = { isCategoryDropdownOpen = false },
+                            modifier = Modifier
+                                .background(Color(0xFF0F172A))
+                                .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(12.dp))
+                                .widthIn(min = 230.dp)
+                        ) {
+                            Text(
+                                text = "DEVELOPMENT WORKSPACE",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF64748B),
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+
+                            // 1. Xcode Code Editor
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Xcode Code Editor", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Text("Monospace IDE, save, format & diagnostics", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Code, contentDescription = null, tint = Color(0xFFA855F7), modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFA855F7), modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = {
+                                    isCategoryDropdownOpen = false
+                                    onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.CODE_EDITOR)
+                                }
+                            )
+
+                            // 2. Website Browser
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Website Browser", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Text("Live web runtime, DOM & DevTools", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Public, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    if (workspaceMode == XcodeWorkspaceMode.BROWSER) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = {
+                                    isCategoryDropdownOpen = false
+                                    onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER)
+                                }
+                            )
+
+                            // 3. AI Copilot & Bots
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("AI Copilot & Bots", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Text("Grok & Claude AI assistants", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    if (workspaceMode == XcodeWorkspaceMode.BOT_CHAT) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = {
+                                    isCategoryDropdownOpen = false
+                                    onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BOT_CHAT)
+                                }
+                            )
+
+                            HorizontalDivider(color = Color(0xFF1E293B), modifier = Modifier.padding(vertical = 4.dp))
+
+                            Text(
+                                text = "FILE FORMATS & VIEWERS",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF64748B),
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+
+                            // 4. PDF Document Viewer
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("PDF Document", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Text("Multi-page PDF reader & zoom", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.PictureAsPdf, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    if (workspaceMode == XcodeWorkspaceMode.PDF_VIEWER) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = {
+                                    isCategoryDropdownOpen = false
+                                    onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.PDF_VIEWER)
+                                }
+                            )
+
+                            // 5. Image Viewer
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Image Viewer", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Text("PNG, JPG, WebP, SVG, GIF, BMP", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Image, contentDescription = null, tint = Color(0xFFEC4899), modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    if (workspaceMode == XcodeWorkspaceMode.IMAGE_VIEWER) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFEC4899), modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = {
+                                    isCategoryDropdownOpen = false
+                                    onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.IMAGE_VIEWER)
+                                }
+                            )
+
+                            // 6. Markdown & Documents
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Markdown & Docs", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Text("Live formatted preview & editor", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Description, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    if (workspaceMode == XcodeWorkspaceMode.MARKDOWN) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = {
+                                    isCategoryDropdownOpen = false
+                                    onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.MARKDOWN)
+                                }
+                            )
+
+                            // 7. Media Player (Audio & Video)
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Media Player", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Text("Audio (MP3/WAV) & Video (MP4/WEBM)", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.PlayCircle, contentDescription = null, tint = Color(0xFFF97316), modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    if (workspaceMode == XcodeWorkspaceMode.MEDIA_PLAYER) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFF97316), modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = {
+                                    isCategoryDropdownOpen = false
+                                    onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.MEDIA_PLAYER)
+                                }
+                            )
+
+                            // 8. JSON & Data Inspector
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("JSON & Data Inspector", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Text("Syntax tree, beautifier & schema", fontSize = 10.sp, color = Color(0xFF10B981))
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.DataObject, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    if (workspaceMode == XcodeWorkspaceMode.DATA_INSPECTOR) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = {
+                                    isCategoryDropdownOpen = false
+                                    onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.DATA_INSPECTOR)
+                                }
+                            )
+
+                            HorizontalDivider(color = Color(0xFF1E293B), modifier = Modifier.padding(vertical = 4.dp))
+
+                            Text(
+                                text = "SYSTEM PANELS",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF64748B),
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+
+                            // 9. Files Navigator
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("File Navigator & Storage", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Text("Browse projects, files & tabs", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.FolderSpecial, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    isCategoryDropdownOpen = false
+                                    onOpenNavigator?.invoke()
+                                }
+                            )
+
+                            // 10. Terminal Shell
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Linux Terminal & CLI", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                        Text("Interactive bash/sh shell & scripts", fontSize = 10.sp, color = Color(0xFF34D399))
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Rounded.Terminal, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(18.dp))
+                                },
+                                onClick = {
+                                    isCategoryDropdownOpen = false
+                                    onOpenConsole?.invoke()
+                                }
                             )
                         }
                     }
 
-                    if (isCodeMode) {
-                        // Code Mode: Save & Format buttons
-                        IconButton(
-                            onClick = { onSaveFile?.invoke() },
-                            modifier = Modifier
-                                .size(30.dp)
-                                .testTag("dev_bar_save_file_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Save,
-                                contentDescription = "Save File",
-                                tint = if (isFileDirty) Color(0xFFF59E0B) else Color(0xFF94A3B8),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-
-                        if (onFormatCode != null) {
+                    // Mode-Specific Left Tools
+                    when (workspaceMode) {
+                        XcodeWorkspaceMode.CODE_EDITOR -> {
+                            // Save button
                             IconButton(
-                                onClick = onFormatCode,
+                                onClick = { onSaveFile?.invoke() },
                                 modifier = Modifier
                                     .size(30.dp)
-                                    .testTag("dev_bar_format_code_btn")
+                                    .testTag("dev_bar_save_file_btn")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.FormatPaint,
-                                    contentDescription = "Format Code",
-                                    tint = Color(0xFFA78BFA),
+                                    imageVector = Icons.Rounded.Save,
+                                    contentDescription = "Save File",
+                                    tint = if (isFileDirty) Color(0xFFF59E0B) else Color(0xFF94A3B8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            // Format button
+                            if (onFormatCode != null) {
+                                IconButton(
+                                    onClick = onFormatCode,
+                                    modifier = Modifier
+                                        .size(30.dp)
+                                        .testTag("dev_bar_format_code_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.FormatPaint,
+                                        contentDescription = "Format Code",
+                                        tint = Color(0xFFA78BFA),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+
+                            // Problems & Diagnostics button with error count badge
+                            IconButton(
+                                onClick = { onOpenProblems?.invoke() ?: onOpenInspector?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_problems_btn")
+                            ) {
+                                BadgedBox(
+                                    badge = {
+                                        if (problemCount > 0) {
+                                            Badge(
+                                                containerColor = Color(0xFFEF4444),
+                                                contentColor = Color.White
+                                            ) {
+                                                Text("$problemCount", fontSize = 8.sp)
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Warning,
+                                        contentDescription = "Diagnostics",
+                                        tint = if (problemCount > 0) Color(0xFFF87171) else Color(0xFFFBBF24),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        XcodeWorkspaceMode.BROWSER -> {
+                            // Back button
+                            IconButton(
+                                onClick = { onGoBack?.invoke() ?: run { if (activeWebView?.canGoBack() == true) activeWebView.goBack() } },
+                                enabled = canGoBack || activeWebView?.canGoBack() == true,
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_back_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = if (canGoBack || activeWebView?.canGoBack() == true) Color(0xFFE2E8F0) else Color(0xFF475569),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            // Forward button
+                            IconButton(
+                                onClick = { onGoForward?.invoke() ?: run { if (activeWebView?.canGoForward() == true) activeWebView.goForward() } },
+                                enabled = canGoForward || activeWebView?.canGoForward() == true,
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_forward_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                    contentDescription = "Forward",
+                                    tint = if (canGoForward || activeWebView?.canGoForward() == true) Color(0xFFE2E8F0) else Color(0xFF475569),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            // Reload button
+                            IconButton(
+                                onClick = { onReload?.invoke() ?: activeWebView?.reload() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_reload_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = "Reload",
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            // Visual Outlines button
+                            IconButton(
+                                onClick = {
+                                    outlinesEnabled = !outlinesEnabled
+                                    val script = if (outlinesEnabled) {
+                                        "(function(){var s=document.createElement('style');s.id='__gvone_dev_outlines__';s.innerHTML='* { outline: 1px dashed rgba(56,189,248,0.7) !important; }';document.head.appendChild(s);return 'Outlines Active';})()"
+                                    } else {
+                                        "(function(){var s=document.getElementById('__gvone_dev_outlines__');if(s)s.remove();return 'Outlines Removed';})()"
+                                    }
+                                    executeJs(script, null)
+                                },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_outlines_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Layers,
+                                    contentDescription = "DOM Outlines",
+                                    tint = if (outlinesEnabled) Color(0xFF38BDF8) else Color(0xFF64748B),
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
-                    } else {
-                        // Browser Mode: Back, Forward, Reload
-                        IconButton(
-                            onClick = { onGoBack?.invoke() ?: run { if (activeWebView?.canGoBack() == true) activeWebView.goBack() } },
-                            enabled = canGoBack || activeWebView?.canGoBack() == true,
-                            modifier = Modifier
-                                .size(30.dp)
-                                .testTag("dev_bar_back_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                contentDescription = "Back",
-                                tint = if (canGoBack || activeWebView?.canGoBack() == true) Color(0xFFE2E8F0) else Color(0xFF475569),
-                                modifier = Modifier.size(16.dp)
-                            )
+
+                        XcodeWorkspaceMode.BOT_CHAT -> {
+                            IconButton(
+                                onClick = { Toast.makeText(context, "New chat started", Toast.LENGTH_SHORT).show() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_new_bot_chat_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.AddComment,
+                                    contentDescription = "New Bot Chat",
+                                    tint = Color(0xFF34D399),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
 
-                        IconButton(
-                            onClick = { onGoForward?.invoke() ?: run { if (activeWebView?.canGoForward() == true) activeWebView.goForward() } },
-                            enabled = canGoForward || activeWebView?.canGoForward() == true,
-                            modifier = Modifier
-                                .size(30.dp)
-                                .testTag("dev_bar_forward_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                                contentDescription = "Forward",
-                                tint = if (canGoForward || activeWebView?.canGoForward() == true) Color(0xFFE2E8F0) else Color(0xFF475569),
-                                modifier = Modifier.size(16.dp)
-                            )
+                        XcodeWorkspaceMode.PDF_VIEWER -> {
+                            IconButton(
+                                onClick = { onZoomIn?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_pdf_zoom_in_btn")
+                            ) {
+                                Icon(Icons.Rounded.ZoomIn, contentDescription = "Zoom In", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = { onZoomOut?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_pdf_zoom_out_btn")
+                            ) {
+                                Icon(Icons.Rounded.ZoomOut, contentDescription = "Zoom Out", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = { onResetZoom?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_pdf_fit_btn")
+                            ) {
+                                Icon(Icons.Rounded.FitScreen, contentDescription = "Fit Width", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                            }
                         }
 
-                        IconButton(
-                            onClick = { onReload?.invoke() ?: activeWebView?.reload() },
-                            modifier = Modifier
-                                .size(30.dp)
-                                .testTag("dev_bar_reload_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Refresh,
-                                contentDescription = "Reload",
-                                tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(16.dp)
-                            )
+                        XcodeWorkspaceMode.IMAGE_VIEWER -> {
+                            IconButton(
+                                onClick = { onZoomIn?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_img_zoom_in_btn")
+                            ) {
+                                Icon(Icons.Rounded.ZoomIn, contentDescription = "Zoom In", tint = Color(0xFFEC4899), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = { onZoomOut?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_img_zoom_out_btn")
+                            ) {
+                                Icon(Icons.Rounded.ZoomOut, contentDescription = "Zoom Out", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = { onResetZoom?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_img_reset_btn")
+                            ) {
+                                Icon(Icons.Rounded.RestartAlt, contentDescription = "Reset Zoom", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = { onRotate?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_img_rotate_btn")
+                            ) {
+                                Icon(Icons.Rounded.RotateRight, contentDescription = "Rotate 90°", tint = Color(0xFFA78BFA), modifier = Modifier.size(16.dp))
+                            }
+                        }
+
+                        XcodeWorkspaceMode.MARKDOWN -> {
+                            IconButton(
+                                onClick = { onTogglePreviewMode?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_md_toggle_btn")
+                            ) {
+                                Icon(
+                                    imageVector = if (isPreviewMode) Icons.Rounded.Edit else Icons.Rounded.Preview,
+                                    contentDescription = if (isPreviewMode) "Edit Mode" else "Preview Mode",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onSaveFile?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_md_save_btn")
+                            ) {
+                                Icon(Icons.Rounded.Save, contentDescription = "Save Markdown", tint = if (isFileDirty) Color(0xFFF59E0B) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+
+                        XcodeWorkspaceMode.DATA_INSPECTOR -> {
+                            IconButton(
+                                onClick = { onBeautifyData?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_data_beautify_btn")
+                            ) {
+                                Icon(Icons.Rounded.AutoFixHigh, contentDescription = "Beautify", tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = { onMinifyData?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_data_minify_btn")
+                            ) {
+                                Icon(Icons.Rounded.Compress, contentDescription = "Minify", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+
+                        XcodeWorkspaceMode.MEDIA_PLAYER -> {
+                            IconButton(
+                                onClick = { onTogglePlayPause?.invoke() },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_media_play_btn")
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = Color(0xFFF97316),
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -259,7 +750,19 @@ fun WebsiteDeveloperBar(
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = Color(0xFF0F1523),
-                    border = BorderStroke(1.dp, if (isCodeMode) Color(0xFFA855F7).copy(alpha = 0.4f) else Color(0xFF2C384D)),
+                    border = BorderStroke(
+                        1.dp,
+                        when (workspaceMode) {
+                            XcodeWorkspaceMode.CODE_EDITOR -> Color(0xFFA855F7).copy(alpha = 0.4f)
+                            XcodeWorkspaceMode.BOT_CHAT -> Color(0xFF10B981).copy(alpha = 0.4f)
+                            XcodeWorkspaceMode.PDF_VIEWER -> Color(0xFFEF4444).copy(alpha = 0.4f)
+                            XcodeWorkspaceMode.IMAGE_VIEWER -> Color(0xFFEC4899).copy(alpha = 0.4f)
+                            XcodeWorkspaceMode.MARKDOWN -> Color(0xFF38BDF8).copy(alpha = 0.4f)
+                            XcodeWorkspaceMode.DATA_INSPECTOR -> Color(0xFF10B981).copy(alpha = 0.4f)
+                            XcodeWorkspaceMode.MEDIA_PLAYER -> Color(0xFFF97316).copy(alpha = 0.4f)
+                            else -> Color(0xFF2C384D)
+                        }
+                    ),
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = 4.dp)
@@ -279,6 +782,11 @@ fun WebsiteDeveloperBar(
                             color = when (workspaceMode) {
                                 XcodeWorkspaceMode.CODE_EDITOR -> Color(0xFFA855F7).copy(alpha = 0.2f)
                                 XcodeWorkspaceMode.BOT_CHAT -> Color(0xFF10B981).copy(alpha = 0.2f)
+                                XcodeWorkspaceMode.PDF_VIEWER -> Color(0xFFEF4444).copy(alpha = 0.2f)
+                                XcodeWorkspaceMode.IMAGE_VIEWER -> Color(0xFFEC4899).copy(alpha = 0.2f)
+                                XcodeWorkspaceMode.MARKDOWN -> Color(0xFF38BDF8).copy(alpha = 0.2f)
+                                XcodeWorkspaceMode.DATA_INSPECTOR -> Color(0xFF10B981).copy(alpha = 0.2f)
+                                XcodeWorkspaceMode.MEDIA_PLAYER -> Color(0xFFF97316).copy(alpha = 0.2f)
                                 else -> Color(0xFF38BDF8).copy(alpha = 0.2f)
                             },
                             modifier = Modifier.size(20.dp)
@@ -288,12 +796,22 @@ fun WebsiteDeveloperBar(
                                     imageVector = when (workspaceMode) {
                                         XcodeWorkspaceMode.CODE_EDITOR -> Icons.Rounded.Code
                                         XcodeWorkspaceMode.BOT_CHAT -> Icons.Rounded.AutoAwesome
+                                        XcodeWorkspaceMode.PDF_VIEWER -> Icons.Rounded.PictureAsPdf
+                                        XcodeWorkspaceMode.IMAGE_VIEWER -> Icons.Rounded.Image
+                                        XcodeWorkspaceMode.MARKDOWN -> Icons.Rounded.Description
+                                        XcodeWorkspaceMode.DATA_INSPECTOR -> Icons.Rounded.DataObject
+                                        XcodeWorkspaceMode.MEDIA_PLAYER -> Icons.Rounded.PlayCircle
                                         else -> if (isHttps) Icons.Rounded.Lock else Icons.Rounded.Public
                                     },
                                     contentDescription = null,
                                     tint = when (workspaceMode) {
                                         XcodeWorkspaceMode.CODE_EDITOR -> Color(0xFFA855F7)
                                         XcodeWorkspaceMode.BOT_CHAT -> Color(0xFF34D399)
+                                        XcodeWorkspaceMode.PDF_VIEWER -> Color(0xFFEF4444)
+                                        XcodeWorkspaceMode.IMAGE_VIEWER -> Color(0xFFEC4899)
+                                        XcodeWorkspaceMode.MARKDOWN -> Color(0xFF38BDF8)
+                                        XcodeWorkspaceMode.DATA_INSPECTOR -> Color(0xFF10B981)
+                                        XcodeWorkspaceMode.MEDIA_PLAYER -> Color(0xFFF97316)
                                         else -> if (isHttps) Color(0xFF4ADE80) else Color(0xFF38BDF8)
                                     },
                                     modifier = Modifier.size(12.dp)
@@ -307,6 +825,11 @@ fun WebsiteDeveloperBar(
                                     text = when (workspaceMode) {
                                         XcodeWorkspaceMode.CODE_EDITOR -> (activeFileName ?: "Xcode Editor")
                                         XcodeWorkspaceMode.BOT_CHAT -> (activeFileName ?: "Bot Chat Copilot")
+                                        XcodeWorkspaceMode.PDF_VIEWER -> (activeFileName ?: "document.pdf")
+                                        XcodeWorkspaceMode.IMAGE_VIEWER -> (activeFileName ?: "preview.png")
+                                        XcodeWorkspaceMode.MARKDOWN -> (activeFileName ?: "architecture.md")
+                                        XcodeWorkspaceMode.DATA_INSPECTOR -> (activeFileName ?: "package.json")
+                                        XcodeWorkspaceMode.MEDIA_PLAYER -> (activeFileName ?: "sample_track.wav")
                                         else -> (tab.title.takeIf { it.isNotBlank() } ?: "Web Workspace")
                                     },
                                     color = Color.White,
@@ -315,7 +838,7 @@ fun WebsiteDeveloperBar(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                if (isCodeMode && isFileDirty) {
+                                if (isFileDirty) {
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Box(
                                         modifier = Modifier
@@ -338,97 +861,115 @@ fun WebsiteDeveloperBar(
                     }
                 }
 
-                // 3. RIGHT CONTROLS: Mode Switcher, Execution, Inspector, Console, Chevron
+                // 3. RIGHT CONTROLS: Mode Action Buttons, Inspector, Console, Chevron
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    // Segmented Workspace Mode Switcher: [Web | Code | Bots]
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF0B101C))
-                            .border(0.5.dp, Color(0xFF2C384D), RoundedCornerShape(12.dp))
-                            .padding(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val isWeb = (workspaceMode == XcodeWorkspaceMode.BROWSER)
-                        val isCode = (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR)
-                        val isBot = (workspaceMode == XcodeWorkspaceMode.BOT_CHAT)
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isWeb) Color(0xFF0284C7).copy(alpha = 0.35f) else Color.Transparent,
-                            modifier = Modifier
-                                .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER) }
-                                .testTag("dev_bar_mode_web_btn")
-                        ) {
-                            Text(
-                                "WEB",
-                                fontSize = 9.sp,
-                                color = if (isWeb) Color(0xFF38BDF8) else Color(0xFF64748B),
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isCode) Color(0xFFA855F7).copy(alpha = 0.35f) else Color.Transparent,
-                            modifier = Modifier
-                                .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.CODE_EDITOR) }
-                                .testTag("dev_bar_mode_code_btn")
-                        ) {
-                            Text(
-                                "CODE",
-                                fontSize = 9.sp,
-                                color = if (isCode) Color(0xFFC084FC) else Color(0xFF64748B),
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isBot) Color(0xFF10B981).copy(alpha = 0.35f) else Color.Transparent,
-                            modifier = Modifier
-                                .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BOT_CHAT) }
-                                .testTag("dev_bar_mode_bots_btn")
-                        ) {
-                            Text(
-                                "BOTS",
-                                fontSize = 9.sp,
-                                color = if (isBot) Color(0xFF34D399) else Color(0xFF64748B),
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-
-                    // Run / Preview Action Button
-                    IconButton(
-                        onClick = {
-                            if (isCodeMode) {
-                                onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER)
-                                Toast.makeText(context, "Running & Previewing in Web Browser", Toast.LENGTH_SHORT).show()
-                            } else {
-                                onReload?.invoke() ?: run {
-                                    activeWebView?.clearCache(true)
-                                    activeWebView?.reload()
-                                }
-                                Toast.makeText(context, "Reloading Web App", Toast.LENGTH_SHORT).show()
+                    when (workspaceMode) {
+                        XcodeWorkspaceMode.CODE_EDITOR -> {
+                            // Run & Preview in Web Browser
+                            IconButton(
+                                onClick = {
+                                    onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER)
+                                    Toast.makeText(context, "Running & Previewing in Web Browser", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_run_action_btn")
+                            ) {
+                                Icon(Icons.Rounded.PlayArrow, contentDescription = "Run in Browser", tint = Color(0xFF34D399), modifier = Modifier.size(17.dp))
                             }
-                        },
-                        modifier = Modifier
-                            .size(30.dp)
-                            .testTag("dev_bar_run_action_btn")
-                    ) {
-                        Icon(
-                            imageVector = if (isCodeMode) Icons.Rounded.PlayArrow else Icons.Rounded.Refresh,
-                            contentDescription = if (isCodeMode) "Run & Preview in Browser" else "Reload Web App",
-                            tint = if (isCodeMode) Color(0xFF34D399) else Color(0xFF38BDF8),
-                            modifier = Modifier.size(17.dp)
-                        )
+                        }
+
+                        XcodeWorkspaceMode.BROWSER -> {
+                            // Reload / Run web app
+                            IconButton(
+                                onClick = {
+                                    onReload?.invoke() ?: run {
+                                        activeWebView?.clearCache(true)
+                                        activeWebView?.reload()
+                                    }
+                                    Toast.makeText(context, "Reloading Web App", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_run_action_btn")
+                            ) {
+                                Icon(Icons.Rounded.Refresh, contentDescription = "Reload Web App", tint = Color(0xFF38BDF8), modifier = Modifier.size(17.dp))
+                            }
+                        }
+
+                        XcodeWorkspaceMode.BOT_CHAT -> {
+                            // Apply to Code
+                            IconButton(
+                                onClick = {
+                                    onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.CODE_EDITOR)
+                                },
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_apply_code_btn")
+                            ) {
+                                Icon(Icons.Rounded.Code, contentDescription = "Switch to Code", tint = Color(0xFFA855F7), modifier = Modifier.size(16.dp))
+                            }
+                        }
+
+                        XcodeWorkspaceMode.PDF_VIEWER -> {
+                            IconButton(
+                                onClick = { onSearchDoc?.invoke() ?: Toast.makeText(context, "Searching document...", Toast.LENGTH_SHORT).show() },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(Icons.Rounded.Search, contentDescription = "Search PDF", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = { onShareFile?.invoke() },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(Icons.Rounded.Share, contentDescription = "Share PDF", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                            }
+                        }
+
+                        XcodeWorkspaceMode.IMAGE_VIEWER -> {
+                            IconButton(
+                                onClick = { onInvertCanvas?.invoke() },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(Icons.Rounded.Contrast, contentDescription = "Invert Canvas", tint = Color(0xFFEC4899), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(
+                                onClick = { onShareFile?.invoke() },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(Icons.Rounded.Share, contentDescription = "Share Image", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+
+                        XcodeWorkspaceMode.MARKDOWN -> {
+                            IconButton(
+                                onClick = { onShareFile?.invoke() },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(Icons.Rounded.Share, contentDescription = "Share Document", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+
+                        XcodeWorkspaceMode.DATA_INSPECTOR -> {
+                            IconButton(
+                                onClick = { onCopyData?.invoke() },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy JSON", tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                            }
+                        }
+
+                        XcodeWorkspaceMode.MEDIA_PLAYER -> {
+                            IconButton(
+                                onClick = { Toast.makeText(context, "Background Audio Active", Toast.LENGTH_SHORT).show() },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(Icons.Rounded.Headphones, contentDescription = "Background Audio", tint = Color(0xFFF97316), modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
 
                     // Open Xcode Inspector Panel
@@ -449,7 +990,7 @@ fun WebsiteDeveloperBar(
                     }
 
                     // Open Xcode Debug Console / Terminal
-                    if (onOpenConsole != null) {
+                    if (onOpenConsole != null && workspaceMode != XcodeWorkspaceMode.IMAGE_VIEWER && workspaceMode != XcodeWorkspaceMode.PDF_VIEWER && workspaceMode != XcodeWorkspaceMode.MEDIA_PLAYER) {
                         IconButton(
                             onClick = onOpenConsole,
                             modifier = Modifier

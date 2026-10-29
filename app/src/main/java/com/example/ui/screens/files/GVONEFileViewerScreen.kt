@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.webkit.WebView
@@ -23,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -35,6 +37,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -452,6 +455,10 @@ fun GVONEFileViewerScreen(
 
                     FileType.IMAGE -> {
                         ImageFileViewer(imageFile = file)
+                    }
+
+                    FileType.AUDIO, FileType.VIDEO -> {
+                        MediaPlayerViewer(mediaFile = file, fileType = fileType)
                     }
 
                     else -> {
@@ -1088,7 +1095,7 @@ fun PdfDocumentViewer(pdfFile: File) {
 }
 
 /**
- * Image Viewer with resolution metadata and pinch-zoom layout.
+ * Image Viewer with resolution metadata, zoom controls, 90° stepped rotation, and canvas inversion.
  */
 @Composable
 fun ImageFileViewer(imageFile: File) {
@@ -1100,48 +1107,339 @@ fun ImageFileViewer(imageFile: File) {
         }
     }
 
-    Box(
+    var zoomScale by remember { mutableFloatStateOf(1f) }
+    var rotationDegrees by remember { mutableFloatStateOf(0f) }
+    var isDarkCanvas by remember { mutableStateOf(true) }
+
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF070B12)),
-        contentAlignment = Alignment.Center
+            .background(if (isDarkCanvas) Color(0xFF070B12) else Color(0xFFF1F5F9))
     ) {
-        if (bitmap != null) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(16.dp)
+        // Image Action Toolbar
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFF111827),
+            border = BorderStroke(1.dp, Color(0xFF1E293B))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = { if (zoomScale > 0.4f) zoomScale -= 0.2f }, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Rounded.ZoomOut, contentDescription = "Zoom Out", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                    }
+                    Text(
+                        text = "${(zoomScale * 100).toInt()}%",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = { if (zoomScale < 3f) zoomScale += 0.2f }, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Rounded.ZoomIn, contentDescription = "Zoom In", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = { zoomScale = 1f; rotationDegrees = 0f }, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Rounded.RestartAlt, contentDescription = "Reset", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = { rotationDegrees = (rotationDegrees + 90f) % 360f }, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Rounded.RotateRight, contentDescription = "Rotate 90°", tint = Color(0xFFA78BFA), modifier = Modifier.size(16.dp))
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    IconButton(onClick = { isDarkCanvas = !isDarkCanvas }, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Rounded.Contrast, contentDescription = "Invert Canvas", tint = Color(0xFFEC4899), modifier = Modifier.size(16.dp))
+                    }
+                    if (bitmap != null) {
+                        Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFF1E293B)) {
+                            Text(
+                                text = "${bitmap.width}×${bitmap.height} • ${imageFile.length() / 1024} KB",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Image Canvas with Zoom & Rotate
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .horizontalScroll(rememberScrollState())
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (bitmap != null) {
                 Card(
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF111827))
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, if (isDarkCanvas) Color(0xFF1E293B) else Color(0xFFCBD5E1)),
+                    colors = CardDefaults.cardColors(containerColor = if (isDarkCanvas) Color(0xFF0F172A) else Color.White)
                 ) {
                     Image(
                         bitmap = bitmap.asImageBitmap(),
                         contentDescription = imageFile.name,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp)
+                            .size(
+                                width = (bitmap.width * zoomScale * 0.5f).dp,
+                                height = (bitmap.height * zoomScale * 0.5f).dp
+                            )
+                            .rotate(rotationDegrees)
+                            .padding(4.dp)
                     )
                 }
+            } else {
+                Text("Unable to render image bitmap", color = Color(0xFF64748B), fontSize = 13.sp)
+            }
+        }
+    }
+}
 
-                Spacer(modifier = Modifier.height(14.dp))
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = Color(0xFF1E293B)
-                ) {
-                    Text(
-                        text = "${bitmap.width} × ${bitmap.height} px  •  ${imageFile.length() / 1024} KB",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                    )
+/**
+ * Media Player Viewer for Audio and Video formats (MP3, WAV, AAC, M4A, OGG, MP4, WEBM).
+ */
+@Composable
+fun MediaPlayerViewer(
+    mediaFile: File,
+    fileType: FileType
+) {
+    val context = LocalContext.current
+    var isPlaying by remember { mutableStateOf(false) }
+    var currentPositionMs by remember { mutableIntStateOf(0) }
+    var durationMs by remember { mutableIntStateOf(0) }
+    var playbackSpeed by remember { mutableFloatStateOf(1f) }
+    var isLooping by remember { mutableStateOf(false) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    DisposableEffect(mediaFile) {
+        val player = MediaPlayer().apply {
+            try {
+                setDataSource(context, Uri.fromFile(mediaFile))
+                prepare()
+                durationMs = duration
+                setOnCompletionListener {
+                    if (!isLooping) isPlaying = false
+                }
+            } catch (e: Exception) {
+                errorMsg = "Playback error: ${e.localizedMessage}"
+            }
+        }
+        mediaPlayer = player
+
+        onDispose {
+            player.release()
+            mediaPlayer = null
+        }
+    }
+
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            mediaPlayer?.let {
+                if (it.isPlaying) {
+                    currentPositionMs = it.currentPosition
                 }
             }
-        } else {
-            Text("Unable to render image bitmap", color = Color(0xFF64748B), fontSize = 13.sp)
+            kotlinx.coroutines.delay(200)
+        }
+    }
+
+    fun togglePlayPause() {
+        mediaPlayer?.let { player ->
+            if (player.isPlaying) {
+                player.pause()
+                isPlaying = false
+            } else {
+                try {
+                    player.playbackParams = player.playbackParams.setSpeed(playbackSpeed)
+                } catch (_: Exception) {}
+                player.isLooping = isLooping
+                player.start()
+                isPlaying = true
+            }
+        }
+    }
+
+    fun seekTo(posMs: Int) {
+        mediaPlayer?.seekTo(posMs)
+        currentPositionMs = posMs
+    }
+
+    fun cycleSpeed() {
+        val nextSpeed = when (playbackSpeed) {
+            0.75f -> 1f
+            1f -> 1.25f
+            1.25f -> 1.5f
+            1.5f -> 2f
+            else -> 0.75f
+        }
+        playbackSpeed = nextSpeed
+        mediaPlayer?.let {
+            if (it.isPlaying) {
+                try {
+                    it.playbackParams = it.playbackParams.setSpeed(nextSpeed)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun formatTime(ms: Int): String {
+        val totalSec = ms / 1000
+        val min = totalSec / 60
+        val sec = totalSec % 60
+        return "%d:%02d".format(min, sec)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF090D16))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+            border = BorderStroke(1.dp, Color(0xFF1E293B)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 520.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Vinyl / Waveform Album Art
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF161F30),
+                    border = BorderStroke(1.dp, Color(0xFF2C3E55)),
+                    modifier = Modifier.size(140.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (fileType == FileType.VIDEO) Icons.Rounded.Movie else Icons.Rounded.Audiotrack,
+                            contentDescription = null,
+                            tint = if (fileType == FileType.VIDEO) Color(0xFFF97316) else Color(0xFF8B5CF6),
+                            modifier = Modifier.size(60.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Text(
+                    text = mediaFile.name,
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = "${mediaFile.extension.uppercase()} Media Track • ${mediaFile.length() / 1024} KB",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Progress Bar
+                Slider(
+                    value = if (durationMs > 0) (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
+                    onValueChange = { fraction ->
+                        val targetMs = (fraction * durationMs).toInt()
+                        seekTo(targetMs)
+                    },
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color(0xFFF97316),
+                        activeTrackColor = Color(0xFFF97316),
+                        inactiveTrackColor = Color(0xFF1E293B)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = formatTime(currentPositionMs), color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    Text(text = formatTime(durationMs), color = Color(0xFF94A3B8), fontSize = 11.sp)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Media Controls
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Speed Button
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF1F2937),
+                        modifier = Modifier.clickable { cycleSpeed() }
+                    ) {
+                        Text(
+                            text = "${playbackSpeed}x",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                        )
+                    }
+
+                    // Seek backward 5s
+                    IconButton(onClick = { seekTo(maxOf(0, currentPositionMs - 5000)) }) {
+                        Icon(Icons.Rounded.Replay5, contentDescription = "Back 5s", tint = Color.White)
+                    }
+
+                    // Main Play/Pause Button
+                    FilledIconButton(
+                        onClick = { togglePlayPause() },
+                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFF97316)),
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    // Seek forward 5s
+                    IconButton(onClick = { seekTo(minOf(durationMs, currentPositionMs + 5000)) }) {
+                        Icon(Icons.Rounded.Forward5, contentDescription = "Forward 5s", tint = Color.White)
+                    }
+
+                    // Loop button
+                    IconButton(onClick = {
+                        isLooping = !isLooping
+                        mediaPlayer?.isLooping = isLooping
+                    }) {
+                        Icon(
+                            Icons.Rounded.Repeat,
+                            contentDescription = "Loop",
+                            tint = if (isLooping) Color(0xFFF97316) else Color(0xFF64748B)
+                        )
+                    }
+                }
+
+                if (errorMsg != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(text = errorMsg.orEmpty(), color = Color(0xFFF87171), fontSize = 12.sp)
+                }
+            }
         }
     }
 }

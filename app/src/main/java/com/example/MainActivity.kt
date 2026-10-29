@@ -547,6 +547,156 @@ fun BrowserApp(
                     )
                 }
             }
+        } else if (workspaceMode == XcodeWorkspaceMode.PDF_VIEWER) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
+            ) {
+                WebsiteDeveloperBar(
+                    tab = currentTab ?: tabs.firstOrNull() ?: com.example.data.model.BrowserTab(id = "pdf", title = "PDF Document", url = "xcode://pdf"),
+                    activeWebView = null,
+                    isTorActive = settings.torEnabled,
+                    onToggleOff = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
+                    modifier = Modifier.fillMaxWidth(),
+                    workspaceMode = XcodeWorkspaceMode.PDF_VIEWER,
+                    onToggleWorkspaceMode = { viewModel.setWorkspaceMode(it) },
+                    activeFileName = "document.pdf",
+                    isFileDirty = false,
+                    onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
+                    onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
+                    onAddressClick = { isAddressBarWriting = true }
+                )
+                GVONEFileViewerScreen(
+                    fileRelativePath = "Downloads/document.pdf",
+                    fileSystem = viewModel.fileSystem,
+                    onCloseTab = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
+                    onOpenTerminalWithCommand = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    isDeveloperBarEnabled = false,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        } else if (workspaceMode == XcodeWorkspaceMode.IMAGE_VIEWER) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
+            ) {
+                WebsiteDeveloperBar(
+                    tab = currentTab ?: tabs.firstOrNull() ?: com.example.data.model.BrowserTab(id = "image", title = "Image Viewer", url = "xcode://image"),
+                    activeWebView = null,
+                    isTorActive = settings.torEnabled,
+                    onToggleOff = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
+                    modifier = Modifier.fillMaxWidth(),
+                    workspaceMode = XcodeWorkspaceMode.IMAGE_VIEWER,
+                    onToggleWorkspaceMode = { viewModel.setWorkspaceMode(it) },
+                    activeFileName = "preview.png",
+                    isFileDirty = false,
+                    onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
+                    onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
+                    onAddressClick = { isAddressBarWriting = true }
+                )
+                GVONEFileViewerScreen(
+                    fileRelativePath = "Images/preview.png",
+                    fileSystem = viewModel.fileSystem,
+                    onCloseTab = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
+                    onOpenTerminalWithCommand = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    isDeveloperBarEnabled = false,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        } else if (workspaceMode == XcodeWorkspaceMode.MARKDOWN) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
+            ) {
+                WebsiteDeveloperBar(
+                    tab = currentTab ?: tabs.firstOrNull() ?: com.example.data.model.BrowserTab(id = "markdown", title = "Markdown & Docs", url = "xcode://markdown"),
+                    activeWebView = null,
+                    isTorActive = settings.torEnabled,
+                    onToggleOff = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
+                    modifier = Modifier.fillMaxWidth(),
+                    workspaceMode = XcodeWorkspaceMode.MARKDOWN,
+                    onToggleWorkspaceMode = { viewModel.setWorkspaceMode(it) },
+                    activeFileName = "architecture.md",
+                    isFileDirty = false,
+                    onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
+                    onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
+                    onAddressClick = { isAddressBarWriting = true }
+                )
+                GVONEFileViewerScreen(
+                    fileRelativePath = "GVONE/architecture.md",
+                    fileSystem = viewModel.fileSystem,
+                    onCloseTab = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
+                    onOpenTerminalWithCommand = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    isDeveloperBarEnabled = false,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        } else if (workspaceMode == XcodeWorkspaceMode.DATA_INSPECTOR) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
+            ) {
+                WebsiteDeveloperBar(
+                    tab = currentTab ?: tabs.firstOrNull() ?: com.example.data.model.BrowserTab(id = "data", title = "JSON & Data", url = "xcode://data"),
+                    activeWebView = null,
+                    isTorActive = settings.torEnabled,
+                    onToggleOff = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
+                    modifier = Modifier.fillMaxWidth(),
+                    workspaceMode = XcodeWorkspaceMode.DATA_INSPECTOR,
+                    onToggleWorkspaceMode = { viewModel.setWorkspaceMode(it) },
+                    activeFileName = "package.json",
+                    isFileDirty = false,
+                    onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
+                    onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
+                    onAddressClick = { isAddressBarWriting = true }
+                )
+                GVONEFileViewerScreen(
+                    fileRelativePath = "Projects/ReactMobileUI/package.json",
+                    fileSystem = viewModel.fileSystem,
+                    onCloseTab = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
+                    onOpenTerminalWithCommand = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    isDeveloperBarEnabled = false,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        } else if (workspaceMode == XcodeWorkspaceMode.MEDIA_PLAYER) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
+            ) {
+                WebsiteDeveloperBar(
+                    tab = currentTab ?: tabs.firstOrNull() ?: com.example.data.model.BrowserTab(id = "media", title = "Media Player", url = "xcode://media"),
+                    activeWebView = null,
+                    isTorActive = settings.torEnabled,
+                    onToggleOff = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
+                    modifier = Modifier.fillMaxWidth(),
+                    workspaceMode = XcodeWorkspaceMode.MEDIA_PLAYER,
+                    onToggleWorkspaceMode = { viewModel.setWorkspaceMode(it) },
+                    activeFileName = "sample_track.wav",
+                    isFileDirty = false,
+                    onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
+                    onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
+                    onAddressClick = { isAddressBarWriting = true }
+                )
+                GVONEFileViewerScreen(
+                    fileRelativePath = "Audio/sample_track.wav",
+                    fileSystem = viewModel.fileSystem,
+                    onCloseTab = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
+                    onOpenTerminalWithCommand = { viewModel.openSheet(ActiveSheet.Terminal) },
+                    isDeveloperBarEnabled = false,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         } else {
             // Main Browser View Area (All tabs kept alive for seamless background playback & instant tab switching)
             Box(modifier = Modifier.fillMaxSize()) {

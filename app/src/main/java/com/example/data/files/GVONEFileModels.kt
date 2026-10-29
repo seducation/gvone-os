@@ -74,6 +74,8 @@ enum class FileType(
     CODE("Code File", "kt", Color(0xFFA78BFA)),
     PDF("PDF Document", "pdf", Color(0xFFEF4444)),
     IMAGE("Image", "png", Color(0xFFEC4899)),
+    AUDIO("Audio File", "wav", Color(0xFF8B5CF6)),
+    VIDEO("Video File", "mp4", Color(0xFFF97316)),
     ARCHIVE("Archive", "zip", Color(0xFFEAB308)),
     UNKNOWN("File", "", Color(0xFF64748B))
 }

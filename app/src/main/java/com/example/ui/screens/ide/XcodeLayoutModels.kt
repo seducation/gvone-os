@@ -6,13 +6,23 @@ import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
  * Workspace display mode for the unified Xcode-style IDE browser window.
- * The central workspace dynamically displays either the full web browsing engine
- * or the monospace code editor without separate application screens.
+ * The central workspace dynamically displays either the full web browsing engine,
+ * the monospace code editor, bot chat, or native viewers for all file formats (PDF, Image, Markdown, Media, Data).
  */
-enum class XcodeWorkspaceMode(val label: String, val icon: ImageVector) {
-    BROWSER("Web Browser", Icons.Rounded.Public),
-    CODE_EDITOR("Code Studio", Icons.Rounded.Code),
-    BOT_CHAT("Bot Chat", Icons.Rounded.AutoAwesome)
+enum class XcodeWorkspaceMode(
+    val label: String,
+    val icon: ImageVector,
+    val tag: String = "",
+    val description: String = ""
+) {
+    CODE_EDITOR("Xcode Editor", Icons.Rounded.Code, "Xcode", "Monospace IDE code studio & syntax"),
+    BROWSER("Website Browser", Icons.Rounded.Public, "Website", "Live web engine & DevTools drawer"),
+    BOT_CHAT("AI Copilot", Icons.Rounded.AutoAwesome, "Copilot", "Grok & Claude AI assistants"),
+    PDF_VIEWER("PDF Document", Icons.Rounded.PictureAsPdf, "PDF", "Multi-page document reader"),
+    IMAGE_VIEWER("Image Viewer", Icons.Rounded.Image, "Image", "Visual asset inspector & zoom"),
+    MARKDOWN("Markdown & Docs", Icons.Rounded.Description, "Markdown", "Live Markdown preview & editor"),
+    MEDIA_PLAYER("Media Player", Icons.Rounded.PlayCircle, "Media", "Audio & video playback engine"),
+    DATA_INSPECTOR("JSON & Data", Icons.Rounded.DataObject, "Data", "Tree viewer, syntax & beautifier")
 }
 
 /**

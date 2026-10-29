@@ -2,6 +2,7 @@ package com.example.data.files
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
@@ -40,6 +41,7 @@ class GVONEFileSystem(private val context: Context) {
             "Documents",
             "Projects",
             "Images",
+            "Audio",
             "GVONE",
             "Downloads",
             "Cloud"
@@ -379,8 +381,130 @@ class GVONEFileSystem(private val context: Context) {
             if (!samplePdf.exists()) {
                 createSamplePdf(samplePdf)
             }
+
+            val imagesFolder = File(rootDir, "Images")
+            val sampleImage = File(imagesFolder, "preview.png")
+            if (!sampleImage.exists()) {
+                createSampleImage(sampleImage)
+            }
+
+            val audioFolder = File(rootDir, "Audio")
+            val sampleAudio = File(audioFolder, "sample_track.wav")
+            if (!sampleAudio.exists()) {
+                createSampleAudio(sampleAudio)
+            }
         } catch (_: Exception) {
         }
+    }
+
+    /**
+     * Creates a high-resolution, valid PNG asset for immediate Image Viewer rendering.
+     */
+    private fun createSampleImage(file: File) {
+        try {
+            val bitmap = Bitmap.createBitmap(800, 600, Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            canvas.drawColor(AndroidColor.rgb(15, 23, 42))
+
+            val titlePaint = Paint().apply {
+                isAntiAlias = true
+                color = AndroidColor.rgb(56, 189, 248)
+                textSize = 36f
+                isFakeBoldText = true
+            }
+            canvas.drawText("GVONE Universal Studio", 50f, 90f, titlePaint)
+
+            val subPaint = Paint().apply {
+                isAntiAlias = true
+                textSize = 20f
+                color = AndroidColor.rgb(167, 139, 250)
+            }
+            canvas.drawText("High-Resolution Asset Preview (800 × 600 PNG)", 50f, 130f, subPaint)
+
+            val boxPaint = Paint().apply {
+                color = AndroidColor.rgb(30, 41, 59)
+                style = Paint.Style.FILL
+            }
+            canvas.drawRoundRect(50f, 170f, 750f, 530f, 16f, 16f, boxPaint)
+
+            val borderPaint = Paint().apply {
+                color = AndroidColor.rgb(56, 189, 248)
+                style = Paint.Style.STROKE
+                strokeWidth = 3f
+            }
+            canvas.drawRoundRect(50f, 170f, 750f, 530f, 16f, 16f, borderPaint)
+
+            val textPaint = Paint().apply {
+                isAntiAlias = true
+                color = AndroidColor.rgb(226, 232, 240)
+                textSize = 20f
+            }
+            canvas.drawText("✓ Native Hardware-Accelerated Rendering", 80f, 230f, textPaint)
+            canvas.drawText("✓ Pinch-to-Zoom & Pan Viewport", 80f, 280f, textPaint)
+            canvas.drawText("✓ 90° Stepped Rotation Engine", 80f, 330f, textPaint)
+            canvas.drawText("✓ Light / Dark / Inverted Canvas Modes", 80f, 380f, textPaint)
+            canvas.drawText("✓ Supported Formats: PNG, JPG, WebP, SVG, GIF, BMP", 80f, 430f, textPaint)
+            canvas.drawText("✓ Metadata Inspection: 800 × 600 • 32-bit ARGB", 80f, 480f, textPaint)
+
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Creates a valid, real PCM WAV audio file with a short synthesized tone,
+     * allowing the Media Player to play audio natively without network dependency.
+     */
+    private fun createSampleAudio(file: File) {
+        try {
+            val sampleRate = 8000
+            val durationSec = 2
+            val numSamples = sampleRate * durationSec
+            val dataSize = numSamples * 2
+            val totalSize = 36 + dataSize
+            val buffer = ByteArray(44 + dataSize)
+
+            // RIFF chunk descriptor
+            buffer[0] = 'R'.code.toByte(); buffer[1] = 'I'.code.toByte(); buffer[2] = 'F'.code.toByte(); buffer[3] = 'F'.code.toByte()
+            buffer[4] = (totalSize and 0xff).toByte()
+            buffer[5] = ((totalSize shr 8) and 0xff).toByte()
+            buffer[6] = ((totalSize shr 16) and 0xff).toByte()
+            buffer[7] = ((totalSize shr 24) and 0xff).toByte()
+            buffer[8] = 'W'.code.toByte(); buffer[9] = 'A'.code.toByte(); buffer[10] = 'V'.code.toByte(); buffer[11] = 'E'.code.toByte()
+
+            // fmt sub-chunk
+            buffer[12] = 'f'.code.toByte(); buffer[13] = 'm'.code.toByte(); buffer[14] = 't'.code.toByte(); buffer[15] = ' '.code.toByte()
+            buffer[16] = 16; buffer[17] = 0; buffer[18] = 0; buffer[19] = 0
+            buffer[20] = 1; buffer[21] = 0
+            buffer[22] = 1; buffer[23] = 0
+            buffer[24] = (sampleRate and 0xff).toByte()
+            buffer[25] = ((sampleRate shr 8) and 0xff).toByte()
+            buffer[26] = 0; buffer[27] = 0
+            val byteRate = sampleRate * 2
+            buffer[28] = (byteRate and 0xff).toByte()
+            buffer[29] = ((byteRate shr 8) and 0xff).toByte()
+            buffer[30] = 0; buffer[31] = 0
+            buffer[32] = 2; buffer[33] = 0
+            buffer[34] = 16; buffer[35] = 0
+
+            // data sub-chunk
+            buffer[36] = 'd'.code.toByte(); buffer[37] = 'a'.code.toByte(); buffer[38] = 't'.code.toByte(); buffer[39] = 'a'.code.toByte()
+            buffer[40] = (dataSize and 0xff).toByte()
+            buffer[41] = ((dataSize shr 8) and 0xff).toByte()
+            buffer[42] = ((dataSize shr 16) and 0xff).toByte()
+            buffer[43] = ((dataSize shr 24) and 0xff).toByte()
+
+            for (i in 0 until numSamples) {
+                val freq = if (i < numSamples / 2) 440.0 else 554.37
+                val angle = 2.0 * Math.PI * i * freq / sampleRate
+                val sample = (Math.sin(angle) * 16000 * (1.0 - i.toDouble() / numSamples)).toInt().toShort()
+                buffer[44 + i * 2] = (sample.toInt() and 0xff).toByte()
+                buffer[44 + i * 2 + 1] = ((sample.toInt() shr 8) and 0xff).toByte()
+            }
+
+            file.writeBytes(buffer)
+        } catch (_: Exception) {}
     }
 
     /**
@@ -736,10 +860,12 @@ class GVONEFileSystem(private val context: Context) {
         return when (ext) {
             "md", "markdown" -> FileType.MARKDOWN
             "txt", "log", "conf", "cfg", "env" -> FileType.TEXT
-            "json" -> FileType.JSON
+            "json", "yaml", "yml" -> FileType.JSON
             "kt", "java", "py", "js", "ts", "html", "htm", "css", "sh", "bash", "xml", "c", "cpp", "h", "rs", "go", "sql" -> FileType.CODE
             "pdf" -> FileType.PDF
             "png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico" -> FileType.IMAGE
+            "mp3", "wav", "aac", "m4a", "ogg", "flac" -> FileType.AUDIO
+            "mp4", "webm", "mkv", "mov", "avi" -> FileType.VIDEO
             "zip", "tar", "gz", "rar", "7z" -> FileType.ARCHIVE
             else -> FileType.UNKNOWN
         }
@@ -750,6 +876,7 @@ class GVONEFileSystem(private val context: Context) {
             "md", "markdown" -> "text/markdown"
             "txt", "log" -> "text/plain"
             "json" -> "application/json"
+            "yaml", "yml" -> "text/yaml"
             "kt" -> "text/x-kotlin"
             "java" -> "text/x-java-source"
             "py" -> "text/x-python"
@@ -761,6 +888,12 @@ class GVONEFileSystem(private val context: Context) {
             "jpg", "jpeg" -> "image/jpeg"
             "webp" -> "image/webp"
             "svg" -> "image/svg+xml"
+            "wav" -> "audio/wav"
+            "mp3" -> "audio/mpeg"
+            "m4a", "aac" -> "audio/mp4"
+            "ogg" -> "audio/ogg"
+            "mp4" -> "video/mp4"
+            "webm" -> "video/webm"
             "zip" -> "application/zip"
             else -> "application/octet-stream"
         }
