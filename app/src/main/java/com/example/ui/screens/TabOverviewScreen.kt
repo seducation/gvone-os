@@ -133,6 +133,7 @@ fun TabOverviewScreen(
     onOpenInspectorWithTab: ((String) -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     onCloseOverview: () -> Unit,
+    initialCategory: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -147,7 +148,7 @@ fun TabOverviewScreen(
     // Search and filter state
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
-    var selectedCategory by rememberSaveable { mutableStateOf(0) } // 0 = Tabs, 1 = Chats, 2 = Files, 3 = Bots, 4 = Extensions, 5 = MCP, 6 = Settings
+    var selectedCategory by rememberSaveable(initialCategory) { mutableStateOf(initialCategory) } // 0 = Tabs, 1 = Chats, 2 = Files, 3 = Bots, 4 = Extensions, 5 = MCP, 6 = Settings
     val mcpServers by McpServerManager.servers.collectAsState()
     var showAddMcpServerDialog by remember { mutableStateOf(false) }
 

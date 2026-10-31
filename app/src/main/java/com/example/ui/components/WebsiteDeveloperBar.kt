@@ -107,7 +107,9 @@ fun WebsiteDeveloperBar(
     onCopyData: (() -> Unit)? = null,
     onShareFile: (() -> Unit)? = null,
     onSearchDoc: (() -> Unit)? = null,
-    onInvertCanvas: (() -> Unit)? = null
+    onInvertCanvas: (() -> Unit)? = null,
+    onOpenMcp: (() -> Unit)? = null,
+    onOpenSettings: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isExpanded by remember { mutableStateOf(false) }
@@ -468,6 +470,44 @@ fun WebsiteDeveloperBar(
                                     onOpenConsole?.invoke()
                                 }
                             )
+
+                            // 11. MCP & Context Protocol
+                            if (onOpenMcp != null) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text("MCP & AI Context Protocol", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                            Text("Model context server & tool bridges", fontSize = 10.sp, color = Color(0xFF38BDF8))
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.Hub, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        isCategoryDropdownOpen = false
+                                        onOpenMcp.invoke()
+                                    }
+                                )
+                            }
+
+                            // 12. Browser & IDE Settings
+                            if (onOpenSettings != null) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text("Settings & Preferences", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                            Text("DevTools, Tor proxy, search & layout", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.Settings, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
+                                    },
+                                    onClick = {
+                                        isCategoryDropdownOpen = false
+                                        onOpenSettings.invoke()
+                                    }
+                                )
+                            }
                         }
                     }
 
@@ -830,7 +870,7 @@ fun WebsiteDeveloperBar(
                                         XcodeWorkspaceMode.MARKDOWN -> (activeFileName ?: "architecture.md")
                                         XcodeWorkspaceMode.DATA_INSPECTOR -> (activeFileName ?: "package.json")
                                         XcodeWorkspaceMode.MEDIA_PLAYER -> (activeFileName ?: "sample_track.wav")
-                                        else -> (tab.title.takeIf { it.isNotBlank() } ?: "Web Workspace")
+                                        else -> (activeFileName ?: tab.title.takeIf { it.isNotBlank() } ?: "Web Workspace")
                                     },
                                     color = Color.White,
                                     fontSize = 11.5.sp,
