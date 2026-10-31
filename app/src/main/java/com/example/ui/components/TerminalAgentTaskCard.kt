@@ -210,13 +210,33 @@ fun RuntimeStatusPillRow(
                 }
             }
 
-            // 4. Bridge Pill (strictly alternates between CHAT BRIDGE: ON and WEB BRIDGE: ON)
-            val isChat = terminalBridgeMode == com.example.data.terminal.TerminalBridgeMode.CHAT
-            val bridgeText = if (isChat) "CHAT BRIDGE: ON" else "WEB BRIDGE: ON"
-            val bridgeBg = if (isChat) Color(0xFF064E3B) else Color(0xFF0C4A6E)
-            val bridgeBorder = if (isChat) Color(0xFF10B981) else Color(0xFF38BDF8)
-            val bridgeTextColor = if (isChat) Color(0xFF6EE7B7) else Color(0xFF7DD3FC)
-            val bridgeDotColor = if (isChat) Color(0xFF10B981) else Color(0xFF38BDF8)
+            // 4. Bridge Pill (cycles between CHAT BRIDGE: ON, WEB BRIDGE: ON, and TERMINAL BRIDGE: ON)
+            val bridgeMode = terminalBridgeMode
+            val bridgeText = when (bridgeMode) {
+                com.example.data.terminal.TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON"
+                com.example.data.terminal.TerminalBridgeMode.WEB -> "WEB BRIDGE: ON"
+                com.example.data.terminal.TerminalBridgeMode.TERMINAL -> "TERMINAL BRIDGE: ON"
+            }
+            val bridgeBg = when (bridgeMode) {
+                com.example.data.terminal.TerminalBridgeMode.CHAT -> Color(0xFF064E3B)
+                com.example.data.terminal.TerminalBridgeMode.WEB -> Color(0xFF0C4A6E)
+                com.example.data.terminal.TerminalBridgeMode.TERMINAL -> Color(0xFF451A03)
+            }
+            val bridgeBorder = when (bridgeMode) {
+                com.example.data.terminal.TerminalBridgeMode.CHAT -> Color(0xFF10B981)
+                com.example.data.terminal.TerminalBridgeMode.WEB -> Color(0xFF38BDF8)
+                com.example.data.terminal.TerminalBridgeMode.TERMINAL -> Color(0xFFF59E0B)
+            }
+            val bridgeTextColor = when (bridgeMode) {
+                com.example.data.terminal.TerminalBridgeMode.CHAT -> Color(0xFF6EE7B7)
+                com.example.data.terminal.TerminalBridgeMode.WEB -> Color(0xFF7DD3FC)
+                com.example.data.terminal.TerminalBridgeMode.TERMINAL -> Color(0xFFFCD34D)
+            }
+            val bridgeDotColor = when (bridgeMode) {
+                com.example.data.terminal.TerminalBridgeMode.CHAT -> Color(0xFF10B981)
+                com.example.data.terminal.TerminalBridgeMode.WEB -> Color(0xFF38BDF8)
+                com.example.data.terminal.TerminalBridgeMode.TERMINAL -> Color(0xFFF59E0B)
+            }
 
             Surface(
                 shape = RoundedCornerShape(4.dp),

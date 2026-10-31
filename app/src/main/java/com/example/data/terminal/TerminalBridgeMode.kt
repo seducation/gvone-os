@@ -11,5 +11,6 @@ package com.example.data.terminal
  */
 enum class TerminalBridgeMode {
     CHAT,
-    WEB
+    WEB,
+    TERMINAL
 }

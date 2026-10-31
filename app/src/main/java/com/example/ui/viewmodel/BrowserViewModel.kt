@@ -132,7 +132,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun cycleTerminalBridgeMode(): com.example.data.terminal.TerminalBridgeMode {
         val next = when (_terminalBridgeMode.value) {
             com.example.data.terminal.TerminalBridgeMode.CHAT -> com.example.data.terminal.TerminalBridgeMode.WEB
-            com.example.data.terminal.TerminalBridgeMode.WEB -> com.example.data.terminal.TerminalBridgeMode.CHAT
+            com.example.data.terminal.TerminalBridgeMode.WEB -> com.example.data.terminal.TerminalBridgeMode.TERMINAL
+            com.example.data.terminal.TerminalBridgeMode.TERMINAL -> com.example.data.terminal.TerminalBridgeMode.CHAT
         }
         setTerminalBridgeMode(next)
         return next

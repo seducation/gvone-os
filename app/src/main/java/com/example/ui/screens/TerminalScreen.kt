@@ -485,10 +485,10 @@ fun TerminalScreen(
 
         val promptPrefix = if (isAgenticMode) {
             "gvone[agentic:${activePersona.badge.lowercase()}]:$currentCwd$ "
-        } else if (!isBridgeMode) {
-            "gemini@browser:$currentCwd$ "
-        } else {
-            "bridge@browser:$currentCwd$ "
+        } else when (terminalBridgeMode) {
+            TerminalBridgeMode.CHAT -> "gemini@browser:$currentCwd$ "
+            TerminalBridgeMode.WEB -> "bridge@browser:$currentCwd$ "
+            TerminalBridgeMode.TERMINAL -> "shell@terminal:$currentCwd$ "
         }
 
         if (trimmed.isEmpty() && itemToSend == null) {
@@ -952,13 +952,32 @@ fun TerminalScreen(
                         val label = when (nextMode) {
                             TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON"
                             TerminalBridgeMode.WEB -> "WEB BRIDGE: ON"
+                            TerminalBridgeMode.TERMINAL -> "TERMINAL BRIDGE: ON"
                         }
                         Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
                         val bridgeLine = TerminalLine(
-                            text = if (nextMode == TerminalBridgeMode.CHAT) {
-                                "● [CHAT BRIDGE: ON] Connected to AI Chatbot (Gemini API). Conversational chat active."
-                            } else {
-                                "● [WEB BRIDGE: ON] Connected to active website. Direct input delivery active."
+                            text = when (nextMode) {
+                                TerminalBridgeMode.CHAT -> "● [CHAT BRIDGE: ON] Connected to AI Chatbot (Gemini API). Conversational chat active."
+                                TerminalBridgeMode.WEB -> "● [WEB BRIDGE: ON] Connected to active website. Direct input delivery active."
+                                TerminalBridgeMode.TERMINAL -> "● [TERMINAL BRIDGE: ON] Connected to terminal shell engine. Direct command stream active."
+                            },
+                            type = TerminalLineType.SUCCESS
+                        )
+                        viewModel.appendTerminalLines(listOf(bridgeLine))
+                    },
+                    onSelectBridgeMode = { targetMode ->
+                        viewModel.setTerminalBridgeMode(targetMode)
+                        val label = when (targetMode) {
+                            TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON"
+                            TerminalBridgeMode.WEB -> "WEB BRIDGE: ON"
+                            TerminalBridgeMode.TERMINAL -> "TERMINAL BRIDGE: ON"
+                        }
+                        Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
+                        val bridgeLine = TerminalLine(
+                            text = when (targetMode) {
+                                TerminalBridgeMode.CHAT -> "● [CHAT BRIDGE: ON] Connected to AI Chatbot (Gemini API). Conversational chat active."
+                                TerminalBridgeMode.WEB -> "● [WEB BRIDGE: ON] Connected to active website. Direct input delivery active."
+                                TerminalBridgeMode.TERMINAL -> "● [TERMINAL BRIDGE: ON] Connected to terminal shell engine. Direct command stream active."
                             },
                             type = TerminalLineType.SUCCESS
                         )
@@ -1641,9 +1660,19 @@ fun TerminalScreen(
                                 withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
                                     append("$currentCwd$ ")
                                 }
-                            } else {
+                            } else if (terminalBridgeMode == TerminalBridgeMode.WEB) {
                                 withStyle(SpanStyle(color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)) {
                                     append(if (isVoice) "gvone(web:voice)@browser" else "gvone(web:bridge)@browser")
+                                }
+                                withStyle(SpanStyle(color = TermTextSecondary)) {
+                                    append(":")
+                                }
+                                withStyle(SpanStyle(color = TermPromptCyan, fontWeight = FontWeight.Bold)) {
+                                    append("$currentCwd$ ")
+                                }
+                            } else {
+                                withStyle(SpanStyle(color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)) {
+                                    append(if (isVoice) "gvone(term:voice)@shell" else "gvone(term:bridge)@shell")
                                 }
                                 withStyle(SpanStyle(color = TermTextSecondary)) {
                                     append(":")
@@ -1670,10 +1699,10 @@ fun TerminalScreen(
                             Text(
                                 text = if (isAgenticMode) {
                                     "Type autonomous goal (Agent is ON)..."
-                                } else if (terminalBridgeMode == TerminalBridgeMode.CHAT) {
-                                    "Chat with AI (Chat Bridge is ON)..."
-                                } else {
-                                    "Input bridged to website (Web Bridge is ON)..."
+                                } else when (terminalBridgeMode) {
+                                    TerminalBridgeMode.CHAT -> "Chat with AI (Chat Bridge is ON)..."
+                                    TerminalBridgeMode.WEB -> "Input bridged to website (Web Bridge is ON)..."
+                                    TerminalBridgeMode.TERMINAL -> "Execute shell command (Terminal Bridge is ON)..."
                                 },
                                 color = Color(0xFF555D68),
                                 fontFamily = FontFamily.Monospace,
@@ -2198,6 +2227,7 @@ private fun TerminalHeaderBar(
     onFocusSandbox: () -> Unit = {},
     terminalBridgeMode: TerminalBridgeMode = TerminalBridgeMode.CHAT,
     onBridgeClick: () -> Unit = {},
+    onSelectBridgeMode: (TerminalBridgeMode) -> Unit = {},
     onCnsClick: () -> Unit = {},
     xcodeConsoleFilter: String = "All Output",
     onSelectConsoleFilter: (String) -> Unit = {},
@@ -2524,9 +2554,10 @@ private fun TerminalHeaderBar(
                         }
                     )
 
-                    // 6. Web Bridge / Chat Bridge
-                    val isWebBridge = terminalBridgeMode == com.example.data.terminal.TerminalBridgeMode.WEB
+                    // 6. Bridge: Terminal (Direct Shell Pipeline)
+                    val isTerminalBridge = terminalBridgeMode == com.example.data.terminal.TerminalBridgeMode.TERMINAL
                     DropdownMenuItem(
+                        modifier = Modifier.testTag("menu_bridge_terminal"),
                         text = {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -2534,20 +2565,85 @@ private fun TerminalHeaderBar(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = if (isWebBridge) "Bridge: Web (Website Input)" else "Bridge: Chat (Gemini AI)",
-                                    color = if (isWebBridge) Color(0xFF38BDF8) else Color(0xFF10B981),
+                                    text = if (isTerminalBridge) "Bridge: Terminal (Direct Shell: ON)" else "Bridge: Terminal (Direct Shell)",
+                                    color = if (isTerminalBridge) Color(0xFFF59E0B) else Color(0xFFE2E8F0),
                                     fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontWeight = if (isTerminalBridge) FontWeight.Bold else FontWeight.SemiBold,
                                     modifier = Modifier.weight(1f)
                                 )
+                                if (isTerminalBridge) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(15.dp))
+                                }
                             }
                         },
                         leadingIcon = {
-                            Icon(Icons.Rounded.Sensors, contentDescription = null, tint = if (isWebBridge) Color(0xFF38BDF8) else Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Rounded.Terminal, contentDescription = null, tint = if (isTerminalBridge) Color(0xFFF59E0B) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
                         },
                         onClick = {
                             showControlsMenu = false
-                            onBridgeClick()
+                            onSelectBridgeMode(com.example.data.terminal.TerminalBridgeMode.TERMINAL)
+                        }
+                    )
+
+                    // 7. Bridge: Web (Website Input)
+                    val isWebBridge = terminalBridgeMode == com.example.data.terminal.TerminalBridgeMode.WEB
+                    DropdownMenuItem(
+                        modifier = Modifier.testTag("menu_bridge_web"),
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (isWebBridge) "Bridge: Web (Website Input: ON)" else "Bridge: Web (Website Input)",
+                                    color = if (isWebBridge) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (isWebBridge) FontWeight.Bold else FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isWebBridge) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Sensors, contentDescription = null, tint = if (isWebBridge) Color(0xFF38BDF8) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onSelectBridgeMode(com.example.data.terminal.TerminalBridgeMode.WEB)
+                        }
+                    )
+
+                    // 8. Bridge: Chat (Gemini AI Chatbot)
+                    val isChatBridge = terminalBridgeMode == com.example.data.terminal.TerminalBridgeMode.CHAT
+                    DropdownMenuItem(
+                        modifier = Modifier.testTag("menu_bridge_chat"),
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (isChatBridge) "Bridge: Chat (Gemini AI: ON)" else "Bridge: Chat (Gemini AI)",
+                                    color = if (isChatBridge) Color(0xFF10B981) else Color(0xFFE2E8F0),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = if (isChatBridge) FontWeight.Bold else FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isChatBridge) {
+                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(15.dp))
+                                }
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Chat, contentDescription = null, tint = if (isChatBridge) Color(0xFF10B981) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onSelectBridgeMode(com.example.data.terminal.TerminalBridgeMode.CHAT)
                         }
                     )
 

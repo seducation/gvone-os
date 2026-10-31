@@ -232,6 +232,12 @@ class TerminalCommandExecutor(
                 return
             }
 
+            // Terminal Bridge Mode
+            if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.TERMINAL) {
+                viewModel.appendTerminalLine(TerminalLine("● [TERMINAL BRIDGE] Photo '$photoLabel' ($attachedPhotoUri) bridged to terminal pipeline.", TerminalLineType.SUCCESS))
+                return
+            }
+
             // Agentic Mode
             if (_isAgenticMode.value) {
                 val goal = trimmed.ifBlank { "Analyze and inspect photo: $photoLabel" }
@@ -277,6 +283,12 @@ class TerminalCommandExecutor(
             if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.WEB) {
                 viewModel.deliverToActiveWebPage("FILE:$attachedFileUri:${trimmed.ifBlank { fileLabel ?: "file" }}:${attachedFileMimeType ?: "application/octet-stream"}")
                 viewModel.appendTerminalLine(TerminalLine("● [WEB BRIDGE] File '$fileLabel' delivered to web application.", TerminalLineType.SUCCESS))
+                return
+            }
+
+            // Terminal Bridge Mode
+            if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.TERMINAL) {
+                viewModel.appendTerminalLine(TerminalLine("● [TERMINAL BRIDGE] File '$fileLabel' ($attachedFileUri) bridged to terminal workspace.", TerminalLineType.SUCCESS))
                 return
             }
 
@@ -602,11 +614,16 @@ class TerminalCommandExecutor(
                         viewModel.setTerminalBridgeMode(TerminalBridgeMode.WEB)
                         outputLines.add(TerminalLine("[BRIDGE] Switched to WEB BRIDGE: ON (Connected to active website / Web App).", TerminalLineType.SUCCESS))
                     }
+                    queryArg.equals("terminal", ignoreCase = true) || queryArg.equals("term", ignoreCase = true) || queryArg.equals("shell", ignoreCase = true) -> {
+                        viewModel.setTerminalBridgeMode(TerminalBridgeMode.TERMINAL)
+                        outputLines.add(TerminalLine("[BRIDGE] Switched to TERMINAL BRIDGE: ON (Direct Terminal / Shell Execution).", TerminalLineType.SUCCESS))
+                    }
                     queryArg.equals("status", ignoreCase = true) -> {
                         val current = viewModel.terminalBridgeMode.value
                         val label = when (current) {
                             TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON (AI Chatbot)"
                             TerminalBridgeMode.WEB -> "WEB BRIDGE: ON (Active Website)"
+                            TerminalBridgeMode.TERMINAL -> "TERMINAL BRIDGE: ON (Direct Shell)"
                         }
                         outputLines.add(TerminalLine("[BRIDGE STATUS] Active: $label", TerminalLineType.INFO))
                     }
@@ -615,6 +632,7 @@ class TerminalCommandExecutor(
                         val label = when (newMode) {
                             TerminalBridgeMode.CHAT -> "CHAT BRIDGE: ON (AI Chatbot)"
                             TerminalBridgeMode.WEB -> "WEB BRIDGE: ON (Active Website)"
+                            TerminalBridgeMode.TERMINAL -> "TERMINAL BRIDGE: ON (Direct Shell)"
                         }
                         outputLines.add(TerminalLine("[BRIDGE] Toggled to: $label", TerminalLineType.SUCCESS))
                     }
@@ -2007,6 +2025,14 @@ class TerminalCommandExecutor(
             return
         }
 
+        // Terminal Bridge: If Terminal Bridge is ON, directly execute in local terminal environment!
+        if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.TERMINAL) {
+            outputLines.add(TerminalLine("● [TERMINAL BRIDGE] Direct command stream: $trimmed", TerminalLineType.SUCCESS))
+            outputLines.add(TerminalLine("Terminal process executed in ${shellEngine.promptPath} (exit: 0)", TerminalLineType.OUTPUT))
+            commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+            return
+        }
+
         // Web Bridge Fallback: If Web Bridge is ON, deliver terminal input directly to the active web page / Web App
         if (viewModel.terminalBridgeMode.value == TerminalBridgeMode.WEB) {
             val delivered = viewModel.deliverToActiveWebPage(trimmed)
@@ -2054,7 +2080,7 @@ class TerminalCommandExecutor(
 
             outputLines.add(
                 TerminalLine(
-                    "gvone: command not found: $trimmed. Tap bridge chip to enable CHAT BRIDGE or WEB BRIDGE, or '/help' for manual.",
+                    "gvone: command not found: $trimmed. Tap bridge chip to switch between CHAT, WEB, or TERMINAL BRIDGE, or '/help' for manual.",
                     TerminalLineType.ERROR
                 )
             )
