@@ -131,6 +131,7 @@ fun TabOverviewScreen(
     onNavigateToUrl: ((String) -> Unit)? = null,
     onSelectProjectTarget: ((QuickMenuProject) -> Unit)? = null,
     onOpenInspectorWithTab: ((String) -> Unit)? = null,
+    onOpenSettings: (() -> Unit)? = null,
     onCloseOverview: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -146,7 +147,9 @@ fun TabOverviewScreen(
     // Search and filter state
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
-    var selectedCategory by rememberSaveable { mutableStateOf(0) } // 0 = Tabs, 1 = Chats, 2 = Files, 3 = Bots, 4 = Extensions
+    var selectedCategory by rememberSaveable { mutableStateOf(0) } // 0 = Tabs, 1 = Chats, 2 = Files, 3 = Bots, 4 = Extensions, 5 = MCP, 6 = Settings
+    val mcpServers by McpServerManager.servers.collectAsState()
+    var showAddMcpServerDialog by remember { mutableStateOf(false) }
 
     // Extensions state for Navigator panel
     val extensions = remember {
@@ -694,12 +697,15 @@ fun TabOverviewScreen(
                     val activeChatCount = if (currentFolderId != null) folderChats.size else terminalSessions.size
                     val activeFileCount = if (currentFolderId != null) folderFiles.size else allFiles.size
 
+                    val activeMcpCount = mcpServers.count { it.isConnected }
                     val navCategories = listOf(
                         Triple(0, "Tabs ($activeTabCount)", Icons.Rounded.Public),
                         Triple(1, "Chats ($activeChatCount)", Icons.Rounded.Terminal),
                         Triple(2, if (currentFolderId != null) "Files ($activeFileCount)" else "All Files ($activeFileCount)", Icons.Rounded.FolderCopy),
                         Triple(3, "Bots (5)", Icons.Rounded.AutoAwesome),
-                        Triple(4, "Extensions (${extensions.size})", Icons.Rounded.Extension)
+                        Triple(4, "Extensions (${extensions.size})", Icons.Rounded.Extension),
+                        Triple(5, "MCP ($activeMcpCount)", Icons.Rounded.Hub),
+                        Triple(6, "Settings", Icons.Rounded.Settings)
                     )
 
                     navCategories.forEach { (catId, title, icon) ->
@@ -709,7 +715,9 @@ fun TabOverviewScreen(
                             1 -> Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Color(0xFF0284C7)))
                             2 -> Brush.horizontalGradient(listOf(Color(0xFF10B981), Color(0xFF059669)))
                             3 -> Brush.horizontalGradient(listOf(Color(0xFFA855F7), Color(0xFF7C3AED)))
-                            else -> Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))
+                            4 -> Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))
+                            5 -> Brush.horizontalGradient(listOf(Color(0xFFEC4899), Color(0xFFBE185D)))
+                            else -> Brush.horizontalGradient(listOf(Color(0xFF64748B), Color(0xFF334155)))
                         }
 
                         Box(
@@ -720,7 +728,12 @@ fun TabOverviewScreen(
                                     if (isSelected) bgGradient
                                     else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                                 )
-                                .clickable { selectedCategory = catId }
+                                .clickable {
+                                    selectedCategory = catId
+                                    if (catId >= 3) {
+                                        currentFolderId = null
+                                    }
+                                }
                                 .padding(horizontal = 12.dp)
                                 .testTag("category_pill_${title.substringBefore(" ").lowercase()}"),
                             contentAlignment = Alignment.Center
@@ -1515,7 +1528,7 @@ fun TabOverviewScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     // SECTION 1: TAB GROUP FOLDERS
-                    if (tabGroups.isNotEmpty()) {
+                    if (tabGroups.isNotEmpty() && (selectedCategory == 0 || selectedCategory == 2)) {
                         item(span = { GridItemSpan(2) }) {
                             Row(
                                 modifier = Modifier
@@ -2389,6 +2402,51 @@ fun TabOverviewScreen(
                             }
                         }
                     }
+
+                    // SECTION 7: MODEL CONTEXT PROTOCOL (when category == 5)
+                    if (selectedCategory == 5) {
+                        item(span = { GridItemSpan(2) }) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color(0xFF0D121F),
+                                border = BorderStroke(1.dp, Color(0xFF233554)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 450.dp, max = 650.dp)
+                                    .testTag("navigator_mcp_container")
+                            ) {
+                                IdeMcpView(
+                                    onOpenBotChat = {
+                                        selectedCategory = 3
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // SECTION 8: WORKSPACE & NAVIGATOR SETTINGS (when category == 6)
+                    if (selectedCategory == 6) {
+                        item(span = { GridItemSpan(2) }) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color(0xFF0D121F),
+                                border = BorderStroke(1.dp, Color(0xFF233554)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 450.dp, max = 650.dp)
+                                    .testTag("navigator_settings_container")
+                            ) {
+                                IdeNavigatorSettingsView(
+                                    onOpenFullSettings = {
+                                        onCloseOverview()
+                                        onOpenSettings?.invoke() ?: run {
+                                            Toast.makeText(context, "Full Settings opened", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2580,18 +2638,24 @@ fun TabOverviewScreen(
                         }
                     }
 
-                    // BOTTOM RIGHT: Action FAB (Add Tab / Add Chat / Add File)
+                    // BOTTOM RIGHT: Action FAB (Add Tab / Add Chat / Add File / Add MCP Server / Settings)
                     FloatingActionButton(
                         onClick = {
                             when (selectedCategory) {
                                 1 -> onNewChat(currentFolderId)
                                 2 -> showCreateFileDialog = true
+                                5 -> showAddMcpServerDialog = true
+                                6 -> onOpenSettings?.invoke() ?: run {
+                                    Toast.makeText(context, "Settings pane active", Toast.LENGTH_SHORT).show()
+                                }
                                 else -> onNewTab(currentFolderId)
                             }
                         },
                         containerColor = when (selectedCategory) {
                             1 -> Color(0xFF38BDF8)
                             2 -> Color(0xFF10B981)
+                            5 -> Color(0xFFEC4899)
+                            6 -> Color(0xFF64748B)
                             else -> if (isPrivateMode) GVONESecondary else GVONEPrimary
                         },
                         contentColor = if (selectedCategory == 1) Color.Black else Color.White,
@@ -2604,11 +2668,15 @@ fun TabOverviewScreen(
                             imageVector = when (selectedCategory) {
                                 1 -> Icons.Rounded.AddComment
                                 2 -> Icons.Rounded.NoteAdd
+                                5 -> Icons.Rounded.AddLink
+                                6 -> Icons.Rounded.Tune
                                 else -> Icons.Rounded.Add
                             },
                             contentDescription = when (selectedCategory) {
                                 1 -> "New Chat"
                                 2 -> "New File"
+                                5 -> "Add MCP Server"
+                                6 -> "Open Settings"
                                 else -> "New Tab"
                             },
                             modifier = Modifier.size(22.dp)
@@ -2617,6 +2685,18 @@ fun TabOverviewScreen(
                 }
             }
         }
+    }
+
+    // --- MCP SERVER DIALOG ---
+    if (showAddMcpServerDialog) {
+        AddMcpServerDialog(
+            onDismiss = { showAddMcpServerDialog = false },
+            onAdd = { newServer ->
+                McpServerManager.addServer(newServer)
+                showAddMcpServerDialog = false
+                Toast.makeText(context, "Added MCP server: ${newServer.name}", Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 
     // --- ENVIRONMENT MANAGEMENT SHEETS & DIALOGS ---

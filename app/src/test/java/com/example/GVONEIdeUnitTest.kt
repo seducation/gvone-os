@@ -103,4 +103,39 @@ class GVONEIdeUnitTest {
         assertNotNull(sheet)
         assertEquals(ActiveSheet.Ide, sheet)
     }
+
+    @Test
+    fun testXcodeNavigatorCategoriesIncludeMcpAndSettings() {
+        val categories = XcodeNavigatorCategory.values()
+        assertEquals("Navigator must have 7 categories: Tabs, Chats, Files, Bots, Extensions, MCP, Settings", 7, categories.size)
+        assertEquals(XcodeNavigatorCategory.TABS, categories[0])
+        assertEquals(XcodeNavigatorCategory.CHATS, categories[1])
+        assertEquals(XcodeNavigatorCategory.FILES, categories[2])
+        assertEquals(XcodeNavigatorCategory.BOTS, categories[3])
+        assertEquals(XcodeNavigatorCategory.EXTENSIONS, categories[4])
+        assertEquals(XcodeNavigatorCategory.MCP, categories[5])
+        assertEquals(XcodeNavigatorCategory.SETTINGS, categories[6])
+
+        assertEquals(5, XcodeNavigatorCategory.MCP.id)
+        assertEquals("MCP", XcodeNavigatorCategory.MCP.title)
+        assertEquals(6, XcodeNavigatorCategory.SETTINGS.id)
+        assertEquals("Settings", XcodeNavigatorCategory.SETTINGS.title)
+    }
+
+    @Test
+    fun testMcpServerManagerOperations() {
+        val servers = McpServerManager.servers.value
+        assertTrue("MCP server manager should contain default servers", servers.isNotEmpty())
+        assertTrue("Should contain filesystem server", servers.any { it.id == "mcp_filesystem" })
+        assertTrue("Should contain git server", servers.any { it.id == "mcp_git" })
+        assertTrue("Should contain fetch server", servers.any { it.id == "mcp_fetch" })
+
+        val initialStatus = servers.first { it.id == "mcp_filesystem" }.isConnected
+        McpServerManager.toggleServer("mcp_filesystem")
+        assertEquals(!initialStatus, McpServerManager.servers.value.first { it.id == "mcp_filesystem" }.isConnected)
+        McpServerManager.toggleServer("mcp_filesystem") // restore
+
+        val latency = McpServerManager.pingServer("mcp_filesystem")
+        assertTrue("Latency should be positive", latency > 0)
+    }
 }

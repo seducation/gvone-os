@@ -1070,6 +1070,7 @@ fun BrowserApp(
                 },
                 onSelectProjectTarget = { viewModel.selectProjectTarget(it) },
                 onOpenInspectorWithTab = { tab -> viewModel.openInspectorWithTab(tab) },
+                onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                 onCloseOverview = { viewModel.closeSheet() }
             )
         }

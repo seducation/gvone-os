@@ -39,7 +39,9 @@ enum class XcodeNavigatorCategory(
     CHATS(1, "Chats", Icons.Rounded.Terminal, 0xFF38BDF8),
     FILES(2, "Files", Icons.Rounded.InsertDriveFile, 0xFF10B981),
     BOTS(3, "Bots", Icons.Rounded.AutoAwesome, 0xFFA855F7),
-    EXTENSIONS(4, "Extensions", Icons.Rounded.Extension, 0xFFF59E0B)
+    EXTENSIONS(4, "Extensions", Icons.Rounded.Extension, 0xFFF59E0B),
+    MCP(5, "MCP", Icons.Rounded.Hub, 0xFFEC4899),
+    SETTINGS(6, "Settings", Icons.Rounded.Settings, 0xFF64748B)
 }
 
 /**
