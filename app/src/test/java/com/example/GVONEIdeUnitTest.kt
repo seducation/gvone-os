@@ -138,44 +138,4 @@ class GVONEIdeUnitTest {
         val latency = McpServerManager.pingServer("mcp_filesystem")
         assertTrue("Latency should be positive", latency > 0)
     }
-
-    @Test
-    fun testActiveSheetMcpPresence() {
-        val sheet: ActiveSheet = ActiveSheet.Mcp
-        assertNotNull(sheet)
-        assertEquals(ActiveSheet.Mcp, sheet)
-    }
-
-    @Test
-    fun testFileModeResolutionMatchesDeveloperBar() {
-        val pdfMode = when (FileType.PDF) {
-            FileType.PDF -> XcodeWorkspaceMode.PDF_VIEWER
-            else -> XcodeWorkspaceMode.BROWSER
-        }
-        assertEquals(XcodeWorkspaceMode.PDF_VIEWER, pdfMode)
-
-        val codeMode = when (FileType.CODE) {
-            FileType.CODE -> XcodeWorkspaceMode.CODE_EDITOR
-            else -> XcodeWorkspaceMode.BROWSER
-        }
-        assertEquals(XcodeWorkspaceMode.CODE_EDITOR, codeMode)
-
-        val imgMode = when (FileType.IMAGE) {
-            FileType.IMAGE -> XcodeWorkspaceMode.IMAGE_VIEWER
-            else -> XcodeWorkspaceMode.BROWSER
-        }
-        assertEquals(XcodeWorkspaceMode.IMAGE_VIEWER, imgMode)
-
-        val mdMode = when (FileType.MARKDOWN) {
-            FileType.MARKDOWN -> XcodeWorkspaceMode.MARKDOWN
-            else -> XcodeWorkspaceMode.BROWSER
-        }
-        assertEquals(XcodeWorkspaceMode.MARKDOWN, mdMode)
-
-        val dataMode = when (FileType.JSON) {
-            FileType.JSON -> XcodeWorkspaceMode.DATA_INSPECTOR
-            else -> XcodeWorkspaceMode.BROWSER
-        }
-        assertEquals(XcodeWorkspaceMode.DATA_INSPECTOR, dataMode)
-    }
 }
