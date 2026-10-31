@@ -1,5 +1,7 @@
 package com.example.ui.screens.files
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -45,6 +47,9 @@ import androidx.core.content.FileProvider
 import com.example.data.files.FileType
 import com.example.data.files.GVONEFileItem
 import com.example.data.files.GVONEFileSystem
+import com.example.data.model.BrowserTab
+import com.example.ui.components.WebsiteDeveloperBar
+import com.example.ui.screens.ide.XcodeWorkspaceMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,6 +68,17 @@ fun GVONEFileViewerScreen(
     onOpenTerminalWithCommand: (String) -> Unit = {},
     isDeveloperBarEnabled: Boolean = true,
     onToggleDeveloperBar: () -> Unit = {},
+    tab: BrowserTab? = null,
+    isTorActive: Boolean = false,
+    workspaceMode: XcodeWorkspaceMode? = null,
+    onToggleWorkspaceMode: ((XcodeWorkspaceMode) -> Unit)? = null,
+    onOpenIde: (() -> Unit)? = null,
+    onOpenInspector: (() -> Unit)? = null,
+    onOpenConsole: (() -> Unit)? = null,
+    onOpenNavigator: (() -> Unit)? = null,
+    onOpenMcp: (() -> Unit)? = null,
+    onOpenSettings: (() -> Unit)? = null,
+    onAddressClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -90,6 +106,25 @@ fun GVONEFileViewerScreen(
 
     val hasUnsavedChanges by remember(fileContent, originalContent) {
         derivedStateOf { fileContent != originalContent }
+    }
+
+    var pdfZoomScale by remember { mutableFloatStateOf(1f) }
+    var imageZoomScale by remember { mutableFloatStateOf(1f) }
+    var imageRotation by remember { mutableFloatStateOf(0f) }
+    var imageDarkCanvas by remember { mutableStateOf(true) }
+    var isMediaPlaying by remember { mutableStateOf(false) }
+
+    val currentWorkspaceMode = workspaceMode ?: when (fileType) {
+        FileType.PDF -> XcodeWorkspaceMode.PDF_VIEWER
+        FileType.IMAGE -> XcodeWorkspaceMode.IMAGE_VIEWER
+        FileType.MARKDOWN -> XcodeWorkspaceMode.MARKDOWN
+        FileType.JSON -> XcodeWorkspaceMode.DATA_INSPECTOR
+        FileType.AUDIO, FileType.VIDEO -> XcodeWorkspaceMode.MEDIA_PLAYER
+        FileType.CODE, FileType.TEXT -> {
+            if (isHtmlFile && htmlLivePreviewMode) XcodeWorkspaceMode.BROWSER
+            else XcodeWorkspaceMode.CODE_EDITOR
+        }
+        else -> XcodeWorkspaceMode.BROWSER
     }
 
     LaunchedEffect(toastMessage) {
@@ -157,212 +192,130 @@ fun GVONEFileViewerScreen(
             .background(Color(0xFF0B0F17))
             .testTag("gvone_file_viewer_screen")
     ) {
-        // TOP APP BAR / VIEWER CONTROLS (Respects developerBarEnabled setting)
+        // TOP APP BAR / VIEWER CONTROLS (Uses modern WebsiteDeveloperBar when enabled)
         if (isDeveloperBarEnabled) {
-            Surface(
+            val activeTab = tab ?: BrowserTab(
+                id = "file-$fileRelativePath",
+                title = fileName,
+                url = "gvone-file://$fileRelativePath"
+            )
+
+            WebsiteDeveloperBar(
+                tab = activeTab,
+                activeWebView = null,
+                isTorActive = isTorActive,
+                onToggleOff = onToggleDeveloperBar,
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF111726),
-                border = BorderStroke(1.dp, Color(0xFF1E293B))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    // Left: File icon & Breadcrumb Name
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = fileType.color.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, fileType.color.copy(alpha = 0.4f)),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = when (fileType) {
-                                        FileType.MARKDOWN -> Icons.Rounded.Description
-                                        FileType.TEXT -> Icons.Rounded.Article
-                                        FileType.JSON -> Icons.Rounded.DataObject
-                                        FileType.CODE -> Icons.Rounded.Code
-                                        FileType.PDF -> Icons.Rounded.PictureAsPdf
-                                        FileType.IMAGE -> Icons.Rounded.Image
-                                        FileType.ARCHIVE -> Icons.Rounded.FolderZip
-                                        else -> Icons.Rounded.InsertDriveFile
-                                    },
-                                    contentDescription = null,
-                                    tint = fileType.color,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                onOpenIde = onOpenIde,
+                workspaceMode = currentWorkspaceMode,
+                onToggleWorkspaceMode = { newMode ->
+                    onToggleWorkspaceMode?.invoke(newMode)
+                },
+                activeFileName = fileName,
+                isFileDirty = hasUnsavedChanges,
+                onOpenInspector = { onOpenInspector?.invoke() ?: run { showInfoDialog = true } },
+                onOpenConsole = { onOpenConsole?.invoke() ?: onOpenTerminalWithCommand("/run $fileRelativePath") },
+                onOpenNavigator = onOpenNavigator,
+                onOpenMcp = onOpenMcp,
+                onOpenSettings = onOpenSettings,
+                onSaveFile = { saveChanges() },
+                onFormatCode = {
+                    if (fileType == FileType.JSON) {
+                        try {
+                            val trimmed = fileContent.trim()
+                            val formatted = if (trimmed.startsWith("[")) {
+                                org.json.JSONArray(trimmed).toString(2)
+                            } else {
+                                JSONObject(trimmed).toString(2)
                             }
+                            fileContent = formatted
+                            toastMessage = "JSON Prettified"
+                        } catch (e: Exception) {
+                            toastMessage = "Invalid JSON"
                         }
-
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = fileName,
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                if (hasUnsavedChanges) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .size(7.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(0xFF38BDF8))
-                                    )
-                                }
-                            }
-                            Text(
-                                text = fileRelativePath,
-                                color = Color(0xFF64748B),
-                                fontSize = 11.sp,
-                                maxLines = 1
-                            )
-                        }
+                    } else {
+                        toastMessage = "Formatted document"
                     }
-
-                    // Right: Action Buttons
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Markdown Mode Toggle
-                        if (fileType == FileType.MARKDOWN) {
-                            IconButton(
-                                onClick = { mdEditMode = !mdEditMode },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (mdEditMode) Icons.Rounded.Visibility else Icons.Rounded.Edit,
-                                    contentDescription = if (mdEditMode) "Preview" else "Edit",
-                                    tint = Color(0xFF38BDF8),
-                                    modifier = Modifier.size(19.dp)
-                                )
-                            }
-                        }
-
-                        // HTML Live Website Preview Toggle
-                        if (isHtmlFile) {
-                            IconButton(
-                                onClick = { htmlLivePreviewMode = !htmlLivePreviewMode },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (htmlLivePreviewMode) Icons.Rounded.Code else Icons.Rounded.PlayArrow,
-                                    contentDescription = if (htmlLivePreviewMode) "Source Code" else "Run Website",
-                                    tint = if (htmlLivePreviewMode) Color(0xFFA78BFA) else Color(0xFF10B981),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-
-                        // GitHub Style Commit Changes Button
-                        if (hasUnsavedChanges) {
-                            Button(
-                                onClick = {
-                                    commitMessageInput = "Update $fileName"
-                                    showCommitDialog = true
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier
-                                    .height(32.dp)
-                                    .testTag("file_commit_changes_btn")
-                            ) {
-                                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Commit changes...", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-                        }
-
-                        // Favorite Toggle
-                        IconButton(
-                            onClick = {
-                                coroutineScope.launch {
-                                    isFavorite = fileSystem.toggleFavorite(fileRelativePath)
-                                    toastMessage = if (isFavorite) "Added to Favorites" else "Removed from Favorites"
-                                }
-                            },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isFavorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                                contentDescription = "Favorite",
-                                tint = if (isFavorite) Color(0xFFFBBF24) else Color(0xFF94A3B8),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Share
-                        IconButton(
-                            onClick = { shareFile() },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(Icons.Rounded.Share, contentDescription = "Share", tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
-                        }
-
-                        // Info Dialog
-                        IconButton(
-                            onClick = { showInfoDialog = true },
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(Icons.Rounded.Info, contentDescription = "Info", tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
-                        }
-
-                        // Developer Bar ON/OFF Toggle Button
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF064E3B),
-                            border = BorderStroke(1.dp, Color(0xFF10B981)),
-                            modifier = Modifier
-                                .clickable { onToggleDeveloperBar() }
-                                .testTag("file_dev_bar_toggle_off_btn")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(7.dp)
-                                        .background(Color(0xFF34D399), CircleShape)
-                                )
-                                Text(
-                                    text = "DEV ON",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = Color(0xFF34D399)
-                                )
-                                Icon(
-                                    imageVector = Icons.Rounded.PowerSettingsNew,
-                                    contentDescription = "Turn Developer Bar OFF",
-                                    tint = Color(0xFF34D399),
-                                    modifier = Modifier.size(13.dp)
-                                )
-                            }
-                        }
-
-                        // Close Tab
-                        IconButton(
-                            onClick = onCloseTab,
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color(0xFFE2E8F0), modifier = Modifier.size(20.dp))
-                        }
+                },
+                onAddressClick = onAddressClick,
+                onZoomIn = {
+                    if (fileType == FileType.PDF) {
+                        if (pdfZoomScale < 2.5f) pdfZoomScale += 0.2f
+                    } else if (fileType == FileType.IMAGE) {
+                        if (imageZoomScale < 3f) imageZoomScale += 0.2f
                     }
+                },
+                onZoomOut = {
+                    if (fileType == FileType.PDF) {
+                        if (pdfZoomScale > 0.6f) pdfZoomScale -= 0.2f
+                    } else if (fileType == FileType.IMAGE) {
+                        if (imageZoomScale > 0.4f) imageZoomScale -= 0.2f
+                    }
+                },
+                onResetZoom = {
+                    if (fileType == FileType.PDF) {
+                        pdfZoomScale = 1f
+                    } else if (fileType == FileType.IMAGE) {
+                        imageZoomScale = 1f
+                        imageRotation = 0f
+                    }
+                },
+                onRotate = {
+                    imageRotation = (imageRotation + 90f) % 360f
+                },
+                onInvertCanvas = {
+                    imageDarkCanvas = !imageDarkCanvas
+                },
+                onTogglePreviewMode = {
+                    if (fileType == FileType.MARKDOWN) {
+                        mdEditMode = !mdEditMode
+                    } else if (isHtmlFile) {
+                        htmlLivePreviewMode = !htmlLivePreviewMode
+                    }
+                },
+                isPreviewMode = if (fileType == FileType.MARKDOWN) !mdEditMode else htmlLivePreviewMode,
+                onTogglePlayPause = {
+                    isMediaPlaying = !isMediaPlaying
+                },
+                isPlaying = isMediaPlaying,
+                onBeautifyData = {
+                    try {
+                        val trimmed = fileContent.trim()
+                        val formatted = if (trimmed.startsWith("[")) {
+                            org.json.JSONArray(trimmed).toString(2)
+                        } else {
+                            JSONObject(trimmed).toString(2)
+                        }
+                        fileContent = formatted
+                        toastMessage = "JSON Beautified"
+                    } catch (e: Exception) {
+                        toastMessage = "Invalid JSON"
+                    }
+                },
+                onMinifyData = {
+                    try {
+                        val trimmed = fileContent.trim()
+                        val formatted = if (trimmed.startsWith("[")) {
+                            org.json.JSONArray(trimmed).toString()
+                        } else {
+                            JSONObject(trimmed).toString()
+                        }
+                        fileContent = formatted
+                        toastMessage = "JSON Minified"
+                    } catch (e: Exception) {
+                        toastMessage = "Invalid JSON"
+                    }
+                },
+                onCopyData = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("File Content", fileContent))
+                    toastMessage = "Copied to clipboard"
+                },
+                onShareFile = { shareFile() },
+                onSearchDoc = {
+                    toastMessage = "Searching in $fileName"
                 }
-            }
+            )
         } else {
             // When Developer Bar is toggled OFF: Bar is hidden from files too!
             // Provide a minimal tab close button at top-end
@@ -450,11 +403,23 @@ fun GVONEFileViewerScreen(
                     }
 
                     FileType.PDF -> {
-                        PdfDocumentViewer(pdfFile = file)
+                        PdfDocumentViewer(
+                            pdfFile = file,
+                            externalZoomScale = pdfZoomScale,
+                            onZoomChange = { pdfZoomScale = it }
+                        )
                     }
 
                     FileType.IMAGE -> {
-                        ImageFileViewer(imageFile = file)
+                        ImageFileViewer(
+                            imageFile = file,
+                            externalZoomScale = imageZoomScale,
+                            externalRotation = imageRotation,
+                            externalDarkCanvas = imageDarkCanvas,
+                            onZoomChange = { imageZoomScale = it },
+                            onRotationChange = { imageRotation = it },
+                            onToggleDarkCanvas = { imageDarkCanvas = !imageDarkCanvas }
+                        )
                     }
 
                     FileType.AUDIO, FileType.VIDEO -> {
@@ -952,12 +917,20 @@ fun HtmlLiveWebsiteViewer(
  * Native Android PDF Document Viewer using PdfRenderer.
  */
 @Composable
-fun PdfDocumentViewer(pdfFile: File) {
+fun PdfDocumentViewer(
+    pdfFile: File,
+    externalZoomScale: Float = 1f,
+    onZoomChange: ((Float) -> Unit)? = null
+) {
     var currentPageIndex by remember { mutableStateOf(0) }
     var pageCount by remember { mutableStateOf(0) }
     var currentBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var zoomScale by remember { mutableStateOf(1f) }
+    var zoomScale by remember { mutableFloatStateOf(externalZoomScale) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(externalZoomScale) {
+        zoomScale = externalZoomScale
+    }
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -1098,7 +1071,15 @@ fun PdfDocumentViewer(pdfFile: File) {
  * Image Viewer with resolution metadata, zoom controls, 90° stepped rotation, and canvas inversion.
  */
 @Composable
-fun ImageFileViewer(imageFile: File) {
+fun ImageFileViewer(
+    imageFile: File,
+    externalZoomScale: Float = 1f,
+    externalRotation: Float = 0f,
+    externalDarkCanvas: Boolean = true,
+    onZoomChange: ((Float) -> Unit)? = null,
+    onRotationChange: ((Float) -> Unit)? = null,
+    onToggleDarkCanvas: (() -> Unit)? = null
+) {
     val bitmap = remember(imageFile) {
         try {
             BitmapFactory.decodeFile(imageFile.absolutePath)
@@ -1107,9 +1088,13 @@ fun ImageFileViewer(imageFile: File) {
         }
     }
 
-    var zoomScale by remember { mutableFloatStateOf(1f) }
-    var rotationDegrees by remember { mutableFloatStateOf(0f) }
-    var isDarkCanvas by remember { mutableStateOf(true) }
+    var zoomScale by remember { mutableFloatStateOf(externalZoomScale) }
+    var rotationDegrees by remember { mutableFloatStateOf(externalRotation) }
+    var isDarkCanvas by remember { mutableStateOf(externalDarkCanvas) }
+
+    LaunchedEffect(externalZoomScale) { zoomScale = externalZoomScale }
+    LaunchedEffect(externalRotation) { rotationDegrees = externalRotation }
+    LaunchedEffect(externalDarkCanvas) { isDarkCanvas = externalDarkCanvas }
 
     Column(
         modifier = Modifier

@@ -63,6 +63,7 @@ sealed interface ActiveSheet {
     object Permissions : ActiveSheet
     object Ide : ActiveSheet
     object Inspector : ActiveSheet
+    object Mcp : ActiveSheet
 }
 
 enum class FileSelectionPurpose {
