@@ -11,7 +11,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class WebsiteDeveloperBarUnitTest {
+class DevBarUnitTest {
 
     @Test
     fun testDeveloperBarTabsConfiguration() {
