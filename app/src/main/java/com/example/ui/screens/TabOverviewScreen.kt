@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,9 +49,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -464,25 +462,87 @@ fun TabOverviewScreen(
 
     var isShortcutsExpanded by rememberSaveable { mutableStateOf(false) }
 
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y < -20f && isShortcutsExpanded) {
-                    isShortcutsExpanded = false
-                }
-                return Offset.Zero
-            }
+    @Composable
+    fun CategoryPills() {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFF141923))
+                .border(1.dp, Color(0xFF2C384D), RoundedCornerShape(24.dp))
+                .horizontalScroll(rememberScrollState())
+                .padding(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val activeTabCount = if (currentFolderId != null) folderTabs.size else modeTabs.size
+            val activeChatCount = if (currentFolderId != null) folderChats.size else terminalSessions.size
+            val activeFileCount = if (currentFolderId != null) folderFiles.size else allFiles.size
 
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource
-            ): Offset {
-                if (available.y > 10f && !isShortcutsExpanded) {
-                    isShortcutsExpanded = true
-                    return Offset(0f, available.y)
+            val activeMcpCount = mcpServers.count { server ->
+                server.isConnected && (
+                    activeProject == null ||
+                        activeProject?.useWorkspaceMcpServers == true ||
+                        server.id in activeProject!!.mcpServerIds
+                    )
+            }
+            val navCategories = listOf(
+                Triple(0, "Tabs ($activeTabCount)", Icons.Rounded.Public),
+                Triple(1, "Chats ($activeChatCount)", Icons.Rounded.Terminal),
+                Triple(2, if (currentFolderId != null) "Files ($activeFileCount)" else "All Files ($activeFileCount)", Icons.Rounded.FolderCopy),
+                Triple(3, "Bots (5)", Icons.Rounded.AutoAwesome),
+                Triple(4, "Extensions (${extensions.size})", Icons.Rounded.Extension),
+                Triple(5, "MCP ($activeMcpCount)", Icons.Rounded.Hub),
+                Triple(6, "Settings", Icons.Rounded.Settings)
+            )
+
+            navCategories.forEach { (catId, title, icon) ->
+                val isSelected = selectedCategory == catId
+                val bgGradient = when (catId) {
+                    0 -> Brush.horizontalGradient(listOf(Color(0xFF00E5FF), Color(0xFF0083B0)))
+                    1 -> Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Color(0xFF0284C7)))
+                    2 -> Brush.horizontalGradient(listOf(Color(0xFF10B981), Color(0xFF059669)))
+                    3 -> Brush.horizontalGradient(listOf(Color(0xFFA855F7), Color(0xFF7C3AED)))
+                    4 -> Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))
+                    5 -> Brush.horizontalGradient(listOf(Color(0xFFEC4899), Color(0xFFBE185D)))
+                    else -> Brush.horizontalGradient(listOf(Color(0xFF64748B), Color(0xFF334155)))
                 }
-                return Offset.Zero
+
+                Box(
+                    modifier = Modifier
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            if (isSelected) bgGradient
+                            else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                        )
+                        .clickable {
+                            selectedCategory = catId
+                        }
+                        .padding(horizontal = 12.dp)
+                        .testTag("category_pill_${title.substringBefore(" ").lowercase()}"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = if (isSelected) Color.White else GVONETextSecondary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = title,
+                            color = if (isSelected) Color.White else GVONETextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
+                }
             }
         }
     }
@@ -493,7 +553,6 @@ fun TabOverviewScreen(
             .background(Color(0xFF0B0E14))
             .statusBarsPadding()
             .navigationBarsPadding()
-            .nestedScroll(nestedScrollConnection)
     ) {
         Column(
             modifier = Modifier
@@ -598,168 +657,65 @@ fun TabOverviewScreen(
                     )
                 }
 
-                // Shortcuts UI: positioned below header
-                if (!isSearching) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SafariShortcutsCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("overview_shortcuts_card"),
-                        customShortcuts = customShortcuts,
-                        onShortcutClick = { shortcut ->
-                            onNavigateToUrl?.invoke(shortcut.url) ?: run {
-                                onNewTab(null)
-                            }
-                            onCloseOverview()
-                        },
-                        onAddCustomShortcut = { newShortcut ->
-                            customShortcuts = customShortcuts + newShortcut
-                        },
-                        onRemoveShortcut = { target ->
-                            customShortcuts = customShortcuts.filter { it.title != target.title || it.url != target.url }
-                        },
-                        testTagPrefix = "overview_shortcut",
-                        expanded = isShortcutsExpanded,
-                        onExpandedChange = { isShortcutsExpanded = it }
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Quick Menu vertical list card (Projects & Schedule)
-                    QuickMenuCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("overview_quick_menu_card"),
-                        onOpenProject = { project ->
-                            activeProject = project
-                            onSelectProjectTarget?.invoke(project)
-                            val existingGroup = tabGroups.find { it.id == project.id || it.name.equals(project.name, ignoreCase = true) }
-                            if (existingGroup != null) {
-                                currentFolderId = existingGroup.id
-                            } else {
-                                onCreateGroup(project.name, "#38BDF8", emptyList())
-                                currentFolderId = project.id
-                            }
-                            selectedCategory = 0 // Open in Tabs category
-                        },
-                        onRunProject = { project ->
-                            runProjectHtml(project, null)
-                        },
-                        onSendToDrive = { project ->
-                            val projectTabs = tabs.filter { it.tabGroupId == project.id || project.tabs.contains(it.title) }
-                            val projectFiles = allFiles.filter { it.parentPath == project.name || project.files.contains(it.name) }
-                            val res = driveManager.sendProjectToDrive(
-                                projectName = project.name,
-                                project = project,
-                                tabs = projectTabs,
-                                files = projectFiles,
-                                extensions = extensions
-                            )
-                            Toast.makeText(context, "☁️ ${res.message}", Toast.LENGTH_LONG).show()
-                        }
-                    )
-                }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // --- CATEGORY PILL BAR: Tabs | Chats | Files | Bots | Extensions ---
-            if (!isSearching) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(Color(0xFF141923))
-                        .border(1.dp, Color(0xFF2C384D), RoundedCornerShape(24.dp))
-                        .horizontalScroll(rememberScrollState())
-                        .padding(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+            val navigatorGridState = rememberLazyGridState()
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    state = navigatorGridState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 104.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    val activeTabCount = if (currentFolderId != null) folderTabs.size else modeTabs.size
-                    val activeChatCount = if (currentFolderId != null) folderChats.size else terminalSessions.size
-                    val activeFileCount = if (currentFolderId != null) folderFiles.size else allFiles.size
-
-                    val activeMcpCount = mcpServers.count { server ->
-                        server.isConnected && (
-                            activeProject == null ||
-                                activeProject?.useWorkspaceMcpServers == true ||
-                                server.id in activeProject!!.mcpServerIds
-                            )
-                    }
-                    val navCategories = listOf(
-                        Triple(0, "Tabs ($activeTabCount)", Icons.Rounded.Public),
-                        Triple(1, "Chats ($activeChatCount)", Icons.Rounded.Terminal),
-                        Triple(2, if (currentFolderId != null) "Files ($activeFileCount)" else "All Files ($activeFileCount)", Icons.Rounded.FolderCopy),
-                        Triple(3, "Bots (5)", Icons.Rounded.AutoAwesome),
-                        Triple(4, "Extensions (${extensions.size})", Icons.Rounded.Extension),
-                        Triple(5, "MCP ($activeMcpCount)", Icons.Rounded.Hub),
-                        Triple(6, "Settings", Icons.Rounded.Settings)
-                    )
-
-                    navCategories.forEach { (catId, title, icon) ->
-                        val isSelected = selectedCategory == catId
-                        val bgGradient = when (catId) {
-                            0 -> Brush.horizontalGradient(listOf(Color(0xFF00E5FF), Color(0xFF0083B0)))
-                            1 -> Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Color(0xFF0284C7)))
-                            2 -> Brush.horizontalGradient(listOf(Color(0xFF10B981), Color(0xFF059669)))
-                            3 -> Brush.horizontalGradient(listOf(Color(0xFFA855F7), Color(0xFF7C3AED)))
-                            4 -> Brush.horizontalGradient(listOf(Color(0xFFF59E0B), Color(0xFFD97706)))
-                            5 -> Brush.horizontalGradient(listOf(Color(0xFFEC4899), Color(0xFFBE185D)))
-                            else -> Brush.horizontalGradient(listOf(Color(0xFF64748B), Color(0xFF334155)))
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .height(36.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(
-                                    if (isSelected) bgGradient
-                                    else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                    if (!isSearching) {
+                        item(key = "navigator_shortcuts", span = { GridItemSpan(2) }) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                SafariShortcutsCard(
+                                    modifier = Modifier.fillMaxWidth().testTag("overview_shortcuts_card"),
+                                    customShortcuts = customShortcuts,
+                                    onShortcutClick = { shortcut -> onNavigateToUrl?.invoke(shortcut.url) ?: run { onNewTab(null) }; onCloseOverview() },
+                                    onAddCustomShortcut = { customShortcuts = customShortcuts + it },
+                                    onRemoveShortcut = { target -> customShortcuts = customShortcuts.filter { it.title != target.title || it.url != target.url } },
+                                    testTagPrefix = "overview_shortcut",
+                                    expanded = isShortcutsExpanded,
+                                    onExpandedChange = { isShortcutsExpanded = it }
                                 )
-                                .clickable {
-                                    selectedCategory = catId
-                                }
-                                .padding(horizontal = 12.dp)
-                                .testTag("category_pill_${title.substringBefore(" ").lowercase()}"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = if (isSelected) Color.White else GVONETextSecondary,
-                                    modifier = Modifier.size(15.dp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                QuickMenuCard(
+                                    modifier = Modifier.fillMaxWidth().testTag("overview_quick_menu_card"),
+                                    onOpenProject = { project ->
+                                        activeProject = project
+                                        onSelectProjectTarget?.invoke(project)
+                                        val group = tabGroups.find { it.id == project.id || it.name.equals(project.name, ignoreCase = true) }
+                                        if (group != null) currentFolderId = group.id else { onCreateGroup(project.name, "#38BDF8", emptyList()); currentFolderId = project.id }
+                                        selectedCategory = 0
+                                    },
+                                    onRunProject = { runProjectHtml(it, null) },
+                                    onSendToDrive = { project ->
+                                        val projectTabs = tabs.filter { it.tabGroupId == project.id || project.tabs.contains(it.title) }
+                                        val projectFiles = allFiles.filter { it.parentPath == project.name || project.files.contains(it.name) }
+                                        val result = driveManager.sendProjectToDrive(projectName = project.name, project = project, tabs = projectTabs, files = projectFiles, extensions = extensions)
+                                        Toast.makeText(context, "☁️ " + result.message, Toast.LENGTH_LONG).show()
+                                    }
                                 )
-                                Text(
-                                    text = title,
-                                    color = if (isSelected) Color.White else GVONETextSecondary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1
-                                )
+                                Spacer(modifier = Modifier.height(10.dp))
                             }
                         }
                     }
+                    // --- CATEGORY PILL BAR: Tabs | Chats | Files | Bots | Extensions ---
+            if (!isSearching) {
+                item(key = "navigator_category_switcher", span = { GridItemSpan(2) }) {
+                CategoryPills()
                 }
             }
 
             // --- CONTENT AREA ---
             if (isSearching) {
                 // SEARCH RESULTS VIEW: Tabs, Chats & Files
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(bottom = 80.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+
                     val totalMatches = searchResultsTabs.size + searchResultsChats.size + searchResultsFiles.size
                     item(span = { GridItemSpan(2) }) {
                         Text(
@@ -949,16 +905,17 @@ fun TabOverviewScreen(
                             }
                         }
                     }
-                }
+
             } else if (currentFolderId != null && currentFolder != null) {
                 // INSIDE DEDICATED FOLDER VIEW: Tabs, Chats, or Files in this folder
                 val hasItems = folderTabs.isNotEmpty() || folderChats.isNotEmpty() || folderFiles.isNotEmpty()
                 if (!hasItems && selectedCategory != 2) {
                     // Empty folder state
+                    item(span = { GridItemSpan(2) }) {
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
+                            .fillMaxWidth()
+                            .heightIn(min = 320.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -1014,16 +971,9 @@ fun TabOverviewScreen(
                             }
                         }
                     }
+                    }
                 } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentPadding = PaddingValues(bottom = 80.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
+
                         // SECTION 0: Tabs in this group
                         if (selectedCategory == 0) {
                             if (folderTabs.isNotEmpty()) {
@@ -1505,19 +1455,11 @@ fun TabOverviewScreen(
                                 }
                             }
                         }
-                    }
+
                 }
             } else {
                 // ROOT "ALL TABS" VIEW: Tab Group Folders + Ungrouped Tabs + Files
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(bottom = 80.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+
                     // SECTION 1: TAB GROUP FOLDERS
                     if (tabGroups.isNotEmpty() && (selectedCategory == 0 || selectedCategory == 2)) {
                         item(span = { GridItemSpan(2) }) {
@@ -2456,6 +2398,18 @@ fun TabOverviewScreen(
                                 }
                             }
                         }
+                    }
+
+            }
+                }
+                if (!isSearching && navigatorGridState.firstVisibleItemIndex > 1) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .background(Color(0xFF0B0E14))
+                    ) {
+                        CategoryPills()
                     }
                 }
             }
@@ -4779,7 +4733,4 @@ private fun generateProjectHtmlPreview(projectName: String, project: QuickMenuPr
 </html>
     """.trimIndent()
 }
-
-
-
 
