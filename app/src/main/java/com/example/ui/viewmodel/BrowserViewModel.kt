@@ -780,8 +780,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         botAssistant.setPersona(persona)
     }
 
-    fun sendBotMessage(message: String, context: String) {
-        botAssistant.submitMessage(message, buildAssistantContext(context))
+    fun sendBotMessage(message: String, context: String, targetAgent: String? = null) {
+        botAssistant.submitMessage(message, buildAssistantContext(context), targetAgent = targetAgent)
     }
 
     fun submitTerminalAgentMission(message: String, context: String = "") {

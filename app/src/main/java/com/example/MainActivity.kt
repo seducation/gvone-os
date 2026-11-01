@@ -1058,6 +1058,7 @@ fun BrowserApp(
                 onOpenIde = { viewModel.openIde() },
                 onOpenFilesSheet = { viewModel.openFiles(false) },
                 onOpenBotChat = { persona -> viewModel.openBotChat(persona) },
+                onOpenAgentDashboard = { viewModel.openAgentDashboard() },
                 onSelectEnvironment = { viewModel.switchEnvironment(it) },
                 onCreateEnvironment = { name, icon, theme, preset, initialLinkUrl, initialLinkTitle ->
                     viewModel.createEnvironment(name, icon, theme, preset, initialLinkUrl, initialLinkTitle)

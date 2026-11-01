@@ -266,7 +266,10 @@ fun CnsDashboardSheet(
             ) {
                 when (selectedTab) {
                     CnsDashboardTab.APPROVALS -> CnsApprovalDashboardTab(cns = cns, permissionSystem = cns.permissionSystem)
-                    CnsDashboardTab.AGENTS -> AgentsMatrixTab(agentRegistry, cns)
+                    CnsDashboardTab.AGENTS -> AgentsMatrixTab(agentRegistry, cns, onExecuteGoal = { goal ->
+                        onDismiss()
+                        onExecuteGoal(goal)
+                    })
                     CnsDashboardTab.RULES -> RuleEngineTab(ruleEngine = cns.declarativeRuleEngine)
                     CnsDashboardTab.SAFETY -> BiologicalSafetyTab(cns) { diag -> diagnosticResult = diag }
                     CnsDashboardTab.MEMORY -> MemoryScopesTab(contextRouter, runtimeState)
@@ -365,7 +368,11 @@ fun CnsDashboardSheet(
 }
 
 @Composable
-private fun AgentsMatrixTab(agentRegistry: AgentRegistry, cns: CentralNervousSystem) {
+private fun AgentsMatrixTab(
+    agentRegistry: AgentRegistry,
+    cns: CentralNervousSystem,
+    onExecuteGoal: (String) -> Unit = {}
+) {
     val allAgents = remember {
         agentRegistry.getAllAgents().ifEmpty {
             // Built-in agents representation
@@ -375,29 +382,103 @@ private fun AgentsMatrixTab(agentRegistry: AgentRegistry, cns: CentralNervousSys
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        item {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF131B2E),
+                border = BorderStroke(0.5.dp, Color(0xFF223554)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("⚙️", fontSize = 16.sp)
+                    Column {
+                        Text(
+                            text = "CNS ACTUATOR SWARM (PHYSICAL OS TIER)",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Actuators hold device tools and execute physical tasks delegated by Navigator Copilots",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.5.sp,
+                            color = Color(0xFF94A3B8)
+                        )
+                    }
+                }
+            }
+        }
+
         items(allAgents.size) { idx ->
             val agentName = if (allAgents[idx] is String) allAgents[idx] as String else (allAgents[idx] as com.example.agent.core.Agent).identity()
-            val (icon, role, capabilities) = when (agentName) {
-                "CodingAgent" -> Triple("🤖", "Kotlin Code Analyzer & Compiler", listOf("code:read", "code:patch", "build:compile"))
-                "BrowserAgent" -> Triple("🌐", "DOM Inspector & Browser Operator", listOf("dom:click", "dom:inspect", "page:navigate"))
-                "FileAgent" -> Triple("📁", "Sandbox File System Operator", listOf("file:read", "file:write", "workspace:sync"))
-                "VoiceAgent" -> Triple("🎙️", "Audio Intent & Speech Synthesis", listOf("audio:listen", "audio:speak", "intent:parse"))
-                "CommandAgent" -> Triple("⚡", "Bash & Terminal Shell Engine", listOf("shell:exec", "command:route", "nodal:trigger"))
-                "SearchAgent" -> Triple("🔍", "Multi-Source Intelligence Cohort", listOf("web:search", "rag:retrieve", "synthesize"))
-                else -> Triple("🤖", "Autonomous Agent", listOf("general:task"))
+            val (icon, role, capabilities, commandingBots, quickTasks) = when (agentName) {
+                "CodingAgent" -> Tuple5(
+                    "💻",
+                    "Kotlin Code Analyzer & Compiler Actuator",
+                    listOf("code:read", "code:patch", "build:compile"),
+                    listOf("Grok Coder", "Bug Hunter", "Test Specialist"),
+                    listOf("@code check syntax & imports", "@code refactor active file")
+                )
+                "BrowserAgent" -> Tuple5(
+                    "🌐",
+                    "DOM Inspector & Browser Web Operator",
+                    listOf("dom:click", "dom:inspect", "page:navigate"),
+                    listOf("Web Scraper", "Test Specialist"),
+                    listOf("@browser inspect active tab DOM", "@browser extract page links")
+                )
+                "FileAgent" -> Tuple5(
+                    "📁",
+                    "Sandbox Storage & File System Operator",
+                    listOf("file:read", "file:write", "workspace:sync"),
+                    listOf("Grok Coder", "Code Architect", "Bug Hunter"),
+                    listOf("@file list workspace files", "@file check disk storage")
+                )
+                "VoiceAgent" -> Tuple5(
+                    "🎙️",
+                    "Audio Intent & Speech Synthesis Actuator",
+                    listOf("audio:listen", "audio:speak", "intent:parse"),
+                    listOf("Voice Assistant"),
+                    listOf("/voice listen for command")
+                )
+                "CommandAgent" -> Tuple5(
+                    "⚡",
+                    "Bash & Terminal Shell Engine Actuator",
+                    listOf("shell:exec", "command:route", "nodal:trigger"),
+                    listOf("Bug Hunter", "Terminal CLI"),
+                    listOf("@cmd check git status", "@cmd run test suite")
+                )
+                "SearchAgent" -> Tuple5(
+                    "🔍",
+                    "Multi-Source Intelligence Cohort Actuator",
+                    listOf("web:search", "rag:retrieve", "synthesize"),
+                    listOf("Web Scraper", "Test Specialist"),
+                    listOf("@search android jetpack compose docs", "@search latest kotlin releases")
+                )
+                else -> Tuple5(
+                    "🤖",
+                    "Autonomous System Actuator",
+                    listOf("general:task"),
+                    listOf("GVONE Copilots"),
+                    listOf("/agent analyze workspace")
+                )
             }
 
             Surface(
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = CnsCardBg,
                 border = BorderStroke(0.5.dp, CnsBorderColor),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
                     modifier = Modifier.padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -408,19 +489,19 @@ private fun AgentsMatrixTab(agentRegistry: AgentRegistry, cns: CentralNervousSys
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(text = icon, fontSize = 14.sp)
+                            Text(text = icon, fontSize = 16.sp)
                             Column {
                                 Text(
                                     text = agentName,
                                     fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = CnsTextPrimary
                                 )
                                 Text(
                                     text = role,
                                     fontFamily = FontFamily.Monospace,
-                                    fontSize = 9.sp,
+                                    fontSize = 8.5.sp,
                                     color = CnsTextMuted
                                 )
                             }
@@ -432,13 +513,42 @@ private fun AgentsMatrixTab(agentRegistry: AgentRegistry, cns: CentralNervousSys
                             border = BorderStroke(0.5.dp, CnsGreen)
                         ) {
                             Text(
-                                text = "ACTIVE",
+                                text = "READY",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = CnsGreen,
                                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
+                        }
+                    }
+
+                    // Commanding Copilots
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "DIRECTED BY:",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFA78BFA)
+                        )
+                        commandingBots.forEach { botName ->
+                            Surface(
+                                shape = RoundedCornerShape(2.dp),
+                                color = Color(0xFF281E45)
+                            ) {
+                                Text(
+                                    text = botName,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 8.sp,
+                                    color = Color(0xFFDDD6FE),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                     }
 
@@ -464,11 +574,52 @@ private fun AgentsMatrixTab(agentRegistry: AgentRegistry, cns: CentralNervousSys
                             }
                         }
                     }
+
+                    // Direct Tasking Quick Dispatch
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        quickTasks.forEach { taskCmd ->
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0F172A),
+                                border = BorderStroke(0.5.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
+                                modifier = Modifier.clickable {
+                                    onExecuteGoal(taskCmd)
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Text(text = "⚡", fontSize = 8.sp)
+                                    Text(
+                                        text = taskCmd,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 8.5.sp,
+                                        color = Color(0xFF38BDF8)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+private data class Tuple5<A, B, C, D, E>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D,
+    val fifth: E
+)
 
 @Composable
 private fun BiologicalSafetyTab(cns: CentralNervousSystem, onDiagnose: (String) -> Unit) {

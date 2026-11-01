@@ -128,13 +128,19 @@ class BotAssistantService : Service() {
                 job.prompt
             }
 
-            val mission = """${persona.systemRole}
-                GVONE assistant task:
-                $goal
-
-                Current GVONE context:
-                ${job.context.take(MAX_CONTEXT_CHARS)}
-            """.trimIndent()
+            val targetAgent = job.targetAgent ?: persona.actuatorAgents.firstOrNull()
+            val mission = buildString {
+                append("[Bot: ${persona.displayName}] ")
+                if (targetAgent != null) {
+                    append("[TargetAgent: $targetAgent] ")
+                }
+                appendLine(persona.systemRole)
+                appendLine("GVONE assistant task:")
+                appendLine(goal)
+                appendLine()
+                appendLine("Current GVONE context:")
+                append(job.context.take(MAX_CONTEXT_CHARS))
+            }
             val result = CentralNervousSystem.global.orchestrateGoal(mission)
             val response = result.synthesis.ifBlank {
                 "Task ${if (result.success) "completed" else "finished"}. See the CNS dashboard for execution details."

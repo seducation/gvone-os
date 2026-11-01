@@ -650,6 +650,34 @@ object DefaultQuickPrompts {
             category = "CNS"
         ),
         QuickPrompt(
+            id = "direct_code_agent",
+            title = "@code Actuator",
+            promptText = "@code check syntax & imports",
+            icon = Icons.Rounded.Code,
+            category = "Actuators"
+        ),
+        QuickPrompt(
+            id = "direct_browser_agent",
+            title = "@browser Actuator",
+            promptText = "@browser inspect active tab DOM",
+            icon = Icons.Rounded.Language,
+            category = "Actuators"
+        ),
+        QuickPrompt(
+            id = "direct_file_agent",
+            title = "@file Actuator",
+            promptText = "@file list workspace files",
+            icon = Icons.Rounded.FolderCopy,
+            category = "Actuators"
+        ),
+        QuickPrompt(
+            id = "cns_agent_dashboard",
+            title = "CNS Agents & Copilots",
+            promptText = "/cns",
+            icon = Icons.Rounded.Psychology,
+            category = "CNS"
+        ),
+        QuickPrompt(
             id = "youtube_search",
             title = "Search YouTube",
             promptText = "/yt ",

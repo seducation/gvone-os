@@ -191,31 +191,39 @@ class CentralNervousSystem(
         val workflowId = UUID.randomUUID().toString()
         val startTime = System.currentTimeMillis()
         _isBusy.value = true
-        _activeMission.value = userGoal
-        worldState.setActiveGoal(userGoal)
+
+        val parsedBotName = if (userGoal.contains("[Bot: ")) userGoal.substringAfter("[Bot: ").substringBefore("]") else null
+        val parsedTargetAgent = if (userGoal.contains("[TargetAgent: ")) userGoal.substringAfter("[TargetAgent: ").substringBefore("]") else null
+        val cleanMissionTitle = when {
+            parsedBotName != null -> "[$parsedBotName] ${userGoal.substringAfter("GVONE assistant task:").substringBefore("Current GVONE context:").trim().take(60)}"
+            userGoal.startsWith("@") -> userGoal.take(60)
+            else -> userGoal.removePrefix("/agent").removePrefix("/voice").trim().take(60).ifBlank { "Autonomous Mission" }
+        }
+        _activeMission.value = cleanMissionTitle
+        worldState.setActiveGoal(cleanMissionTitle)
 
         // 1. Create strictly isolated task in RuntimeStateManager & ConversationTreeManager
         val currentInteraction = runtimeState.runtimeMode.value.interaction
-        val task = runtimeState.createTask(userGoal, currentInteraction)
+        val task = runtimeState.createTask(cleanMissionTitle, currentInteraction)
         val taskContext = contextRouter.getOrCreateTaskContext(task)
 
         val taskCat = when {
-            userGoal.contains("code", ignoreCase = true) || userGoal.contains("auth", ignoreCase = true) || userGoal.contains("bug", ignoreCase = true) -> TaskCategory.CODING
+            parsedTargetAgent == "CodingAgent" || userGoal.contains("code", ignoreCase = true) || userGoal.contains("auth", ignoreCase = true) || userGoal.contains("bug", ignoreCase = true) -> TaskCategory.CODING
             userGoal.contains("yt", ignoreCase = true) || userGoal.contains("youtube", ignoreCase = true) || userGoal.contains("song", ignoreCase = true) -> TaskCategory.MEDIA
-            userGoal.contains("news", ignoreCase = true) || userGoal.contains("search", ignoreCase = true) -> TaskCategory.SEARCH
+            parsedTargetAgent == "SearchAgent" || userGoal.contains("news", ignoreCase = true) || userGoal.contains("search", ignoreCase = true) -> TaskCategory.SEARCH
             userGoal.contains("voice", ignoreCase = true) -> TaskCategory.VOICE
             else -> TaskCategory.GENERAL
         }
         ConversationTreeManager.global.createTask(
-            title = userGoal.removePrefix("/agent").removePrefix("/voice").trim().ifBlank { "Autonomous Mission" },
+            title = cleanMissionTitle,
             category = taskCat,
             commandPrompt = userGoal,
             interactionType = currentInteraction,
             taskId = task.taskId
         )
 
-        uiBridge.emit(AgentUiEvent.ShowAgentStatus("CNS", "Analyzing goal: '$userGoal'", isWorking = true))
-        logger.logInstant("CNS", StepType.DECIDE, "Orchestrating goal: '$userGoal' (taskId=${task.taskId})", StepStatus.RUNNING)
+        uiBridge.emit(AgentUiEvent.ShowAgentStatus("CNS", "Analyzing goal: '$cleanMissionTitle'", isWorking = true))
+        logger.logInstant("CNS", StepType.DECIDE, "Orchestrating goal: '$cleanMissionTitle' (taskId=${task.taskId})", StepStatus.RUNNING)
 
         val subResults = mutableMapOf<String, AgentResult>()
         val participants = mutableListOf<String>()
@@ -290,6 +298,14 @@ class CentralNervousSystem(
             val ruleTargetWorkflow = ruleCtx.variables["targetWorkflowId"]?.toString()
             val ruleTargetAgent = ruleCtx.variables["targetAgent"]?.toString()
 
+            val explicitTargetAgent = parsedTargetAgent
+                ?: if (userGoal.startsWith("@code", ignoreCase = true)) "CodingAgent"
+                else if (userGoal.startsWith("@browser", ignoreCase = true)) "BrowserAgent"
+                else if (userGoal.startsWith("@file", ignoreCase = true)) "FileAgent"
+                else if (userGoal.startsWith("@cmd", ignoreCase = true) || userGoal.startsWith("@command", ignoreCase = true)) "CommandAgent"
+                else if (userGoal.startsWith("@search", ignoreCase = true)) "SearchAgent"
+                else null
+
             val rawSynthesis: String = when {
                 // Rule-orchestrated sequential pipeline (e.g. document & web comparison)
                 rulePipeline != null && rulePipeline.isNotEmpty() -> {
@@ -323,10 +339,10 @@ class CentralNervousSystem(
                     } else null
 
                     val (workflowToRun, primaryAgent) = if (commandWorkflow != null) {
-                        Pair(commandWorkflow, ruleTargetAgent ?: "CommandAgent")
+                        Pair(commandWorkflow, explicitTargetAgent ?: ruleTargetAgent ?: "CommandAgent")
                     } else {
                         val plan = plannerEngine.createPlan(userGoal)
-                        val assigned = ruleTargetAgent ?: plan.steps.firstOrNull()?.assignedAgent ?: "BrowserAgent"
+                        val assigned = explicitTargetAgent ?: ruleTargetAgent ?: plan.steps.firstOrNull()?.assignedAgent ?: "BrowserAgent"
                         Pair(plan.workflow, assigned)
                     }
 

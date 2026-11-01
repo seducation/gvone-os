@@ -368,6 +368,45 @@ class TerminalCommandExecutor(
             return
         }
 
+        // Direct Actuator / Bot Prefix Routing (@code, @browser, @file, @cmd, @search, @bot:xyz)
+        if (trimmed.startsWith("@")) {
+            val atToken = trimmed.substring(1).substringBefore(" ").lowercase()
+            val atQuery = trimmed.substringAfter(" ", "").trim()
+
+            val targetAgent = when (atToken) {
+                "code", "coding", "kotlin" -> "CodingAgent"
+                "browser", "web", "dom" -> "BrowserAgent"
+                "file", "fs", "files" -> "FileAgent"
+                "cmd", "command", "shell", "bash" -> "CommandAgent"
+                "search", "rag", "find" -> "SearchAgent"
+                else -> null
+            }
+
+            if (targetAgent != null) {
+                outputLines.add(TerminalLine("[DIRECT ACTUATOR DISPATCH] Target: $targetAgent", TerminalLineType.SYSTEM))
+                outputLines.add(TerminalLine("⚡ Task: \"$atQuery\"", TerminalLineType.AGENT_PLAN))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+
+                scope.launch {
+                    val mission = "[DirectActuator: $targetAgent] [TargetAgent: $targetAgent] $atQuery"
+                    val res = CentralNervousSystem.global.orchestrateGoal(mission)
+                    viewModel.appendTerminalLine(TerminalLine(res.synthesis, if (res.success) TerminalLineType.SUCCESS else TerminalLineType.ERROR))
+                }
+                return
+            } else if (atToken.startsWith("bot:") || atToken.startsWith("bot_")) {
+                val personaId = atToken.removePrefix("bot:").removePrefix("bot_")
+                val persona = com.example.ui.screens.ide.GrokBotPersona.values().firstOrNull { it.id.equals(personaId, ignoreCase = true) }
+                    ?: com.example.ui.screens.ide.GrokBotPersona.GROK_CODER
+                outputLines.add(TerminalLine("[SPECIALIST BOT COPILOT] ${persona.displayName}", TerminalLineType.SYSTEM))
+                outputLines.add(TerminalLine("💬 Task: \"$atQuery\"", TerminalLineType.AGENT_PLAN))
+                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
+
+                viewModel.setActiveBotPersona(persona)
+                viewModel.sendBotMessage(atQuery, "Terminal Direct Dispatch to ${persona.displayName}", targetAgent = persona.actuatorAgents.firstOrNull())
+                return
+            }
+        }
+
         when (normalizedToken) {
             "/clear", "/cls" -> {
                 viewModel.clearTerminalLines()

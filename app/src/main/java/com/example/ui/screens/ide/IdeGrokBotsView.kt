@@ -256,26 +256,100 @@ fun IdeGrokBotsView(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Quick Bot-Tailored Prompt Chips
-        val quickChips = when (selectedPersona) {
-            GrokBotPersona.GROK_CODER -> listOf("Optimize algorithm", "Explain like I'm 5", "Make this 10x faster", "Witty code review")
-            GrokBotPersona.CODE_ARCHITECT -> listOf("Design modular structure", "Clean Architecture review", "Extract reusable component", "Decouple layers")
-            GrokBotPersona.BUG_HUNTER -> listOf("Audit null safety", "Find edge cases", "Security audit", "Check memory leaks")
-            GrokBotPersona.TEST_SPECIALIST -> listOf("Generate unit tests", "Create mock data", "Edge case tests", "Refactor for testability")
-            GrokBotPersona.WEB_SCRAPER -> listOf("Extract page DOM", "Scrape all links", "Extract JSON tables", "Extract script endpoints")
+        // Actuator Swarm and Specialized CNS Tasks for Selected Persona
+        if (selectedPersona.actuatorAgents.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "ACTUATOR SWARM:",
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                selectedPersona.actuatorAgents.forEach { agentName ->
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Text(
+                            text = "⚡ $agentName",
+                            fontSize = 8.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(selectedPersona.avatarColorHex),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            quickChips.forEach { chipText ->
-                SuggestionChip(
-                    onClick = { sendMessage(chipText) },
-                    label = { Text(chipText, fontSize = 10.sp) }
-                )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Quick Bot-Tailored Prompt Chips with CNS Delegation Target
+        if (selectedPersona.specializedTasks.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                selectedPersona.specializedTasks.forEach { task ->
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(selectedPersona.avatarColorHex).copy(alpha = 0.12f),
+                        border = BorderStroke(0.5.dp, Color(selectedPersona.avatarColorHex).copy(alpha = 0.4f)),
+                        modifier = Modifier.clickable {
+                            sendMessage(task.promptTemplate)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(text = "▶", fontSize = 8.5.sp, color = Color(selectedPersona.avatarColorHex))
+                            Text(
+                                text = task.title,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "→ ${task.targetAgent}",
+                                fontSize = 8.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFF38BDF8)
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            val quickChips = when (selectedPersona) {
+                GrokBotPersona.GROK_CODER -> listOf("Optimize algorithm", "Explain like I'm 5", "Make this 10x faster", "Witty code review")
+                GrokBotPersona.CODE_ARCHITECT -> listOf("Design modular structure", "Clean Architecture review", "Extract reusable component", "Decouple layers")
+                GrokBotPersona.BUG_HUNTER -> listOf("Audit null safety", "Find edge cases", "Security audit", "Check memory leaks")
+                GrokBotPersona.TEST_SPECIALIST -> listOf("Generate unit tests", "Create mock data", "Edge case tests", "Refactor for testability")
+                GrokBotPersona.WEB_SCRAPER -> listOf("Extract page DOM", "Scrape all links", "Extract JSON tables", "Extract script endpoints")
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                quickChips.forEach { chipText ->
+                    SuggestionChip(
+                        onClick = { sendMessage(chipText) },
+                        label = { Text(chipText, fontSize = 10.sp) }
+                    )
+                }
             }
         }
 

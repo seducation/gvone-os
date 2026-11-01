@@ -27,7 +27,8 @@ data class BotAssistantJob(
     val context: String,
     val personaId: String,
     val isContextReview: Boolean = false,
-    val echoToTerminal: Boolean = false
+    val echoToTerminal: Boolean = false,
+    val targetAgent: String? = null
 )
 
 data class BotTerminalOutput(val text: String, val type: TerminalLineType)
@@ -80,7 +81,7 @@ class BotAssistantRuntime private constructor(context: Context) {
         saveMessages(updated)
     }
 
-    fun submitMessage(prompt: String, context: String, echoToTerminal: Boolean = false) {
+    fun submitMessage(prompt: String, context: String, echoToTerminal: Boolean = false, targetAgent: String? = null) {
         val cleanPrompt = prompt.trim()
         if (cleanPrompt.isEmpty()) return
         val selectedPersona = _persona.value
@@ -96,7 +97,8 @@ class BotAssistantRuntime private constructor(context: Context) {
                 prompt = cleanPrompt,
                 context = context,
                 personaId = selectedPersona.id,
-                echoToTerminal = echoToTerminal
+                echoToTerminal = echoToTerminal,
+                targetAgent = targetAgent
             )
         )
         enableAndStartService()
@@ -299,6 +301,7 @@ class BotAssistantRuntime private constructor(context: Context) {
                     .put("personaId", job.personaId)
                     .put("isContextReview", job.isContextReview)
                     .put("echoToTerminal", job.echoToTerminal)
+                    .put("targetAgent", job.targetAgent)
             )
         }
         prefs.edit().putString(KEY_QUEUE, array.toString()).apply()
@@ -314,7 +317,8 @@ class BotAssistantRuntime private constructor(context: Context) {
                 context = item.optString("context", ""),
                 personaId = item.optString("personaId", GrokBotPersona.GROK_CODER.id),
                 isContextReview = item.optBoolean("isContextReview", false),
-                echoToTerminal = item.optBoolean("echoToTerminal", false)
+                echoToTerminal = item.optBoolean("echoToTerminal", false),
+                targetAgent = item.optString("targetAgent").takeIf { it.isNotBlank() }
             ).takeIf { it.prompt.isNotBlank() }
         }
     } catch (_: Exception) {

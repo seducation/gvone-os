@@ -138,7 +138,19 @@ data class IdeExtension(
 )
 
 /**
+ * Specialized task template for a domain-specific Bot Persona.
+ */
+data class BotSpecializedTask(
+    val id: String,
+    val title: String,
+    val description: String,
+    val promptTemplate: String,
+    val targetAgent: String
+)
+
+/**
  * Grok-style Multi-Bot Personas for AI Coding Assistance.
+ * Acting as high-level Advisory Copilots directing underlying CNS Actuator Agents.
  */
 enum class GrokBotPersona(
     val id: String,
@@ -146,7 +158,9 @@ enum class GrokBotPersona(
     val tagline: String,
     val systemRole: String,
     val avatarColorHex: Long,
-    val icon: ImageVector
+    val icon: ImageVector,
+    val actuatorAgents: List<String> = emptyList(),
+    val specializedTasks: List<BotSpecializedTask> = emptyList()
 ) {
     GROK_CODER(
         "grok_coder",
@@ -154,7 +168,31 @@ enum class GrokBotPersona(
         "Witty, high-IQ algorithmic wizard",
         "You are Grok Coder, an unfiltered, hyper-intelligent, witty AI coding prodigy. You write optimal algorithms, point out inefficiencies directly, and explain code with clarity and humor.",
         0xFF00E5FF,
-        Icons.Rounded.Terminal
+        Icons.Rounded.Terminal,
+        actuatorAgents = listOf("CodingAgent", "FileAgent"),
+        specializedTasks = listOf(
+            BotSpecializedTask(
+                id = "refactor_clean",
+                title = "Refactor Clean Code",
+                description = "Refactor file for readability and performance",
+                promptTemplate = "Refactor the active file: optimize logic, simplify complex expressions, and apply modern Kotlin clean code principles.",
+                targetAgent = "CodingAgent"
+            ),
+            BotSpecializedTask(
+                id = "optimize_perf",
+                title = "Optimize Algorithm",
+                description = "Eliminate performance bottlenecks",
+                promptTemplate = "Analyze algorithm performance in the active file: identify O(N^2) loops, allocations, and optimize for peak speed.",
+                targetAgent = "CodingAgent"
+            ),
+            BotSpecializedTask(
+                id = "scaffold_feature",
+                title = "Scaffold Feature",
+                description = "Generate boilerplate and components",
+                promptTemplate = "Scaffold a new feature structure for this project with clean interfaces and idiomatic implementations.",
+                targetAgent = "FileAgent"
+            )
+        )
     ),
     CODE_ARCHITECT(
         "code_architect",
@@ -162,7 +200,31 @@ enum class GrokBotPersona(
         "System design & clean patterns",
         "You are Code Architect, a senior principal software engineer. You specialize in system architecture, design patterns, modular code, and maintainable structure.",
         0xFFA855F7,
-        Icons.Rounded.AccountTree
+        Icons.Rounded.AccountTree,
+        actuatorAgents = listOf("FileAgent", "WorkspaceAgent", "CodingAgent"),
+        specializedTasks = listOf(
+            BotSpecializedTask(
+                id = "arch_audit",
+                title = "Architecture Audit",
+                description = "Evaluate modularity & dependency graph",
+                promptTemplate = "Perform an architecture audit of this workspace: map module dependencies, detect circular coupling, and recommend boundary improvements.",
+                targetAgent = "WorkspaceAgent"
+            ),
+            BotSpecializedTask(
+                id = "plan_module",
+                title = "Plan Module Design",
+                description = "Design domain and data layer boundaries",
+                promptTemplate = "Design a modular architecture plan for the target feature including state flows, repository boundaries, and domain models.",
+                targetAgent = "FileAgent"
+            ),
+            BotSpecializedTask(
+                id = "design_schema",
+                title = "Design API & Schema",
+                description = "Draft clean contracts and schemas",
+                promptTemplate = "Draft robust data models, JSON schemas, and API contracts for this system.",
+                targetAgent = "CodingAgent"
+            )
+        )
     ),
     BUG_HUNTER(
         "bug_hunter",
@@ -170,7 +232,31 @@ enum class GrokBotPersona(
         "Security auditor & edge-case sleuth",
         "You are Bug Hunter, an obsessive security researcher and bug auditor. You identify null pointer risks, race conditions, memory leaks, and input vulnerabilities.",
         0xFFEF4444,
-        Icons.Rounded.Security
+        Icons.Rounded.Security,
+        actuatorAgents = listOf("CodingAgent", "CommandAgent", "FileAgent"),
+        specializedTasks = listOf(
+            BotSpecializedTask(
+                id = "sec_leak_audit",
+                title = "Security & Leak Audit",
+                description = "Check for memory leaks & security flaws",
+                promptTemplate = "Audit the codebase for security risks, leaked keys/tokens, memory leaks in coroutines/listeners, and unsafe inputs.",
+                targetAgent = "CodingAgent"
+            ),
+            BotSpecializedTask(
+                id = "null_safety_scan",
+                title = "Null & Race Scan",
+                description = "Detect null pointer and threading races",
+                promptTemplate = "Perform a strict null-safety and concurrency audit: identify potential NPEs, race conditions, and unhandled exception paths.",
+                targetAgent = "CodingAgent"
+            ),
+            BotSpecializedTask(
+                id = "lint_command_audit",
+                title = "Run Static Code Audit",
+                description = "Run static analysis & compiler checks",
+                promptTemplate = "Run static code analysis and compiler checks on the workspace and report all warnings.",
+                targetAgent = "CommandAgent"
+            )
+        )
     ),
     TEST_SPECIALIST(
         "test_specialist",
@@ -178,7 +264,31 @@ enum class GrokBotPersona(
         "TDD master & clean refactorings",
         "You are Test Specialist, an expert in Test-Driven Development (TDD). You generate comprehensive unit test suites, mock cases, and elegant code refactorings.",
         0xFF10B981,
-        Icons.Rounded.Verified
+        Icons.Rounded.Verified,
+        actuatorAgents = listOf("CodingAgent", "BrowserAgent", "SearchAgent"),
+        specializedTasks = listOf(
+            BotSpecializedTask(
+                id = "gen_unit_tests",
+                title = "Generate Unit Tests",
+                description = "Create comprehensive test suites",
+                promptTemplate = "Generate comprehensive JUnit/Mockk unit tests covering all happy paths and edge cases for the active component.",
+                targetAgent = "CodingAgent"
+            ),
+            BotSpecializedTask(
+                id = "gen_mock_fixtures",
+                title = "Generate Mock Fixtures",
+                description = "Produce sample data & stubs",
+                promptTemplate = "Create mock test data fixtures and repository stubs for testing scenarios.",
+                targetAgent = "FileAgent"
+            ),
+            BotSpecializedTask(
+                id = "verify_endpoints",
+                title = "Verify API Endpoints",
+                description = "Test web APIs and responses",
+                promptTemplate = "Verify web API endpoints, test response schemas, and validate status codes.",
+                targetAgent = "BrowserAgent"
+            )
+        )
     ),
     WEB_SCRAPER(
         "web_scraper",
@@ -186,7 +296,24 @@ enum class GrokBotPersona(
         "DOM extractor & website content analyzer",
         "You are Web Scraper Bot, an expert web crawling and DOM extraction agent. You extract JSON data, HTML structure, meta tags, and interactive elements from web pages.",
         0xFFF59E0B,
-        Icons.Rounded.Language
+        Icons.Rounded.Language,
+        actuatorAgents = listOf("BrowserAgent", "SearchAgent"),
+        specializedTasks = listOf(
+            BotSpecializedTask(
+                id = "extract_dom",
+                title = "Extract DOM Structure",
+                description = "Parse page hierarchy and tables",
+                promptTemplate = "Inspect active web page DOM: extract structured JSON from tables, article elements, and links.",
+                targetAgent = "BrowserAgent"
+            ),
+            BotSpecializedTask(
+                id = "crawl_search",
+                title = "Deep Web Intelligence",
+                description = "Gather intelligence from multiple sites",
+                promptTemplate = "Crawl web search results, retrieve relevant documentation, and synthesize findings.",
+                targetAgent = "SearchAgent"
+            )
+        )
     )
 }
 

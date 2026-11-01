@@ -58,6 +58,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontFamily
+import com.example.data.agent.BotAssistantRuntime
 import androidx.core.content.FileProvider
 import com.example.data.files.*
 import com.example.data.model.BrowserTab
@@ -129,6 +131,7 @@ fun TabOverviewScreen(
     onNavigateToUrl: ((String) -> Unit)? = null,
     onSelectProjectTarget: ((QuickMenuProject) -> Unit)? = null,
     onOpenInspectorWithTab: ((String) -> Unit)? = null,
+    onOpenAgentDashboard: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     onCloseOverview: () -> Unit,
     modifier: Modifier = Modifier
@@ -2200,91 +2203,296 @@ fun TabOverviewScreen(
                         }
                     }
 
-                    // SECTION 5: CLEAN BOT NAME ITEMS (when category == 3)
+                    // SECTION 5: UNIFIED BOT COPILOTS & CNS ACTUATOR DISPATCH (when category == 3)
                     if (selectedCategory == 3) {
-                        val bots = GrokBotPersona.values().sortedBy { persona ->
-                            if (persona.id == activeProject?.defaultBotPersonaId) 0 else 1
-                        }
-                        items(bots, key = { it.id }, span = { GridItemSpan(2) }) { bot ->
-                            val isProjectDefault = activeProject?.defaultBotPersonaId == bot.id
+                        item(span = { GridItemSpan(2) }) {
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
-                                color = if (isProjectDefault) Color(0xFF211A35) else Color(0xFF131A26),
-                                border = BorderStroke(1.dp, if (isProjectDefault) Color(bot.avatarColorHex) else Color(0xFF233248)),
+                                color = Color(0xFF161226),
+                                border = BorderStroke(1.dp, Color(0xFFA855F7).copy(alpha = 0.4f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        onOpenBotChat?.invoke(bot) ?: run {
-                                            onCloseOverview()
-                                        }
-                                    }
-                                    .testTag("navigator_bot_item_${bot.id}")
+                                    .padding(bottom = 6.dp)
+                                    .testTag("navigator_bot_overview_banner")
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        .padding(12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(38.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(bot.avatarColorHex).copy(alpha = 0.2f))
-                                                .border(1.dp, Color(bot.avatarColorHex), CircleShape),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = bot.icon,
-                                                contentDescription = bot.displayName,
-                                                tint = Color(bot.avatarColorHex),
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
+                                        Text("🧠", fontSize = 18.sp)
                                         Column {
                                             Text(
-                                                text = bot.displayName,
+                                                "SPECIALIST COPILOTS & CNS ACTUATORS",
                                                 color = Color.White,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.5.sp,
+                                                fontFamily = FontFamily.Monospace
                                             )
                                             Text(
-                                                text = bot.tagline,
-                                                color = Color(0xFF94A3B8),
-                                                fontSize = 11.5.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                                                "Advisory personas direct concrete tasks to underlying CNS agents",
+                                                color = Color(0xFFC084FC),
+                                                fontSize = 9.5.sp
                                             )
                                         }
                                     }
+
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = Color(bot.avatarColorHex).copy(alpha = if (isProjectDefault) 0.25f else 0.15f),
-                                        border = BorderStroke(0.5.dp, Color(bot.avatarColorHex).copy(alpha = 0.4f))
+                                        color = Color(0xFFA855F7).copy(alpha = 0.2f),
+                                        border = BorderStroke(0.5.dp, Color(0xFFA855F7)),
+                                        modifier = Modifier.clickable {
+                                            onCloseOverview()
+                                            onOpenAgentDashboard?.invoke()
+                                        }
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
+                                            Text("CNS Dashboard", color = Color(0xFFF3E8FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Icon(Icons.Rounded.ArrowForward, contentDescription = null, tint = Color(0xFFF3E8FF), modifier = Modifier.size(11.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        val bots = GrokBotPersona.values().sortedBy { persona ->
+                            if (persona.id == activeProject?.defaultBotPersonaId) 0 else 1
+                        }
+                        items(bots, key = { it.id }, span = { GridItemSpan(2) }) { bot ->
+                            val isProjectDefault = activeProject?.defaultBotPersonaId == bot.id
+                            val botColor = Color(bot.avatarColorHex)
+
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isProjectDefault) Color(0xFF211A35) else Color(0xFF131A26),
+                                border = BorderStroke(1.dp, if (isProjectDefault) botColor else Color(0xFF233248)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("navigator_bot_item_${bot.id}")
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    // Header Row: Avatar, Name, Tagline, Open Chat Button
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(38.dp)
+                                                    .clip(CircleShape)
+                                                    .background(botColor.copy(alpha = 0.2f))
+                                                    .border(1.dp, botColor, CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = bot.icon,
+                                                    contentDescription = bot.displayName,
+                                                    tint = botColor,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                            Column {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    Text(
+                                                        text = bot.displayName,
+                                                        color = Color.White,
+                                                        fontSize = 14.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    if (isProjectDefault) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = botColor.copy(alpha = 0.2f)
+                                                        ) {
+                                                            Text(
+                                                                text = "Project Default",
+                                                                color = botColor,
+                                                                fontSize = 9.sp,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Text(
+                                                    text = bot.tagline,
+                                                    color = Color(0xFF94A3B8),
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = botColor.copy(alpha = 0.15f),
+                                            border = BorderStroke(0.5.dp, botColor.copy(alpha = 0.4f)),
+                                            modifier = Modifier.clickable {
+                                                onOpenBotChat?.invoke(bot) ?: run {
+                                                    onCloseOverview()
+                                                }
+                                            }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Chat Copilot",
+                                                    color = botColor,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Icon(
+                                                    imageVector = Icons.Rounded.ArrowForward,
+                                                    contentDescription = null,
+                                                    tint = botColor,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Actuator swarm tags: showing which physical CNS Agents this bot commands
+                                    if (bot.actuatorAgents.isNotEmpty()) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
                                             Text(
-                                                text = if (isProjectDefault) "Project Default" else "Open Tab",
-                                                color = Color(bot.avatarColorHex),
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold
+                                                text = "CNS ACTUATORS:",
+                                                fontSize = 8.5.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF64748B)
                                             )
-                                            Icon(
-                                                imageVector = Icons.Rounded.ArrowForward,
-                                                contentDescription = null,
-                                                tint = Color(bot.avatarColorHex),
-                                                modifier = Modifier.size(12.dp)
+                                            Row(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                bot.actuatorAgents.forEach { agentName ->
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = Color(0xFF1E293B),
+                                                        border = BorderStroke(0.5.dp, Color(0xFF334155))
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                                        ) {
+                                                            val agentIcon = when (agentName) {
+                                                                "CodingAgent" -> "💻"
+                                                                "FileAgent" -> "📁"
+                                                                "CommandAgent" -> "⚡"
+                                                                "BrowserAgent" -> "🌐"
+                                                                "SearchAgent" -> "🔍"
+                                                                else -> "🤖"
+                                                            }
+                                                            Text(text = agentIcon, fontSize = 9.sp)
+                                                            Text(
+                                                                text = agentName,
+                                                                fontSize = 8.5.sp,
+                                                                fontFamily = FontFamily.Monospace,
+                                                                color = Color(0xFF94A3B8)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Differentiated 1-tap specialized tasks
+                                    if (bot.specializedTasks.isNotEmpty()) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Text(
+                                                text = "⚡ SPECIALIZED TASKS (DISPATCH TO CNS):",
+                                                fontSize = 8.5.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = botColor.copy(alpha = 0.9f)
                                             )
+
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                bot.specializedTasks.forEach { task ->
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = Color(0xFF0F172A),
+                                                        border = BorderStroke(0.5.dp, botColor.copy(alpha = 0.35f)),
+                                                        modifier = Modifier.clickable {
+                                                            val runtime = BotAssistantRuntime.get(context)
+                                                            runtime.setPersona(bot)
+                                                            val activeFileContext = if (activeTab != null) {
+                                                                "Active File: ${activeTab.fileItem.name} (${activeTab.fileItem.path})\n${activeTab.content.take(8000)}"
+                                                            } else "Workspace Target: ${activeProject?.name ?: "Projects"}"
+                                                            runtime.submitMessage(
+                                                                prompt = task.promptTemplate,
+                                                                context = "Target Agent: ${task.targetAgent}\n$activeFileContext",
+                                                                echoToTerminal = true,
+                                                                targetAgent = task.targetAgent
+                                                            )
+                                                            Toast.makeText(context, "Dispatched '${task.title}' to ${task.targetAgent}", Toast.LENGTH_SHORT).show()
+                                                            onOpenBotChat?.invoke(bot)
+                                                        }
+                                                    ) {
+                                                        Column(
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                                        ) {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                            ) {
+                                                                Text(text = "▶", fontSize = 8.sp, color = botColor)
+                                                                Text(
+                                                                    text = task.title,
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = Color.White
+                                                                )
+                                                            }
+                                                            Text(
+                                                                text = "→ ${task.targetAgent}",
+                                                                fontSize = 8.sp,
+                                                                fontFamily = FontFamily.Monospace,
+                                                                color = Color(0xFF38BDF8)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
