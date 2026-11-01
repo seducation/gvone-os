@@ -2366,6 +2366,20 @@ private fun TerminalHeaderBar(
                 )
             }
 
+            IconButton(
+                onClick = onCnsClick,
+                modifier = Modifier
+                    .size(32.dp)
+                    .testTag("terminal_cns_dashboard_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.BugReport,
+                    contentDescription = "CNS Debug & Dashboard",
+                    tint = Color(0xFFF59E0B),
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+
             // Consolidated Modes, Agent & Output Filters Drop-Down Menu
             var showControlsMenu by remember { mutableStateOf(false) }
             Box {
@@ -2400,13 +2414,13 @@ private fun TerminalHeaderBar(
                     )
 
                     Text(
-                        text = "TARGET AGENT",
+                        text = "UNIFIED ASSISTANT",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF94A3B8),
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
-                    AgentPersona.values().forEach { persona ->
+                    listOf(AgentPersona.AUTO).forEach { persona ->
                         val isSelected = persona == activePersona
                         DropdownMenuItem(
                             text = {
