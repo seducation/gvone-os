@@ -547,7 +547,13 @@ fun IdeSidebar(
                                             Toast.makeText(context, "Open a web file to live preview", Toast.LENGTH_SHORT).show()
                                         }
                                     },
-                                    activeTab = activeTab
+                                    activeTab = activeTab,
+                                    onOpenProblems = { extId ->
+                                        viewModel.openInspectorWithTab("PROBLEMS")
+                                    },
+                                    onOpenSidePanel = { extId ->
+                                        viewModel.openInspectorWithTab("EXTENSIONS")
+                                    }
                                 )
                             }
                         }

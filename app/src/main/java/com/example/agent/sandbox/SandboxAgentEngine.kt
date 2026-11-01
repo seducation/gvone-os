@@ -30,11 +30,17 @@ import java.util.UUID
  * - AUTO: Dynamically selects best paradigm based on goal
  */
 enum class AgentPersona(val displayName: String, val badge: String, val description: String) {
+    ATLAS("Atlas", "ATLAS", "Autonomous Browser Operator with verified DOM navigation"),
+    COMET("Comet", "COMET", "Multi-Source Research and parallel intelligence synthesis"),
+    DIA("Dia", "DIA", "Live File & Code Sandbox environment and tab management"),
     AUTO("GVONE Assistant", "CNS", "CNS routes each task to the appropriate capability");
 
     companion object {
         fun fromString(name: String): AgentPersona {
             return when (name.trim().lowercase()) {
+                "atlas" -> ATLAS
+                "comet" -> COMET
+                "dia" -> DIA
                 "auto" -> AUTO
                 else -> AUTO
             }

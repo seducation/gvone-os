@@ -138,4 +138,24 @@ class GVONEIdeUnitTest {
         val latency = McpServerManager.pingServer("mcp_filesystem")
         assertTrue("Latency should be positive", latency > 0)
     }
+
+    @Test
+    fun testExtensionSidePanelAndInspectorIntegration() {
+        // XcodeInspectorTab has EXTENSIONS side panels
+        val xcodeTabs = XcodeInspectorTab.values()
+        assertTrue("XcodeInspectorTab must contain EXTENSIONS", xcodeTabs.any { it == XcodeInspectorTab.EXTENSIONS })
+        assertEquals("Side Panels", XcodeInspectorTab.EXTENSIONS.title)
+        assertTrue("XcodeInspectorTab must contain PROBLEMS", xcodeTabs.any { it == XcodeInspectorTab.PROBLEMS })
+
+        // SafariActionTab includes EXTENSIONS and PROBLEMS
+        val safariTabs = com.example.ui.screens.SafariActionTab.values()
+        assertTrue("SafariActionTab must contain EXTENSIONS", safariTabs.any { it == com.example.ui.screens.SafariActionTab.EXTENSIONS })
+        assertEquals("Side Panels", com.example.ui.screens.SafariActionTab.EXTENSIONS.label)
+        assertTrue("SafariActionTab must contain PROBLEMS", safariTabs.any { it == com.example.ui.screens.SafariActionTab.PROBLEMS })
+
+        // ExtensionProblemsManager has initial diagnostics
+        val problems = ExtensionProblemsManager.problems.value
+        assertTrue("Extension problems list must not be empty", problems.isNotEmpty())
+        assertTrue("Must contain eslint diagnostic", problems.any { it.extensionId == "eslint" })
+    }
 }

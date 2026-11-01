@@ -54,6 +54,8 @@ import com.example.ui.screens.ide.AttributesInspectorView
 import com.example.ui.screens.ide.DomInspectorView
 import com.example.ui.screens.ide.NetworkSecurityInspectorView
 import com.example.ui.screens.ide.UnifiedDebugConsoleView
+import com.example.ui.screens.ide.ExtensionSidePanelsInspectorView
+import com.example.ui.screens.ide.ExtensionProblemsInspectorView
 import com.example.ui.components.DevConsoleLog
 import com.example.data.terminal.TerminalLine
 
@@ -63,6 +65,8 @@ enum class SafariActionTab(val label: String, val icon: ImageVector) {
     CONSOLE("Console", Icons.Rounded.Terminal),
     DOM_INSPECT("DOM", Icons.Rounded.Code),
     SECURITY("Security", Icons.Rounded.Security),
+    EXTENSIONS("Side Panels", Icons.Rounded.Extension),
+    PROBLEMS("Problems", Icons.Rounded.WarningAmber),
     ABOUT("About", Icons.Rounded.Info),
     INFO("Info", Icons.Rounded.Insights),
     GIT("Drive", Icons.Rounded.CloudSync),
@@ -525,6 +529,15 @@ fun SafariActionsSheet(
                                         .padding(horizontal = 14.dp, vertical = 10.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
+                                    SafariActionRow(
+                                        icon = Icons.Rounded.Extension,
+                                        label = "Extension Side Panels",
+                                        trailingText = "Open Panels",
+                                        onClick = {
+                                            selectedTab = SafariActionTab.EXTENSIONS
+                                        }
+                                    )
+                                    HorizontalDivider(color = Color(0xFF263348), thickness = 0.5.dp)
                                     ExtensionToggleRow(
                                         title = "Ad & Tracker Blocker",
                                         subtitle = "Blocks intrusive ads, popups & telemetry",
@@ -1396,6 +1409,40 @@ fun SafariActionsSheet(
                             onClearBrowsingData()
                             Toast.makeText(sheetContext, "Browsing data cleared", Toast.LENGTH_SHORT).show()
                         }
+                    }
+                )
+            }
+        }
+
+        SafariActionTab.EXTENSIONS -> {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                color = Color.Transparent
+            ) {
+                ExtensionSidePanelsInspectorView(
+                    activeWebView = activeWebView,
+                    activeTab = tab
+                )
+            }
+        }
+
+        SafariActionTab.PROBLEMS -> {
+            val sheetContext = LocalContext.current
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                color = Color.Transparent
+            ) {
+                ExtensionProblemsInspectorView(
+                    onOpenFileInEditor = { file, line ->
+                        Toast.makeText(sheetContext, "Jump to $file:$line", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
