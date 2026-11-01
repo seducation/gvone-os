@@ -2804,6 +2804,27 @@ private fun TerminalHeaderBar(
                             onSelectConsoleFilter("Warnings")
                         }
                     )
+
+                    HorizontalDivider(color = Color(0xFF30363D), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 4.dp))
+
+                    DropdownMenuItem(
+                        modifier = Modifier.testTag("terminal_cns_dashboard_menu"),
+                        text = {
+                            Text(
+                                text = "CNS Debug & Dashboard",
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.BugReport, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                        },
+                        onClick = {
+                            showControlsMenu = false
+                            onCnsClick()
+                        }
+                    )
                 }
             }
 
