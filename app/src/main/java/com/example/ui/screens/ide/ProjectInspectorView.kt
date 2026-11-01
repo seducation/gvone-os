@@ -81,7 +81,7 @@ fun ProjectInspectorView(
     var selectedProjectId by remember(initialProjectId) {
         mutableStateOf(initialProjectId ?: projects.firstOrNull()?.id.orEmpty())
     }
-    val activeProject = projects.find { it.id == selectedProjectId } ?: projects.firstOrNull()
+    val activeProject = projects.find { it.id == selectedProjectId || it.name.equals(selectedProjectId, ignoreCase = true) } ?: projects.firstOrNull()
 
     val terminalRepo = remember(context) { TerminalRepository(context) }
     var terminalSessions by remember {
@@ -94,7 +94,8 @@ fun ProjectInspectorView(
             terminalSessions.filter { session ->
                 session.id in activeProject.chatSessionIds ||
                     session.tabGroupId == activeProject.id ||
-                    session.tabGroupId.equals(activeProject.name, ignoreCase = true)
+                    session.tabGroupId.equals(activeProject.name, ignoreCase = true) ||
+                    session.title.contains(activeProject.name, ignoreCase = true)
             }.sortedByDescending { it.lastActiveAt }
         }
     }

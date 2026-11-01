@@ -94,6 +94,8 @@ fun TabOverviewScreen(
     environments: List<Environment> = emptyList(),
     currentEnvironment: Environment? = null,
     fileSystem: GVONEFileSystem? = null,
+    selectedProjectTarget: QuickMenuProject? = null,
+    terminalTargetDirectory: String = "",
     aiService: GVONEAIService? = null,
     activeTab: IdeTab? = null,
     openTabs: List<IdeTab> = emptyList(),
@@ -142,8 +144,22 @@ fun TabOverviewScreen(
     val driveManager = remember(context, fs) { GVONEDriveManager(context, fs) }
 
     // Navigation state: null = Root All Tabs (Folders + Ungrouped), non-null = Viewing specific Folder
-    var currentFolderId by remember { mutableStateOf<String?>(null) }
-    var activeProject by remember { mutableStateOf<QuickMenuProject?>(null) }
+    var activeProject by remember(selectedProjectTarget, terminalTargetDirectory) {
+        val initial = selectedProjectTarget ?: if (terminalTargetDirectory.isNotBlank()) {
+            val name = terminalTargetDirectory.trim().removePrefix("/").substringAfterLast('/')
+            val allProjects = QuickMenuStorage.getProjects(context)
+            allProjects.find { it.id == name || it.name.equals(name, ignoreCase = true) }
+                ?: QuickMenuProject(id = name, name = name)
+        } else null
+        mutableStateOf<QuickMenuProject?>(initial)
+    }
+    var currentFolderId by remember(selectedProjectTarget, terminalTargetDirectory) {
+        val initialFolder = selectedProjectTarget?.id ?: if (terminalTargetDirectory.isNotBlank()) {
+            val name = terminalTargetDirectory.trim().removePrefix("/").substringAfterLast('/')
+            tabGroups.find { it.name.equals(name, ignoreCase = true) || it.id == name }?.id ?: name
+        } else null
+        mutableStateOf<String?>(initialFolder)
+    }
 
     // Search and filter state
     var searchQuery by remember { mutableStateOf("") }
@@ -364,15 +380,25 @@ fun TabOverviewScreen(
     }
 
     // Filtered chats for active folder view (including project chats)
-    val folderChats = remember(terminalSessions, activeProject, currentFolderId, currentFolder) {
-        val targetId = currentFolderId ?: activeProject?.id
-        val targetName = currentFolder?.name ?: activeProject?.name
+    val folderChats = remember(terminalSessions, activeProject, currentFolderId, currentFolder, terminalTargetDirectory) {
+        val targetId = currentFolderId ?: activeProject?.id ?: if (terminalTargetDirectory.isNotBlank()) terminalTargetDirectory.trim().removePrefix("/").substringAfterLast('/') else null
+        val targetName = currentFolder?.name ?: activeProject?.name ?: if (terminalTargetDirectory.isNotBlank()) terminalTargetDirectory.trim().removePrefix("/").substringAfterLast('/') else null
         terminalSessions.filter { sess ->
             (activeProject?.chatSessionIds?.contains(sess.id) == true) ||
             (targetId != null && sess.tabGroupId == targetId) ||
-            (targetName != null && sess.tabGroupId.equals(targetName, ignoreCase = true))
+            (targetName != null && sess.tabGroupId.equals(targetName, ignoreCase = true)) ||
+            (activeProject != null && (sess.tabGroupId == activeProject?.id || sess.tabGroupId.equals(activeProject?.name, ignoreCase = true))) ||
+            (targetName != null && sess.title.contains(targetName, ignoreCase = true)) ||
+            (activeProject != null && sess.title.contains(activeProject!!.name, ignoreCase = true))
+        }.sortedByDescending { it.lastActiveAt }
+    }
+
+    val rootChatsToDisplay = remember(terminalSessions, folderChats, activeProject) {
+        if (activeProject != null && folderChats.isNotEmpty()) {
+            (folderChats + terminalSessions.filterNot { s -> folderChats.any { it.id == s.id } })
+        } else {
+            terminalSessions
         }
-            .sortedByDescending { it.lastActiveAt }
     }
 
     // Ungrouped tabs for root view
@@ -1640,11 +1666,53 @@ fun TabOverviewScreen(
 
                     // SECTION 3: CHATS (when category == 1)
                     if (selectedCategory == 1) {
+                        if (activeProject != null) {
+                            item(span = { GridItemSpan(2) }) {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 10.dp, bottom = 4.dp),
+                                    color = Color(0xFF101B2E),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF1E3A5F))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.FolderSpecial, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                            Text(
+                                                text = "Target Project: ${activeProject!!.name} (${folderChats.size} chats)",
+                                                color = Color(0xFFF1F5F9),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        TextButton(
+                                            onClick = { onNewChat(activeProject!!.id) },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(Icons.Rounded.AddComment, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF38BDF8))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("New Target Chat", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        val chatsToDisplay = rootChatsToDisplay
+
                         item(span = { GridItemSpan(2) }) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 12.dp, bottom = 4.dp),
+                                    .padding(top = 8.dp, bottom = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
@@ -1659,14 +1727,14 @@ fun TabOverviewScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        text = "Terminal Chats (${terminalSessions.size})",
+                                        text = if (activeProject != null) "Terminal & Project Chats (${chatsToDisplay.size})" else "Terminal Chats (${terminalSessions.size})",
                                         color = GVONETextPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                                 TextButton(
-                                    onClick = { onNewChat(null) },
+                                    onClick = { onNewChat(activeProject?.id) },
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                 ) {
                                     Icon(
@@ -1686,7 +1754,7 @@ fun TabOverviewScreen(
                             }
                         }
 
-                        if (terminalSessions.isEmpty()) {
+                        if (chatsToDisplay.isEmpty()) {
                             item(span = { GridItemSpan(2) }) {
                                 Box(
                                     modifier = Modifier
@@ -1726,7 +1794,7 @@ fun TabOverviewScreen(
                                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                         )
                                         Button(
-                                            onClick = { onNewChat(null) },
+                                            onClick = { onNewChat(activeProject?.id) },
                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
                                             shape = RoundedCornerShape(12.dp)
                                         ) {
@@ -1748,7 +1816,7 @@ fun TabOverviewScreen(
                                 }
                             }
                         } else {
-                            items(terminalSessions, key = { "root_chat_${it.id}" }, span = { GridItemSpan(2) }) { chatSession ->
+                            items(chatsToDisplay, key = { "root_chat_${it.id}" }, span = { GridItemSpan(2) }) { chatSession ->
                                 val isSelected = chatSession.id == activeTerminalSessionId
                                 val isChecked = selectedChatIds.contains(chatSession.id)
                                 val group = tabGroups.find { it.id == chatSession.tabGroupId }

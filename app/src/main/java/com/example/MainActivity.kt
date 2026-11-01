@@ -285,6 +285,7 @@ fun BrowserApp(
     val botAssistantStatus by viewModel.botAssistantStatus.collectAsStateWithLifecycle()
     val botAssistantActiveTask by viewModel.botAssistantActiveTask.collectAsStateWithLifecycle()
     val terminalTargetDir by viewModel.terminalTargetDirectory.collectAsStateWithLifecycle()
+    val selectedProjTarget by viewModel.selectedProjectTarget.collectAsStateWithLifecycle()
     val terminalExecutionStatus by viewModel.terminalExecutionStatus.collectAsStateWithLifecycle()
     val terminalExecutionMessage by viewModel.terminalExecutionMessage.collectAsStateWithLifecycle()
     val isGeminiLiveActive by viewModel.isGeminiLiveActive.collectAsStateWithLifecycle()
@@ -589,19 +590,75 @@ fun BrowserApp(
                                 onCloseSuggestions = { viewModel.closeSuggestions() },
                                 modifier = Modifier.fillMaxSize()
                             )
-                        } else if (tab.url.startsWith("gvone-file://")) {
-                            val filePath = tab.url.removePrefix("gvone-file://")
-                            GVONEFileViewerScreen(
-                                fileRelativePath = filePath,
-                                fileSystem = viewModel.fileSystem,
-                                onCloseTab = { viewModel.closeTab(tab.id) },
-                                onOpenTerminalWithCommand = {
-                                    viewModel.openSheet(ActiveSheet.Terminal)
-                                },
-                                isDeveloperBarEnabled = settings.developerBarEnabled,
-                                onToggleDeveloperBar = { viewModel.toggleDeveloperBar() },
-                                modifier = Modifier.fillMaxSize()
-                            )
+                        } else if (tab.url.startsWith("gvone-file://") || tab.url.startsWith("file://")) {
+                            val filePath = if (tab.url.startsWith("gvone-file://")) {
+                                tab.url.removePrefix("gvone-file://")
+                            } else {
+                                tab.url.removePrefix("file://")
+                            }
+                            val fileName = remember(filePath) { tab.title.ifBlank { filePath.substringAfterLast('/') } }
+                            val detectedMode = remember(filePath) {
+                                val ext = filePath.substringAfterLast('.', "").lowercase()
+                                when (ext) {
+                                    "pdf" -> XcodeWorkspaceMode.PDF_VIEWER
+                                    "png", "jpg", "jpeg", "webp", "gif", "svg", "bmp" -> XcodeWorkspaceMode.IMAGE_VIEWER
+                                    "md", "markdown" -> XcodeWorkspaceMode.MARKDOWN
+                                    "mp4", "mp3", "wav", "m4a", "webm", "ogg" -> XcodeWorkspaceMode.MEDIA_PLAYER
+                                    "json" -> XcodeWorkspaceMode.DATA_INSPECTOR
+                                    else -> XcodeWorkspaceMode.CODE_EDITOR
+                                }
+                            }
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    if (settings.developerBarEnabled) {
+                                        UnifiedDeveloperBar(
+                                            tab = tab,
+                                            activeWebView = null,
+                                            isTorActive = settings.torEnabled,
+                                            onToggleOff = { viewModel.toggleDeveloperBar() },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            onOpenIde = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.CODE_EDITOR) },
+                                            workspaceMode = detectedMode,
+                                            onToggleWorkspaceMode = { viewModel.setWorkspaceMode(it) },
+                                            activeFileName = fileName,
+                                            isFileDirty = false,
+                                            onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
+                                            onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
+                                            onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
+                                            canGoBack = false,
+                                            canGoForward = false,
+                                            onGoBack = {},
+                                            onGoForward = {},
+                                            onReload = {},
+                                            onAddressClick = { isAddressBarWriting = true },
+                                            openTabs = tabs,
+                                            currentTabId = currentTabId,
+                                            onSelectBrowserTab = onSelectBrowserTabFromDevBar,
+                                            onNewBrowserTab = onNewBrowserTabFromDevBar,
+                                            ideTabs = ideOpenTabs,
+                                            activeIdeTabId = ideActiveTabId,
+                                            onSelectIdeTab = onSelectIdeTabFromDevBar,
+                                            onNewIdeTab = onNewIdeTabFromDevBar,
+                                            onOpenCodeFile = onOpenCodeFileFromDevBar,
+                                            activeBotPersona = activeBotPersona,
+                                            onSelectBotPersona = onSelectBotPersonaFromDevBar,
+                                            onSelectWorkspaceFile = onSelectWorkspaceFileFromDevBar
+                                        )
+                                    }
+                                    GVONEFileViewerScreen(
+                                        fileRelativePath = filePath,
+                                        fileSystem = viewModel.fileSystem,
+                                        onCloseTab = { viewModel.closeTab(tab.id) },
+                                        onOpenTerminalWithCommand = {
+                                            viewModel.openSheet(ActiveSheet.Terminal)
+                                        },
+                                        isDeveloperBarEnabled = false,
+                                        showStandaloneHeader = false,
+                                        onToggleDeveloperBar = { viewModel.toggleDeveloperBar() },
+                                        modifier = Modifier.weight(1f).fillMaxWidth()
+                                    )
+                                }
+                            }
                         } else {
                             Box(modifier = Modifier.fillMaxSize()) {
                                 Column(modifier = Modifier.fillMaxSize()) {
@@ -887,6 +944,8 @@ fun BrowserApp(
                 environments = environments,
                 currentEnvironment = currentEnvironment,
                 fileSystem = viewModel.fileSystem,
+                selectedProjectTarget = selectedProjTarget,
+                terminalTargetDirectory = terminalTargetDir,
                 onOpenFileInTab = { file, inNewTab -> viewModel.openFileInTab(file, inNewTab) },
                 onOpenFileInIde = { file -> viewModel.openIdeWithFile(file) },
                 onOpenIde = { viewModel.openIde() },

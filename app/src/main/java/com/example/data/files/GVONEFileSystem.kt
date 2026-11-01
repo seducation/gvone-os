@@ -268,8 +268,9 @@ class GVONEFileSystem(private val context: Context) {
      * Creates a valid, real Android PDF document so the PDF viewer can immediately render it.
      */
     private fun createSamplePdf(file: File) {
+        var doc: PdfDocument? = null
         try {
-            val doc = PdfDocument()
+            doc = PdfDocument()
             val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4
             val page = doc.startPage(pageInfo)
             val canvas = page.canvas
@@ -304,9 +305,14 @@ class GVONEFileSystem(private val context: Context) {
             FileOutputStream(file).use { out ->
                 doc.writeTo(out)
             }
-            doc.close()
-        } catch (_: Exception) {
-            file.writeText("%PDF-1.4\n% Sample GVONE PDF Document")
+        } catch (_: Throwable) {
+            try {
+                file.writeText("%PDF-1.4\n% Sample GVONE PDF Document\n%%EOF")
+            } catch (_: Throwable) {}
+        } finally {
+            try {
+                doc?.close()
+            } catch (_: Throwable) {}
         }
     }
 

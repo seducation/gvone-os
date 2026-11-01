@@ -58,6 +58,7 @@ fun XcodeInspectorPanel(
     onAppendIdeLog: (String) -> Unit = {},
     onAppendWebConsoleLog: (com.example.ui.components.DevConsoleLog) -> Unit = {},
     initialTab: XcodeInspectorTab = XcodeInspectorTab.ATTRIBUTES,
+    initialProjectId: String? = null,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -217,6 +218,7 @@ fun XcodeInspectorPanel(
                     XcodeInspectorTab.PROJECT -> {
                         ProjectInspectorView(
                             fileSystem = fileSystem,
+                            initialProjectId = initialProjectId,
                             onOpenFileInTab = onOpenFileInTab,
                             onOpenFileInIde = onOpenFileInIde,
                             onExecuteTerminalCommand = onExecuteTerminalCommand,

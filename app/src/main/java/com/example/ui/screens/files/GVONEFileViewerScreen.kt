@@ -59,6 +59,7 @@ fun GVONEFileViewerScreen(
     onCloseTab: () -> Unit,
     onOpenTerminalWithCommand: (String) -> Unit = {},
     isDeveloperBarEnabled: Boolean = true,
+    showStandaloneHeader: Boolean = false,
     onToggleDeveloperBar: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -154,8 +155,9 @@ fun GVONEFileViewerScreen(
             .background(Color(0xFF0B0F17))
             .testTag("gvone_file_viewer_screen")
     ) {
-        // TOP APP BAR / VIEWER CONTROLS (Respects developerBarEnabled setting)
-        if (isDeveloperBarEnabled) {
+        // TOP APP BAR / VIEWER CONTROLS (Only when standalone, otherwise DevBar.kt UnifiedDeveloperBar is used)
+        if (showStandaloneHeader) {
+            if (isDeveloperBarEnabled) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = Color(0xFF111726),
@@ -379,6 +381,7 @@ fun GVONEFileViewerScreen(
                 }
             }
         }
+    }
 
         // VIEWER CONTENT BODY
         if (isLoading) {
