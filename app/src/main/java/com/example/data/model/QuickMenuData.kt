@@ -16,8 +16,12 @@ data class QuickMenuProject(
     val tabs: List<String> = emptyList(),
     val files: List<String> = emptyList(),
     val chats: List<String> = emptyList(),
+    val chatSessionIds: List<String> = emptyList(),
     val extensions: List<String> = listOf("prettier", "eslint", "live_server"),
     val bots: List<String> = listOf("Coding Agent", "Terminal Agent"),
+    val defaultBotPersonaId: String = "grok_coder",
+    val mcpServerIds: List<String> = emptyList(),
+    val useWorkspaceMcpServers: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
 ) {
     fun toJsonObject(): JSONObject {
@@ -39,13 +43,21 @@ data class QuickMenuProject(
         chats.forEach { chatsArray.put(it) }
         json.put("chats", chatsArray)
 
+        val chatIdsArray = JSONArray()
+        chatSessionIds.forEach { chatIdsArray.put(it) }
+        json.put("chatSessionIds", chatIdsArray)
+
         val extensionsArray = JSONArray()
         extensions.forEach { extensionsArray.put(it) }
         json.put("extensions", extensionsArray)
-
         val botsArray = JSONArray()
         bots.forEach { botsArray.put(it) }
         json.put("bots", botsArray)
+        json.put("defaultBotPersonaId", defaultBotPersonaId)
+        json.put("useWorkspaceMcpServers", useWorkspaceMcpServers)
+        val mcpIdsArray = JSONArray()
+        mcpServerIds.forEach { mcpIdsArray.put(it) }
+        json.put("mcpServerIds", mcpIdsArray)
 
         return json
     }
@@ -76,25 +88,19 @@ data class QuickMenuProject(
                 }
             }
 
-            val extensionsList = mutableListOf<String>()
-            val extensionsArray = json.optJSONArray("extensions")
-            if (extensionsArray != null) {
-                for (i in 0 until extensionsArray.length()) {
-                    extensionsList.add(extensionsArray.optString(i))
-                }
-            } else {
-                extensionsList.addAll(listOf("prettier", "eslint", "live_server"))
-            }
+            val chatSessionIds = json.optJSONArray("chatSessionIds")?.let { array ->
+                (0 until array.length()).map { array.optString(it) }
+            }.orEmpty()
 
-            val botsList = mutableListOf<String>()
-            val botsArray = json.optJSONArray("bots")
-            if (botsArray != null) {
-                for (i in 0 until botsArray.length()) {
-                    botsList.add(botsArray.optString(i))
-                }
-            } else {
-                botsList.addAll(listOf("Coding Agent", "Terminal Agent"))
-            }
+            val extensionsList = json.optJSONArray("extensions")?.let { array ->
+                (0 until array.length()).map { array.optString(it) }
+            } ?: listOf("prettier", "eslint", "live_server")
+            val botsList = json.optJSONArray("bots")?.let { array ->
+                (0 until array.length()).map { array.optString(it) }
+            } ?: listOf("Coding Agent", "Terminal Agent")
+            val mcpServerIds = json.optJSONArray("mcpServerIds")?.let { array ->
+                (0 until array.length()).map { array.optString(it) }
+            }.orEmpty()
 
             return QuickMenuProject(
                 id = json.optString("id", UUID.randomUUID().toString()),
@@ -103,8 +109,12 @@ data class QuickMenuProject(
                 tabs = tabsList,
                 files = filesList,
                 chats = chatsList,
+                chatSessionIds = chatSessionIds,
                 extensions = extensionsList,
                 bots = botsList,
+                defaultBotPersonaId = json.optString("defaultBotPersonaId", "grok_coder"),
+                mcpServerIds = mcpServerIds,
+                useWorkspaceMcpServers = json.optBoolean("useWorkspaceMcpServers", true),
                 createdAt = json.optLong("createdAt", System.currentTimeMillis())
             )
         }

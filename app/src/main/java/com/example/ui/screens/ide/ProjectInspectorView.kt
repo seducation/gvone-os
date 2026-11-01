@@ -91,25 +91,11 @@ fun ProjectInspectorView(
     val projectChats = remember(activeProject, terminalSessions) {
         if (activeProject == null) emptyList<TerminalSession>()
         else {
-            val sessionsMatched = terminalSessions.filter { sess ->
-                sess.tabGroupId == activeProject.id ||
-                sess.tabGroupId.equals(activeProject.name, ignoreCase = true)
-            }
-            val sessionTitles = sessionsMatched.map { it.title }.toSet()
-            val synthetic = activeProject.chats
-                .filterNot { it in sessionTitles }
-                .filter { title ->
-                    !title.matches(Regex("^(Chat|Session)\\s*\\d*$", RegexOption.IGNORE_CASE))
-                }
-                .mapIndexed { idx, title ->
-                    TerminalSession(
-                        id = "proj_chat_${activeProject.id}_$idx",
-                        title = title,
-                        tabGroupId = activeProject.id,
-                        createdAt = activeProject.createdAt
-                    )
-                }
-            sessionsMatched + synthetic
+            terminalSessions.filter { session ->
+                session.id in activeProject.chatSessionIds ||
+                    session.tabGroupId == activeProject.id ||
+                    session.tabGroupId.equals(activeProject.name, ignoreCase = true)
+            }.sortedByDescending { it.lastActiveAt }
         }
     }
 
@@ -646,7 +632,10 @@ fun ProjectInspectorView(
                                     terminalRepo.saveSessions(nextSessions)
 
                                     val updatedChats = (activeProject.chats + chatTitle).distinct()
-                                    val updatedProj = activeProject.copy(chats = updatedChats)
+                                    val updatedProj = activeProject.copy(
+                                        chats = updatedChats,
+                                        chatSessionIds = (activeProject.chatSessionIds + newSess.id).distinct()
+                                    )
                                     val updatedProjects = projects.map { if (it.id == activeProject.id) updatedProj else it }
                                     projects = updatedProjects
                                     QuickMenuStorage.saveProjects(context, updatedProjects)
@@ -770,7 +759,10 @@ fun ProjectInspectorView(
                                                     terminalRepo.saveSessions(nextSessions)
 
                                                     val updatedChats = activeProject.chats.filterNot { it == chatSession.title }
-                                                    val updatedProj = activeProject.copy(chats = updatedChats)
+                                                    val updatedProj = activeProject.copy(
+                                                        chats = updatedChats,
+                                                        chatSessionIds = activeProject.chatSessionIds.filterNot { it == chatSession.id }
+                                                    )
                                                     val updatedProjects = projects.map { if (it.id == activeProject.id) updatedProj else it }
                                                     projects = updatedProjects
                                                     QuickMenuStorage.saveProjects(context, updatedProjects)

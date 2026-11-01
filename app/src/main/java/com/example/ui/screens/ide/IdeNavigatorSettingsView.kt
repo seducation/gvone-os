@@ -346,6 +346,110 @@ fun IdeNavigatorSettingsView(
 }
 
 @Composable
+fun ProjectNavigatorSettingsView(
+    project: com.example.data.model.QuickMenuProject,
+    onProjectChange: (com.example.data.model.QuickMenuProject) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val servers by McpServerManager.servers.collectAsState()
+    val personas = GrokBotPersona.values().toList()
+    val selectedPersona = personas.firstOrNull { it.id == project.defaultBotPersonaId } ?: GrokBotPersona.GROK_CODER
+    var personaMenuOpen by remember(project.id) { mutableStateOf(false) }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFF0F172A))
+            .padding(12.dp)
+            .testTag("project_settings_container"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = 60.dp)
+    ) {
+        item {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFF1E293B),
+                border = BorderStroke(1.dp, Color(0xFF334155)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(project.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text("Project settings", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    Text("Folder: Projects/${project.name}", color = Color(0xFF38BDF8), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+
+        item {
+            SettingsCategoryCard("Assistant", Icons.Rounded.AutoAwesome, Color(0xFFA855F7)) {
+                Text("Default persona for this project", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                Box {
+                    OutlinedButton(onClick = { personaMenuOpen = true }) {
+                        Text(selectedPersona.displayName)
+                        Icon(Icons.Rounded.ExpandMore, contentDescription = null)
+                    }
+                    DropdownMenu(expanded = personaMenuOpen, onDismissRequest = { personaMenuOpen = false }) {
+                        personas.forEach { persona ->
+                            DropdownMenuItem(
+                                text = { Text(persona.displayName) },
+                                onClick = {
+                                    personaMenuOpen = false
+                                    onProjectChange(project.copy(defaultBotPersonaId = persona.id))
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            SettingsCategoryCard("MCP servers", Icons.Rounded.Hub, Color(0xFFEC4899)) {
+                Text(
+                    if (project.useWorkspaceMcpServers) "Using all workspace MCP servers" else "Choose the MCP servers available to this project",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 11.sp
+                )
+                if (servers.isEmpty()) {
+                    Text("No MCP servers are configured.", color = Color(0xFF64748B), fontSize = 11.sp)
+                } else {
+                    servers.forEach { server ->
+                        val included = project.useWorkspaceMcpServers || server.id in project.mcpServerIds
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(checked = included, onCheckedChange = { checked ->
+                                val current = if (project.useWorkspaceMcpServers) servers.map { it.id } else project.mcpServerIds
+                                val next = if (checked) (current + server.id).distinct() else current.filterNot { it == server.id }
+                                val useWorkspace = next.toSet() == servers.map { it.id }.toSet()
+                                onProjectChange(project.copy(
+                                    mcpServerIds = if (useWorkspace) emptyList() else next,
+                                    useWorkspaceMcpServers = useWorkspace
+                                ))
+                            })
+                            Column(Modifier.weight(1f)) {
+                                Text(server.name, color = Color(0xFFE2E8F0), fontSize = 12.sp)
+                                Text(if (server.isConnected) "Connected" else "Disconnected", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                "CNS approval and permission rules continue to follow the workspace settings.",
+                color = Color(0xFF64748B),
+                fontSize = 10.sp,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun SettingsCategoryCard(
     title: String,
     icon: ImageVector,

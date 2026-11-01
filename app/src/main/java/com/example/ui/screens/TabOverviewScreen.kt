@@ -133,7 +133,6 @@ fun TabOverviewScreen(
     onOpenInspectorWithTab: ((String) -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     onCloseOverview: () -> Unit,
-    initialCategory: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -148,7 +147,7 @@ fun TabOverviewScreen(
     // Search and filter state
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
-    var selectedCategory by rememberSaveable(initialCategory) { mutableStateOf(initialCategory) } // 0 = Tabs, 1 = Chats, 2 = Files, 3 = Bots, 4 = Extensions, 5 = MCP, 6 = Settings
+    var selectedCategory by rememberSaveable { mutableStateOf(0) } // 0 = Tabs, 1 = Chats, 2 = Files, 3 = Bots, 4 = Extensions, 5 = MCP, 6 = Settings
     val mcpServers by McpServerManager.servers.collectAsState()
     var showAddMcpServerDialog by remember { mutableStateOf(false) }
 
@@ -367,28 +366,12 @@ fun TabOverviewScreen(
     val folderChats = remember(terminalSessions, activeProject, currentFolderId, currentFolder) {
         val targetId = currentFolderId ?: activeProject?.id
         val targetName = currentFolder?.name ?: activeProject?.name
-        val matched = terminalSessions.filter { sess ->
+        terminalSessions.filter { sess ->
+            (activeProject?.chatSessionIds?.contains(sess.id) == true) ||
             (targetId != null && sess.tabGroupId == targetId) ||
             (targetName != null && sess.tabGroupId.equals(targetName, ignoreCase = true))
         }
-        if (matched.isNotEmpty()) {
-            matched
-        } else if (activeProject != null && activeProject!!.chats.isNotEmpty()) {
-            activeProject!!.chats
-                .filterNot { title ->
-                    title.matches(Regex("^(Chat|Session)\\s*\\d*$", RegexOption.IGNORE_CASE))
-                }
-                .mapIndexed { index, chatTitle ->
-                    TerminalSession(
-                        id = "proj_chat_${activeProject!!.id}_$index",
-                        title = chatTitle,
-                        tabGroupId = activeProject!!.id,
-                        createdAt = System.currentTimeMillis() - (index * 3600_000L)
-                    )
-                }
-        } else {
-            emptyList()
-        }
+            .sortedByDescending { it.lastActiveAt }
     }
 
     // Ungrouped tabs for root view
@@ -698,7 +681,13 @@ fun TabOverviewScreen(
                     val activeChatCount = if (currentFolderId != null) folderChats.size else terminalSessions.size
                     val activeFileCount = if (currentFolderId != null) folderFiles.size else allFiles.size
 
-                    val activeMcpCount = mcpServers.count { it.isConnected }
+                    val activeMcpCount = mcpServers.count { server ->
+                        server.isConnected && (
+                            activeProject == null ||
+                                activeProject?.useWorkspaceMcpServers == true ||
+                                server.id in activeProject!!.mcpServerIds
+                            )
+                    }
                     val navCategories = listOf(
                         Triple(0, "Tabs ($activeTabCount)", Icons.Rounded.Public),
                         Triple(1, "Chats ($activeChatCount)", Icons.Rounded.Terminal),
@@ -731,9 +720,6 @@ fun TabOverviewScreen(
                                 )
                                 .clickable {
                                     selectedCategory = catId
-                                    if (catId >= 3) {
-                                        currentFolderId = null
-                                    }
                                 }
                                 .padding(horizontal = 12.dp)
                                 .testTag("category_pill_${title.substringBefore(" ").lowercase()}"),
@@ -1201,14 +1187,15 @@ fun TabOverviewScreen(
                                 }
                             } else {
                                 items(folderChats, key = { "folder_chat_${it.id}" }, span = { GridItemSpan(2) }) { chatSession ->
+                                    val isActiveChat = chatSession.id == activeTerminalSessionId
                                     Surface(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
-                                            .border(1.dp, Color(0xFF2A203F), RoundedCornerShape(12.dp))
+                                            .border(1.dp, if (isActiveChat) Color(0xFF38BDF8) else Color(0xFF2A203F), RoundedCornerShape(12.dp))
                                             .clickable { onSelectChat(chatSession.id) }
                                             .testTag("folder_chat_item_${chatSession.id}"),
-                                        color = Color(0xFF191428)
+                                        color = if (isActiveChat) Color(0xFF17243A) else Color(0xFF191428)
                                     ) {
                                         Row(
                                             modifier = Modifier
@@ -1241,9 +1228,12 @@ fun TabOverviewScreen(
                                                     overflow = TextOverflow.Ellipsis
                                                 )
                                                 Text(
-                                                    text = "AI Grok Bot & Terminal Session",
+                                                    text = chatSession.lines.lastOrNull()?.text?.takeIf { it.isNotBlank() }
+                                                        ?: "Project terminal conversation",
                                                     color = GVONETextSecondary,
-                                                    fontSize = 11.sp
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                             }
                                             Icon(
@@ -2266,12 +2256,15 @@ fun TabOverviewScreen(
 
                     // SECTION 5: CLEAN BOT NAME ITEMS (when category == 3)
                     if (selectedCategory == 3) {
-                        val bots = GrokBotPersona.values()
+                        val bots = GrokBotPersona.values().sortedBy { persona ->
+                            if (persona.id == activeProject?.defaultBotPersonaId) 0 else 1
+                        }
                         items(bots, key = { it.id }, span = { GridItemSpan(2) }) { bot ->
+                            val isProjectDefault = activeProject?.defaultBotPersonaId == bot.id
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
-                                color = Color(0xFF131A26),
-                                border = BorderStroke(1.dp, Color(0xFF233248)),
+                                color = if (isProjectDefault) Color(0xFF211A35) else Color(0xFF131A26),
+                                border = BorderStroke(1.dp, if (isProjectDefault) Color(bot.avatarColorHex) else Color(0xFF233248)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
@@ -2326,7 +2319,7 @@ fun TabOverviewScreen(
                                     }
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = Color(bot.avatarColorHex).copy(alpha = 0.15f),
+                                        color = Color(bot.avatarColorHex).copy(alpha = if (isProjectDefault) 0.25f else 0.15f),
                                         border = BorderStroke(0.5.dp, Color(bot.avatarColorHex).copy(alpha = 0.4f))
                                     ) {
                                         Row(
@@ -2335,7 +2328,7 @@ fun TabOverviewScreen(
                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
                                             Text(
-                                                text = "Open Tab",
+                                                text = if (isProjectDefault) "Project Default" else "Open Tab",
                                                 color = Color(bot.avatarColorHex),
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold
@@ -2416,10 +2409,11 @@ fun TabOverviewScreen(
                                     .heightIn(min = 450.dp, max = 650.dp)
                                     .testTag("navigator_mcp_container")
                             ) {
-                                IdeMcpView(
+                                    IdeMcpView(
                                     onOpenBotChat = {
                                         selectedCategory = 3
-                                    }
+                                        },
+                                        projectServerIds = activeProject?.takeUnless { it.useWorkspaceMcpServers }?.mcpServerIds?.toSet()
                                 )
                             }
                         }
@@ -2437,14 +2431,29 @@ fun TabOverviewScreen(
                                     .heightIn(min = 450.dp, max = 650.dp)
                                     .testTag("navigator_settings_container")
                             ) {
-                                IdeNavigatorSettingsView(
-                                    onOpenFullSettings = {
-                                        onCloseOverview()
-                                        onOpenSettings?.invoke() ?: run {
-                                            Toast.makeText(context, "Full Settings opened", Toast.LENGTH_SHORT).show()
+                                if (activeProject != null) {
+                                    ProjectNavigatorSettingsView(
+                                        project = activeProject!!,
+                                        onProjectChange = { updatedProject ->
+                                            activeProject = updatedProject
+                                            val allProjects = QuickMenuStorage.getProjects(context)
+                                            QuickMenuStorage.saveProjects(
+                                                context,
+                                                allProjects.map { if (it.id == updatedProject.id) updatedProject else it }
+                                            )
+                                            onSelectProjectTarget?.invoke(updatedProject)
                                         }
-                                    }
-                                )
+                                    )
+                                } else {
+                                    IdeNavigatorSettingsView(
+                                        onOpenFullSettings = {
+                                            onCloseOverview()
+                                            onOpenSettings?.invoke() ?: run {
+                                                Toast.makeText(context, "Full Settings opened", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

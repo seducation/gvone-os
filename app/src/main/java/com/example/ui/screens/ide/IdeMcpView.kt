@@ -174,10 +174,14 @@ object McpServerManager {
 @Composable
 fun IdeMcpView(
     onOpenBotChat: (() -> Unit)? = null,
+    projectServerIds: Set<String>? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val servers by McpServerManager.servers.collectAsState()
+    val allServers by McpServerManager.servers.collectAsState()
+    val servers = remember(allServers, projectServerIds) {
+        if (projectServerIds == null) allServers else allServers.filter { it.id in projectServerIds }
+    }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("All") }

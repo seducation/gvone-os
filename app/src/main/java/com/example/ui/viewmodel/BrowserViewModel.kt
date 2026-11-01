@@ -64,7 +64,6 @@ sealed interface ActiveSheet {
     object Permissions : ActiveSheet
     object Ide : ActiveSheet
     object Inspector : ActiveSheet
-    object Mcp : ActiveSheet
 }
 
 enum class FileSelectionPurpose {
@@ -78,6 +77,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val repository = BrowserRepository(application)
     val torManager = TorManager()
     val downloadManager = BrowserDownloadManager(application, repository)
+    val aiService = GVONEAIService(torManager, application)
     private val botAssistant = BotAssistantRuntime.get(application)
     val botMessages: StateFlow<List<com.example.ui.screens.ide.BotChatMessage>> = botAssistant.messages
     val activeBotPersona: StateFlow<GrokBotPersona> = botAssistant.persona
@@ -85,7 +85,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val botAssistantPaused: StateFlow<Boolean> = botAssistant.paused
     val botAssistantStatus = botAssistant.status
     val botAssistantActiveTask = botAssistant.activeTask
-    val aiService = GVONEAIService(torManager, application)
     val fileSystem = com.example.data.files.GVONEFileSystem(application)
     val terminalRepository = com.example.data.terminal.TerminalRepository(application)
     val connectorHubManager = com.example.data.connector.ConnectorHubManager(application, fileSystem)
@@ -272,14 +271,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             _activeTerminalSessionId.value = sessionId
             _terminalLines.value = target.lines
             terminalRepository.saveSessions(updated)
-        } else if (sessionId.startsWith("proj_chat_")) {
-            val activeProj = _selectedProjectTarget.value
-            val title = if (activeProj != null && sessionId.contains(activeProj.id)) {
-                val idxStr = sessionId.substringAfterLast('_')
-                val idx = idxStr.toIntOrNull() ?: 0
-                activeProj.chats.getOrNull(idx) ?: "Project Chat"
-            } else "Project Chat"
-            createNewTerminalSession(title = title, groupId = activeProj?.id)
         }
     }
 
@@ -319,12 +310,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         // If scoped to a project, register in project's chats manifest
         if (effectiveGroupId != null && activeProj != null && (effectiveGroupId == activeProj.id || effectiveGroupId.equals(activeProj.name, ignoreCase = true))) {
             val allProjects = QuickMenuStorage.getProjects(getApplication())
-            if (!activeProj.chats.contains(chatTitle)) {
-                val updatedProj = activeProj.copy(chats = activeProj.chats + chatTitle)
-                val updatedProjects = allProjects.map { if (it.id == activeProj.id) updatedProj else it }
-                QuickMenuStorage.saveProjects(getApplication(), updatedProjects)
-                _selectedProjectTarget.value = updatedProj
-            }
+            val projectWithSession = activeProj.copy(
+                chats = (activeProj.chats + chatTitle).distinct(),
+                chatSessionIds = (activeProj.chatSessionIds + newId).distinct()
+            )
+            val projectsWithSession = allProjects.map { if (it.id == activeProj.id) projectWithSession else it }
+            QuickMenuStorage.saveProjects(getApplication(), projectsWithSession)
+            _selectedProjectTarget.value = projectWithSession
         }
         return newId
     }
@@ -332,15 +324,44 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun renameTerminalSession(sessionId: String, newTitle: String) {
         val trimmed = newTitle.trim()
         if (trimmed.isBlank()) return
+        val oldSession = _terminalSessions.value.firstOrNull { it.id == sessionId }
         val updated = _terminalSessions.value.map {
             if (it.id == sessionId) it.copy(title = trimmed) else it
         }
         _terminalSessions.value = updated
         terminalRepository.saveSessions(updated)
+        oldSession?.let { session ->
+            val projects = QuickMenuStorage.getProjects(getApplication())
+            val updatedProjects = projects.map { project ->
+                if (session.id in project.chatSessionIds || session.tabGroupId == project.id) {
+                    project.copy(chats = project.chats.map { if (it == session.title) trimmed else it }.distinct())
+                } else project
+            }
+            QuickMenuStorage.saveProjects(getApplication(), updatedProjects)
+            _selectedProjectTarget.value?.let { selected ->
+                _selectedProjectTarget.value = updatedProjects.firstOrNull { it.id == selected.id } ?: selected
+            }
+        }
     }
 
     fun deleteTerminalSession(sessionId: String) {
         val current = _terminalSessions.value
+        val deleted = current.firstOrNull { it.id == sessionId }
+        if (deleted != null) {
+            val projects = QuickMenuStorage.getProjects(getApplication())
+            val updatedProjects = projects.map { project ->
+                if (sessionId in project.chatSessionIds || deleted.tabGroupId == project.id) {
+                    project.copy(
+                        chats = project.chats.filterNot { it == deleted.title },
+                        chatSessionIds = project.chatSessionIds.filterNot { it == sessionId }
+                    )
+                } else project
+            }
+            QuickMenuStorage.saveProjects(getApplication(), updatedProjects)
+            _selectedProjectTarget.value?.let { selected ->
+                _selectedProjectTarget.value = updatedProjects.firstOrNull { it.id == selected.id } ?: selected
+            }
+        }
         val remaining = current.filterNot { it.id == sessionId }
         if (remaining.isEmpty()) {
             val freshId = "chat_${System.currentTimeMillis()}"
@@ -747,6 +768,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         appendTerminalLine("✖ Rejected Step: ${step.title}", TerminalLineType.WARNING)
     }
 
+    // Shared assistant state is owned by the application-scoped runtime so the navigator,
+    // dedicated bot workspace, terminal, and foreground worker all observe one conversation.
     fun openBotChat(persona: GrokBotPersona) {
         botAssistant.setPersona(persona)
         _workspaceMode.value = XcodeWorkspaceMode.BOT_CHAT
