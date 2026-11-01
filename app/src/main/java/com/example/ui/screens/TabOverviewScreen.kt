@@ -691,7 +691,10 @@ fun TabOverviewScreen(
                                         onSelectProjectTarget?.invoke(project)
                                         val group = tabGroups.find { it.id == project.id || it.name.equals(project.name, ignoreCase = true) }
                                         if (group != null) currentFolderId = group.id else { onCreateGroup(project.name, "#38BDF8", emptyList()); currentFolderId = project.id }
-                                        selectedCategory = 0
+                                        // Opening a project should land in its project workspace (Files),
+                                        // not the unrelated root Tabs panel. Other project-scoped sections
+                                        // remain available through the existing category switcher.
+                                        selectedCategory = 2
                                     },
                                     onRunProject = { runProjectHtml(it, null) },
                                     onSendToDrive = { project ->
