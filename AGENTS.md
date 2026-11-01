@@ -23,3 +23,9 @@ Whenever the user or terminal input tasks the assistant with writing or implemen
 
 5. **Verification & Preview Readiness**:
    - Clearly report the file path created, the bug audit results, and confirm that the artifact is ready to be previewed or executed in the IDE / Web Browser.
+
+## Unified Multi-Mode Developer Tooling (DevBar)
+
+- Always maintain and extend `DevBar.kt` (`UnifiedDeveloperBar`) as the single, universal developer bar across all workspace modes (Browser, Code Editor, Bot Chat, PDF, Image, Media, Markdown, Data Inspector).
+- Whenever adding new file types or workspace viewers, adapt `DevBar.kt` to provide context-specific toolbar actions and expandable drawer tabs instead of building fragmented standalone bars.
+
