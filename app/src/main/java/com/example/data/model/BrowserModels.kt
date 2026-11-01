@@ -147,7 +147,7 @@ data class BrowserSettings(
     val terminalSwappedPosition: Boolean = false,
     val shortsAudioMode: ShortsAudioMode = ShortsAudioMode.ALWAYS_UNMUTED,
     val backgroundPlayEnabled: Boolean = true,
-    val developerBarEnabled: Boolean = false
+    val developerBarEnabled: Boolean = true
 )
 
 data class SourceCard(

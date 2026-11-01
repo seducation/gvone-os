@@ -1,12 +1,16 @@
 package com.example.ui.screens.ide
 
+import android.webkit.WebView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.example.data.model.BrowserTab
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -263,6 +267,183 @@ private fun ExtensionCard(
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(text = actionLabel, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Diagnostics and problems inspector view showing lint and syntax items.
+ */
+@Composable
+fun ExtensionProblemsInspectorView(
+    onOpenFileInEditor: ((String, Int) -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val sampleProblems = remember {
+        listOf(
+            Triple("index.html", 14, "Missing alt attribute on <img> element"),
+            Triple("style.css", 48, "Unknown vendor property -webkit-user-select"),
+            Triple("app.js", 32, "'result' is assigned a value but never used")
+        )
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Warning,
+                    contentDescription = null,
+                    tint = Color(0xFFFBBF24),
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = "Problems (${sampleProblems.size})",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color(0xFFE2E8F0)
+                )
+            }
+            Text(
+                text = "ESLint & CSS Linter",
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                color = Color(0xFF64748B)
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(sampleProblems) { (file, line, msg) ->
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF131C2E),
+                    border = BorderStroke(0.5.dp, Color(0xFF233554)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenFileInEditor?.invoke(file, line) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Info,
+                            contentDescription = null,
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = msg,
+                                fontSize = 11.sp,
+                                color = Color(0xFFE2E8F0),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "$file:$line",
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Extension side panels inspector view displaying active extensions & status.
+ */
+@Composable
+fun ExtensionSidePanelsInspectorView(
+    activeWebView: WebView?,
+    activeTab: BrowserTab?,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Extension,
+                contentDescription = null,
+                tint = Color(0xFFA78BFA),
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = "Active Extensions",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                color = Color(0xFFE2E8F0)
+            )
+        }
+
+        val activeExtList = remember {
+            listOf(
+                Triple("Prettier Formatter", "Active", Color(0xFF34D399)),
+                Triple("ESLint Analyzer", "Running (3 issues)", Color(0xFFFBBF24)),
+                Triple("Live Preview Server", "Port 8080 Active", Color(0xFF38BDF8)),
+                Triple("GitLens", "main branch clean", Color(0xFFA78BFA))
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(activeExtList) { (name, status, color) ->
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF131C2E),
+                    border = BorderStroke(0.5.dp, Color(0xFF233554)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = name,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFE2E8F0)
+                        )
+                        Text(
+                            text = status,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = color
+                        )
                     }
                 }
             }

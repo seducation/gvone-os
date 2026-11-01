@@ -27,6 +27,10 @@ import androidx.compose.ui.unit.sp
 import com.example.agent.core.AgentStatus
 import com.example.agent.runtime.*
 import com.example.agent.sandbox.AgentPersona
+import com.example.data.model.AgentQuestionPrompt
+import com.example.data.model.AgentTaskStep
+import com.example.data.model.AgentStepStatus
+import com.example.data.model.AgentStepType
 import com.example.data.sync.WebAppConnectionState
 
 @Composable
@@ -555,6 +559,305 @@ fun ExpandableAgentTaskCard(
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Expandable Action & Command Panel for the terminal CLI.
+ * Houses interactive AI clarification questions, step-by-step approval gates,
+ * and quick command triggers.
+ */
+@Composable
+fun TerminalActionAndCommandPanel(
+    targetDirectory: String,
+    pendingQuestion: AgentQuestionPrompt?,
+    steps: List<AgentTaskStep>,
+    onClose: () -> Unit,
+    onSubmitAnswer: (String) -> Unit,
+    onApproveStep: (AgentTaskStep) -> Unit,
+    onRejectStep: (AgentTaskStep) -> Unit,
+    onExecuteCommand: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .testTag("terminal_action_command_panel"),
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFF161B22),
+        border = BorderStroke(1.dp, Color(0xFF30363D))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Build,
+                        contentDescription = null,
+                        tint = Color(0xFF58A6FF),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "Build & Command Panel",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFFE6EDF3)
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFF21262D),
+                        modifier = Modifier.padding(start = 4.dp)
+                    ) {
+                        Text(
+                            text = "📁 $targetDirectory",
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF8B949E),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Close Panel",
+                        tint = Color(0xFF8B949E),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // Interactive AI Question Prompt Card
+            if (pendingQuestion != null) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF1E2638),
+                    border = BorderStroke(1.dp, Color(0xFF388BFD).copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("agent_question_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.HelpOutline,
+                                contentDescription = null,
+                                tint = Color(0xFF79C0FF),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Agent Clarification Needed",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF79C0FF)
+                            )
+                        }
+
+                        Text(
+                            text = pendingQuestion.question,
+                            fontSize = 11.5.sp,
+                            color = Color(0xFFE6EDF3)
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            pendingQuestion.options.forEachIndexed { index, option ->
+                                val isRec = (index == pendingQuestion.recommendedIndex)
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isRec) Color(0xFF1F6FEB) else Color(0xFF21262D),
+                                    border = BorderStroke(0.5.dp, if (isRec) Color(0xFF58A6FF) else Color(0xFF30363D)),
+                                    modifier = Modifier.clickable { onSubmitAnswer(option) }
+                                ) {
+                                    Text(
+                                        text = if (isRec) "★ $option" else option,
+                                        fontSize = 10.5.sp,
+                                        fontWeight = if (isRec) FontWeight.Bold else FontWeight.Normal,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Step progression & Approval Gates
+            if (steps.isNotEmpty()) {
+                Text(
+                    text = "Execution Steps (${steps.count { it.status == AgentStepStatus.COMPLETED }}/${steps.size})",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color(0xFF8B949E)
+                )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    steps.takeLast(4).forEach { step ->
+                        val isAwaiting = (step.status == AgentStepStatus.AWAITING_APPROVAL)
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isAwaiting) Color(0xFF261F12) else Color(0xFF0D1117),
+                            border = BorderStroke(0.5.dp, if (isAwaiting) Color(0xFFD29922) else Color(0xFF21262D)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = step.type.iconLabel,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = step.title,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFE6EDF3),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = when (step.status) {
+                                            AgentStepStatus.COMPLETED -> Color(0xFF238636).copy(alpha = 0.2f)
+                                            AgentStepStatus.AWAITING_APPROVAL -> Color(0xFFD29922).copy(alpha = 0.2f)
+                                            AgentStepStatus.RUNNING -> Color(0xFF1F6FEB).copy(alpha = 0.2f)
+                                            AgentStepStatus.FAILED -> Color(0xFFDA3633).copy(alpha = 0.2f)
+                                            else -> Color(0xFF21262D)
+                                        }
+                                    ) {
+                                        Text(
+                                            text = step.status.displayName,
+                                            fontSize = 9.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = when (step.status) {
+                                                AgentStepStatus.COMPLETED -> Color(0xFF3FB950)
+                                                AgentStepStatus.AWAITING_APPROVAL -> Color(0xFFE3B341)
+                                                AgentStepStatus.RUNNING -> Color(0xFF58A6FF)
+                                                AgentStepStatus.FAILED -> Color(0xFFF85149)
+                                                else -> Color(0xFF8B949E)
+                                            },
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                if (isAwaiting) {
+                                    step.codeDiff?.let { diff ->
+                                        Text(
+                                            text = diff.take(120),
+                                            fontSize = 9.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFF8B949E),
+                                            modifier = Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 6.dp),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { onRejectStep(step) },
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF85149)),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(28.dp),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text("Reject", fontSize = 10.sp)
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Button(
+                                            onClick = { onApproveStep(step) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(28.dp),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text("Approve", fontSize = 10.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Quick Command Chips
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(
+                    "/build" to "Build & Check",
+                    "/format" to "Format Code",
+                    "/test" to "Run Tests",
+                    "/clear" to "Clear Logs"
+                ).forEach { (cmd, label) ->
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFF21262D),
+                        border = BorderStroke(0.5.dp, Color(0xFF30363D)),
+                        modifier = Modifier.clickable { onExecuteCommand(cmd) }
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 10.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF58A6FF),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
         }

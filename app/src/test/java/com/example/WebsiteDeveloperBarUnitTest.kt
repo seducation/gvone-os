@@ -48,4 +48,50 @@ class WebsiteDeveloperBarUnitTest {
         assertEquals("example.com", uri.host)
         assertTrue(tab.url.startsWith("https://"))
     }
+
+    @Test
+    fun testTargetDropdownOtherWorkspaceFiles() {
+        val markdownFile = com.example.ui.components.OtherWorkspaceFile(
+            title = "architecture.md",
+            path = "GVONE/architecture.md",
+            mode = com.example.ui.screens.ide.XcodeWorkspaceMode.MARKDOWN,
+            description = "Markdown Docs",
+            icon = androidx.compose.material.icons.Icons.Rounded.Description,
+            tintColor = androidx.compose.ui.graphics.Color(0xFF10B981)
+        )
+        assertEquals("architecture.md", markdownFile.title)
+        assertEquals(com.example.ui.screens.ide.XcodeWorkspaceMode.MARKDOWN, markdownFile.mode)
+
+        val pdfFile = com.example.ui.components.OtherWorkspaceFile(
+            title = "document.pdf",
+            path = "Downloads/document.pdf",
+            mode = com.example.ui.screens.ide.XcodeWorkspaceMode.PDF_VIEWER,
+            description = "PDF Multi-page Document",
+            icon = androidx.compose.material.icons.Icons.Rounded.PictureAsPdf,
+            tintColor = androidx.compose.ui.graphics.Color(0xFFEF4444)
+        )
+        assertEquals("document.pdf", pdfFile.title)
+        assertEquals(com.example.ui.screens.ide.XcodeWorkspaceMode.PDF_VIEWER, pdfFile.mode)
+    }
+
+    @Test
+    fun testGrokBotPersonasCountAndAttributes() {
+        val personas = com.example.ui.screens.ide.GrokBotPersona.values()
+        assertEquals(5, personas.size)
+        assertTrue(personas.any { it == com.example.ui.screens.ide.GrokBotPersona.GROK_CODER })
+        assertTrue(personas.any { it == com.example.ui.screens.ide.GrokBotPersona.CODE_ARCHITECT })
+        assertTrue(personas.any { it == com.example.ui.screens.ide.GrokBotPersona.BUG_HUNTER })
+        assertTrue(personas.any { it == com.example.ui.screens.ide.GrokBotPersona.WEB_SCRAPER })
+        assertTrue(personas.any { it == com.example.ui.screens.ide.GrokBotPersona.TEST_SPECIALIST })
+    }
+
+    @Test
+    fun testXcodeWorkspaceModeTargetValues() {
+        val modes = com.example.ui.screens.ide.XcodeWorkspaceMode.values()
+        assertEquals(8, modes.size)
+        assertEquals("Website", com.example.ui.screens.ide.XcodeWorkspaceMode.BROWSER.tag)
+        assertEquals("Xcode", com.example.ui.screens.ide.XcodeWorkspaceMode.CODE_EDITOR.tag)
+        assertEquals("Copilot", com.example.ui.screens.ide.XcodeWorkspaceMode.BOT_CHAT.tag)
+    }
 }
+

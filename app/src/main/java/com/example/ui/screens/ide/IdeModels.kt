@@ -5,6 +5,8 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.data.files.GVONEFileItem
 import com.example.data.files.GitFileStatus
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Represents an open file tab in the VS Code editor group.
@@ -328,3 +330,36 @@ data class BotChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val extractedCode: String? = null
 )
+
+/**
+ * Global manager holding active diagnostics and problems from editor extensions.
+ */
+object ExtensionProblemsManager {
+    private val _problems = MutableStateFlow(
+        listOf(
+            ExtensionProblem(
+                id = "p1",
+                extensionId = "eslint",
+                extensionName = "ESLint",
+                file = "app.js",
+                line = 32,
+                column = 5,
+                message = "'result' is assigned a value but never used",
+                ruleId = "no-unused-vars",
+                severity = ProblemSeverity.WARNING
+            ),
+            ExtensionProblem(
+                id = "p2",
+                extensionId = "prettier",
+                extensionName = "Prettier",
+                file = "index.html",
+                line = 14,
+                column = 2,
+                message = "Missing alt attribute on <img> element",
+                ruleId = "jsx-a11y/alt-text",
+                severity = ProblemSeverity.INFO
+            )
+        )
+    )
+    val problems: StateFlow<List<ExtensionProblem>> = _problems
+}

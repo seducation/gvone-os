@@ -436,103 +436,117 @@ fun BrowserApp(
     BackHandler(enabled = showSuggestions && activeSheet == ActiveSheet.None) {
         viewModel.closeSuggestions()
     }
+    // Callbacks for unified Target Selector Dropdown in WebsiteDeveloperBar
+    val onSelectBrowserTabFromDevBar: (String) -> Unit = { tabId ->
+        viewModel.selectTab(tabId)
+        viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER)
+    }
+    val onNewBrowserTabFromDevBar: () -> Unit = {
+        viewModel.createNewTab()
+        viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER)
+    }
+    val onSelectIdeTabFromDevBar: (String) -> Unit = { tabId ->
+        ideActiveTabId = tabId
+        viewModel.setWorkspaceMode(XcodeWorkspaceMode.CODE_EDITOR)
+    }
+    val onNewIdeTabFromDevBar: () -> Unit = {
+        mainScope.launch {
+            val defaultName = "script_${System.currentTimeMillis() % 1000}"
+            val created = viewModel.fileSystem.createFile("Projects", defaultName, "js", "// GVONE Xcode Studio\nconsole.log('Running script');")
+            val newTab = IdeTab(
+                id = java.util.UUID.randomUUID().toString(),
+                fileItem = created,
+                content = "// GVONE Xcode Studio\nconsole.log('Running script');",
+                originalContent = "// GVONE Xcode Studio\nconsole.log('Running script');"
+            )
+            ideOpenTabs = ideOpenTabs + newTab
+            ideActiveTabId = newTab.id
+            viewModel.setWorkspaceMode(XcodeWorkspaceMode.CODE_EDITOR)
+        }
+    }
+    val onOpenCodeFileFromDevBar: (String) -> Unit = { fileName ->
+        mainScope.launch {
+            val allFiles = viewModel.fileSystem.listFiles(location = StorageLocation.PROJECTS)
+            val file = allFiles.find { it.name.equals(fileName, ignoreCase = true) }
+                ?: viewModel.fileSystem.createFile("Projects", fileName.substringBeforeLast('.'), fileName.substringAfterLast('.', "js"), "// File: $fileName\n")
+            val existing = ideOpenTabs.find { it.fileItem.path == file.path }
+            if (existing != null) {
+                ideActiveTabId = existing.id
+            } else {
+                val content = viewModel.fileSystem.readFileContent(file.path)
+                val newTab = IdeTab(
+                    id = java.util.UUID.randomUUID().toString(),
+                    fileItem = file,
+                    content = content,
+                    originalContent = content
+                )
+                ideOpenTabs = ideOpenTabs + newTab
+                ideActiveTabId = newTab.id
+            }
+            viewModel.setWorkspaceMode(XcodeWorkspaceMode.CODE_EDITOR)
+        }
+    }
+    val onSelectBotPersonaFromDevBar: (GrokBotPersona) -> Unit = { persona ->
+        viewModel.setActiveBotPersona(persona)
+        viewModel.setWorkspaceMode(XcodeWorkspaceMode.BOT_CHAT)
+    }
+    val onSelectWorkspaceFileFromDevBar: (String, XcodeWorkspaceMode) -> Unit = { filePath, mode ->
+        viewModel.setWorkspaceMode(mode)
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0B0E14))
     ) {
-        if (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR) {
-            // Unified Central Workspace in CODE EDITOR mode (Xcode style)
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
-            ) {
-                val activeEditorTab = remember(ideOpenTabs, ideActiveTabId) {
-                    ideOpenTabs.find { it.id == ideActiveTabId }
-                }
-                WebsiteDeveloperBar(
-                    tab = currentTab ?: tabs.firstOrNull() ?: com.example.data.model.BrowserTab(id = "code", title = "Xcode Code Editor", url = "xcode://editor"),
-                    activeWebView = null,
-                    isTorActive = settings.torEnabled,
-                    onToggleOff = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
-                    modifier = Modifier.fillMaxWidth(),
-                    onOpenIde = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
-                    workspaceMode = XcodeWorkspaceMode.CODE_EDITOR,
-                    onToggleWorkspaceMode = { viewModel.setWorkspaceMode(it) },
-                    activeFileName = activeEditorTab?.fileItem?.name,
-                    isFileDirty = activeEditorTab?.isDirty == true,
-                    onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
-                    onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
-                    onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onSaveFile = {
-                        activeEditorTab?.let { tabItem ->
-                            mainScope.launch {
-                                viewModel.fileSystem.writeFileContent(tabItem.fileItem.path, tabItem.content)
-                                ideOpenTabs = ideOpenTabs.map {
-                                    if (it.id == tabItem.id) it.copy(originalContent = it.content) else it
-                                }
-                                Toast.makeText(context, "Saved ${tabItem.fileItem.name}", Toast.LENGTH_SHORT).show()
-                            }
+        if (workspaceMode != XcodeWorkspaceMode.BROWSER) {
+            XcodeWorkspaceStage(
+                workspaceMode = workspaceMode,
+                settings = settings,
+                effectiveAddressBarHeight = effectiveAddressBarHeight,
+                currentTab = currentTab,
+                tabs = tabs,
+                currentTabId = currentTabId,
+                ideOpenTabs = ideOpenTabs,
+                ideActiveTabId = ideActiveTabId,
+                onSelectIdeTab = { ideActiveTabId = it },
+                onCloseIdeTab = { tabId ->
+                    ideOpenTabs = ideOpenTabs.filterNot { it.id == tabId }
+                    if (ideActiveTabId == tabId) {
+                        ideActiveTabId = ideOpenTabs.lastOrNull()?.id
+                        if (ideOpenTabs.isEmpty()) {
+                            viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER)
                         }
-                    },
-                    onFormatCode = {
-                        Toast.makeText(context, "Formatted code with Prettier", Toast.LENGTH_SHORT).show()
-                    },
-                    onAddressClick = {
-                        isAddressBarWriting = true
                     }
-                )
-
-                XcodeWorkspaceEditor(
-                    openTabs = ideOpenTabs,
-                    activeTabId = ideActiveTabId,
-                    onSelectTab = { ideActiveTabId = it },
-                    onCloseTab = { tabId ->
-                        ideOpenTabs = ideOpenTabs.filterNot { it.id == tabId }
-                        if (ideActiveTabId == tabId) {
-                            ideActiveTabId = ideOpenTabs.lastOrNull()?.id
-                            if (ideOpenTabs.isEmpty()) {
-                                viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER)
-                            }
+                },
+                onNewFileTab = onNewIdeTabFromDevBar,
+                onSaveFileContent = { path, content ->
+                    mainScope.launch {
+                        viewModel.fileSystem.writeFileContent(path, content)
+                        ideOpenTabs = ideOpenTabs.map {
+                            if (it.fileItem.path == path) {
+                                it.copy(content = content, originalContent = content)
+                            } else it
                         }
-                    },
-                    onNewFileTab = {
-                        mainScope.launch {
-                            val defaultName = "script_${System.currentTimeMillis() % 1000}"
-                            val created = viewModel.fileSystem.createFile("Projects", defaultName, "js", "// GVONE Xcode Studio\nconsole.log('Unified workspace running');")
-                            val newTab = IdeTab(
-                                id = java.util.UUID.randomUUID().toString(),
-                                fileItem = created,
-                                content = "// GVONE Xcode Studio\nconsole.log('Unified workspace running');",
-                                originalContent = "// GVONE Xcode Studio\nconsole.log('Unified workspace running');"
-                            )
-                            ideOpenTabs = ideOpenTabs + newTab
-                            ideActiveTabId = newTab.id
-                        }
-                    },
-                    fileSystem = viewModel.fileSystem,
-                    coroutineScope = mainScope,
-                    onSaveFile = { path, content ->
-                        mainScope.launch {
-                            viewModel.fileSystem.writeFileContent(path, content)
-                            ideOpenTabs = ideOpenTabs.map {
-                                if (it.fileItem.path == path) {
-                                    it.copy(content = content, originalContent = content)
-                                } else it
-                            }
-                            Toast.makeText(context, "Saved $path", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onFormatDocument = {
-                        Toast.makeText(context, "Formatted code with Prettier", Toast.LENGTH_SHORT).show()
-                    },
-                    onOpenNavigatorFiles = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onSwitchToBrowser = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER) },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+                        Toast.makeText(context, "Saved $path", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                activeBotPersona = activeBotPersona,
+                botMessages = botMessages,
+                botAssistantStatus = botAssistantStatus,
+                botAssistantActiveTask = botAssistantActiveTask,
+                viewModel = viewModel,
+                mainScope = mainScope,
+                onAddressClick = { isAddressBarWriting = true },
+                onSelectBrowserTabFromDevBar = onSelectBrowserTabFromDevBar,
+                onNewBrowserTabFromDevBar = onNewBrowserTabFromDevBar,
+                onSelectIdeTabFromDevBar = onSelectIdeTabFromDevBar,
+                onNewIdeTabFromDevBar = onNewIdeTabFromDevBar,
+                onOpenCodeFileFromDevBar = onOpenCodeFileFromDevBar,
+                onSelectBotPersonaFromDevBar = onSelectBotPersonaFromDevBar,
+                onSelectWorkspaceFileFromDevBar = onSelectWorkspaceFileFromDevBar
+            )
+        }
         } else if (workspaceMode == XcodeWorkspaceMode.BOT_CHAT) {
             // Dedicated, full-featured Bot Chat tab in the central workspace stage
             Column(
@@ -554,7 +568,19 @@ fun BrowserApp(
                     onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
                     onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
                     onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onAddressClick = { isAddressBarWriting = true }
+                    onAddressClick = { isAddressBarWriting = true },
+                    openTabs = tabs,
+                    currentTabId = currentTabId,
+                    onSelectBrowserTab = onSelectBrowserTabFromDevBar,
+                    onNewBrowserTab = onNewBrowserTabFromDevBar,
+                    ideTabs = ideOpenTabs,
+                    activeIdeTabId = ideActiveTabId,
+                    onSelectIdeTab = onSelectIdeTabFromDevBar,
+                    onNewIdeTab = onNewIdeTabFromDevBar,
+                    onOpenCodeFile = onOpenCodeFileFromDevBar,
+                    activeBotPersona = activeBotPersona,
+                    onSelectBotPersona = onSelectBotPersonaFromDevBar,
+                    onSelectWorkspaceFile = onSelectWorkspaceFileFromDevBar
                 )
 
                 // Dedicated Bot Chat Workspace Stage
@@ -624,7 +650,19 @@ fun BrowserApp(
                     onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
                     onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
                     onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onAddressClick = { isAddressBarWriting = true }
+                    onAddressClick = { isAddressBarWriting = true },
+                    openTabs = tabs,
+                    currentTabId = currentTabId,
+                    onSelectBrowserTab = onSelectBrowserTabFromDevBar,
+                    onNewBrowserTab = onNewBrowserTabFromDevBar,
+                    ideTabs = ideOpenTabs,
+                    activeIdeTabId = ideActiveTabId,
+                    onSelectIdeTab = onSelectIdeTabFromDevBar,
+                    onNewIdeTab = onNewIdeTabFromDevBar,
+                    onOpenCodeFile = onOpenCodeFileFromDevBar,
+                    activeBotPersona = activeBotPersona,
+                    onSelectBotPersona = onSelectBotPersonaFromDevBar,
+                    onSelectWorkspaceFile = onSelectWorkspaceFileFromDevBar
                 )
                 GVONEFileViewerScreen(
                     fileRelativePath = "Downloads/document.pdf",
@@ -654,7 +692,19 @@ fun BrowserApp(
                     onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
                     onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
                     onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onAddressClick = { isAddressBarWriting = true }
+                    onAddressClick = { isAddressBarWriting = true },
+                    openTabs = tabs,
+                    currentTabId = currentTabId,
+                    onSelectBrowserTab = onSelectBrowserTabFromDevBar,
+                    onNewBrowserTab = onNewBrowserTabFromDevBar,
+                    ideTabs = ideOpenTabs,
+                    activeIdeTabId = ideActiveTabId,
+                    onSelectIdeTab = onSelectIdeTabFromDevBar,
+                    onNewIdeTab = onNewIdeTabFromDevBar,
+                    onOpenCodeFile = onOpenCodeFileFromDevBar,
+                    activeBotPersona = activeBotPersona,
+                    onSelectBotPersona = onSelectBotPersonaFromDevBar,
+                    onSelectWorkspaceFile = onSelectWorkspaceFileFromDevBar
                 )
                 GVONEFileViewerScreen(
                     fileRelativePath = "Images/preview.png",
@@ -684,7 +734,19 @@ fun BrowserApp(
                     onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
                     onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
                     onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onAddressClick = { isAddressBarWriting = true }
+                    onAddressClick = { isAddressBarWriting = true },
+                    openTabs = tabs,
+                    currentTabId = currentTabId,
+                    onSelectBrowserTab = onSelectBrowserTabFromDevBar,
+                    onNewBrowserTab = onNewBrowserTabFromDevBar,
+                    ideTabs = ideOpenTabs,
+                    activeIdeTabId = ideActiveTabId,
+                    onSelectIdeTab = onSelectIdeTabFromDevBar,
+                    onNewIdeTab = onNewIdeTabFromDevBar,
+                    onOpenCodeFile = onOpenCodeFileFromDevBar,
+                    activeBotPersona = activeBotPersona,
+                    onSelectBotPersona = onSelectBotPersonaFromDevBar,
+                    onSelectWorkspaceFile = onSelectWorkspaceFileFromDevBar
                 )
                 GVONEFileViewerScreen(
                     fileRelativePath = "GVONE/architecture.md",
@@ -714,7 +776,19 @@ fun BrowserApp(
                     onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
                     onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
                     onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onAddressClick = { isAddressBarWriting = true }
+                    onAddressClick = { isAddressBarWriting = true },
+                    openTabs = tabs,
+                    currentTabId = currentTabId,
+                    onSelectBrowserTab = onSelectBrowserTabFromDevBar,
+                    onNewBrowserTab = onNewBrowserTabFromDevBar,
+                    ideTabs = ideOpenTabs,
+                    activeIdeTabId = ideActiveTabId,
+                    onSelectIdeTab = onSelectIdeTabFromDevBar,
+                    onNewIdeTab = onNewIdeTabFromDevBar,
+                    onOpenCodeFile = onOpenCodeFileFromDevBar,
+                    activeBotPersona = activeBotPersona,
+                    onSelectBotPersona = onSelectBotPersonaFromDevBar,
+                    onSelectWorkspaceFile = onSelectWorkspaceFileFromDevBar
                 )
                 GVONEFileViewerScreen(
                     fileRelativePath = "Projects/ReactMobileUI/package.json",
@@ -744,7 +818,19 @@ fun BrowserApp(
                     onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
                     onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
                     onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onAddressClick = { isAddressBarWriting = true }
+                    onAddressClick = { isAddressBarWriting = true },
+                    openTabs = tabs,
+                    currentTabId = currentTabId,
+                    onSelectBrowserTab = onSelectBrowserTabFromDevBar,
+                    onNewBrowserTab = onNewBrowserTabFromDevBar,
+                    ideTabs = ideOpenTabs,
+                    activeIdeTabId = ideActiveTabId,
+                    onSelectIdeTab = onSelectIdeTabFromDevBar,
+                    onNewIdeTab = onNewIdeTabFromDevBar,
+                    onOpenCodeFile = onOpenCodeFileFromDevBar,
+                    activeBotPersona = activeBotPersona,
+                    onSelectBotPersona = onSelectBotPersonaFromDevBar,
+                    onSelectWorkspaceFile = onSelectWorkspaceFileFromDevBar
                 )
                 GVONEFileViewerScreen(
                     fileRelativePath = "Audio/sample_track.wav",
@@ -833,7 +919,19 @@ fun BrowserApp(
                                             onGoBack = { activeWv?.goBack() },
                                             onGoForward = { activeWv?.goForward() },
                                             onReload = { activeWv?.reload() },
-                                            onAddressClick = { isAddressBarWriting = true }
+                                            onAddressClick = { isAddressBarWriting = true },
+                                            openTabs = tabs,
+                                            currentTabId = currentTabId,
+                                            onSelectBrowserTab = onSelectBrowserTabFromDevBar,
+                                            onNewBrowserTab = onNewBrowserTabFromDevBar,
+                                            ideTabs = ideOpenTabs,
+                                            activeIdeTabId = ideActiveTabId,
+                                            onSelectIdeTab = onSelectIdeTabFromDevBar,
+                                            onNewIdeTab = onNewIdeTabFromDevBar,
+                                            onOpenCodeFile = onOpenCodeFileFromDevBar,
+                                            activeBotPersona = activeBotPersona,
+                                            onSelectBotPersona = onSelectBotPersonaFromDevBar,
+                                            onSelectWorkspaceFile = onSelectWorkspaceFileFromDevBar
                                         )
                                     }
                                     GVONEWebView(

@@ -1608,7 +1608,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val shortsModeName = prefs.getString("shorts_audio_mode", ShortsAudioMode.ALWAYS_UNMUTED.name) ?: ShortsAudioMode.ALWAYS_UNMUTED.name
         val shortsMode = try { ShortsAudioMode.valueOf(shortsModeName) } catch (_: Exception) { ShortsAudioMode.ALWAYS_UNMUTED }
         val bgPlay = prefs.getBoolean("background_play_enabled", true)
-        val devBar = prefs.getBoolean("developer_bar_enabled", false)
+        val devBar = prefs.getBoolean("developer_bar_enabled", true)
 
         return BrowserSettings(
             searchEngine = engine,
