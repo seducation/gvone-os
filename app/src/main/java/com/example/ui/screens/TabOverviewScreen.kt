@@ -669,7 +669,8 @@ fun TabOverviewScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (!isSearching) {
+                    // Shortcuts and Quick Menu belong to the Navigator root, not a project workspace.
+                    if (!isSearching && currentFolderId == null) {
                         item(key = "navigator_shortcuts", span = { GridItemSpan(2) }) {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Spacer(modifier = Modifier.height(8.dp))
