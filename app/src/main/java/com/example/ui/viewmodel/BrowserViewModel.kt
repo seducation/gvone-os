@@ -747,10 +747,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         appendTerminalLine("✖ Rejected Step: ${step.title}", TerminalLineType.WARNING)
     }
 
-    // Active Bot Persona for Workspace Bot Chat tab
-    private val _activeBotPersona = MutableStateFlow(GrokBotPersona.GROK_CODER)
-    val activeBotPersona: StateFlow<GrokBotPersona> = _activeBotPersona.asStateFlow()
-
     fun openBotChat(persona: GrokBotPersona) {
         botAssistant.setPersona(persona)
         _workspaceMode.value = XcodeWorkspaceMode.BOT_CHAT
@@ -1347,14 +1343,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             viewModel = this,
             repository = repository,
             aiService = aiService,
+            environmentManager = environmentManager
+        )
+
         viewModelScope.launch {
             botAssistant.terminalOutput.collect { output ->
                 appendTerminalLine(output.text, output.type)
             }
         }
-
-            environmentManager = environmentManager
-        )
 
         val savedSessions = terminalRepository.getSavedSessions()
         if (savedSessions.isNotEmpty()) {

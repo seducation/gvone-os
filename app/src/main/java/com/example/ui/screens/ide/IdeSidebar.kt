@@ -64,6 +64,10 @@ fun IdeSidebar(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val botMessages by viewModel.botMessages.collectAsStateWithLifecycle()
+    val botPersona by viewModel.activeBotPersona.collectAsStateWithLifecycle()
+    val botStatus by viewModel.botAssistantStatus.collectAsStateWithLifecycle()
+    val botTask by viewModel.botAssistantActiveTask.collectAsStateWithLifecycle()
 
     // Explorer tree nodes
     var workspaceNodes by remember { mutableStateOf<List<IdeTreeNode>>(emptyList()) }
@@ -480,10 +484,6 @@ fun IdeSidebar(
                                             Toast.makeText(context, "Please enter a commit message", Toast.LENGTH_SHORT).show()
                                             return@SourceControlView
                                         }
-                                val botMessages by viewModel.botMessages.collectAsStateWithLifecycle()
-                                val botPersona by viewModel.activeBotPersona.collectAsStateWithLifecycle()
-                                val botStatus by viewModel.botAssistantStatus.collectAsStateWithLifecycle()
-                                val botTask by viewModel.botAssistantActiveTask.collectAsStateWithLifecycle()
                                         isCommitting = true
                                         coroutineScope.launch {
                                             try {

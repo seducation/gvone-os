@@ -67,6 +67,9 @@
                 <data android:scheme="file" />
                 <data android:mimeType="*/*" />
 
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".data.sync.BotAssistantService"
             android:foregroundServiceType="specialUse"
@@ -75,8 +78,6 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="User-enabled autonomous assistant completing GVONE browser, terminal, and IDE tasks" />
         </service>
-            </intent-filter>
-        </activity>
 
         <service
             android:name=".data.sync.GVONEMediaPlaybackService"
