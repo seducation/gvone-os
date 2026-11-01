@@ -439,7 +439,6 @@ fun BrowserApp(
                     onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
                     onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
                     onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onOpenMcp = { viewModel.openSheet(ActiveSheet.Mcp) },
                     onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                     onSaveFile = {
                         activeEditorTab?.let { tabItem ->
@@ -529,7 +528,6 @@ fun BrowserApp(
                     onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
                     onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
                     onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                    onOpenMcp = { viewModel.openSheet(ActiveSheet.Mcp) },
                     onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                     onAddressClick = { isAddressBarWriting = true }
                 )
@@ -663,7 +661,6 @@ fun BrowserApp(
                                 onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
                                 onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
                                 onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                                onOpenMcp = { viewModel.openSheet(ActiveSheet.Mcp) },
                                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                                 onAddressClick = { isAddressBarWriting = true },
                                 modifier = Modifier.fillMaxSize()
@@ -685,7 +682,6 @@ fun BrowserApp(
                                             onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
                                             onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
                                             onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-                                            onOpenMcp = { viewModel.openSheet(ActiveSheet.Mcp) },
                                             onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
                                             canGoBack = activeWv?.canGoBack() == true,
                                             canGoForward = activeWv?.canGoForward() == true,
@@ -924,7 +920,7 @@ fun BrowserApp(
 
         // Full Screen Tab Overview matching Screenshot 2
         AnimatedVisibility(
-            visible = activeSheet == ActiveSheet.TabOverview || activeSheet == ActiveSheet.Mcp,
+            visible = activeSheet == ActiveSheet.TabOverview,
             enter = fadeIn() + slideInVertically { it / 2 },
             exit = fadeOut() + slideOutVertically { it / 2 }
         ) {
@@ -988,7 +984,6 @@ fun BrowserApp(
                 onSelectProjectTarget = { viewModel.selectProjectTarget(it) },
                 onOpenInspectorWithTab = { tab -> viewModel.openInspectorWithTab(tab) },
                 onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
-                initialCategory = if (activeSheet == ActiveSheet.Mcp) 5 else 0,
                 onCloseOverview = { viewModel.closeSheet() }
             )
         }
@@ -1534,7 +1529,6 @@ private fun WorkspaceFileViewerStage(
             onOpenInspector = { viewModel.openSheet(ActiveSheet.Inspector) },
             onOpenConsole = { viewModel.openSheet(ActiveSheet.Terminal) },
             onOpenNavigator = { viewModel.openSheet(ActiveSheet.TabOverview) },
-            onOpenMcp = { viewModel.openSheet(ActiveSheet.Mcp) },
             onOpenSettings = { viewModel.openSheet(ActiveSheet.Settings) },
             onAddressClick = onAddressClick
         )
