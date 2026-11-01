@@ -3446,7 +3446,7 @@ private fun generateHelpOutput(commands: List<CustomCommandEntity>): List<Termin
     lines.add(TerminalLine("[2] AGENTIC RUNTIME (ChatGPT Atlas, Comet, Dia)", TerminalLineType.SUCCESS))
     lines.add(TerminalLine("  /agent [goal]        Execute autonomous multi-step agentic goal", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  /agent on|off        Toggle persistent agentic input prompt", TerminalLineType.OUTPUT))
-    lines.add(TerminalLine("  /agent persona <p>   Switch persona: atlas, comet, dia, auto", TerminalLineType.OUTPUT))
+    lines.add(TerminalLine("  /agent persona auto  Use the unified CNS assistant", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  /agent status        Inspect active agent runtime, sandbox group & tools", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("  /organize            Auto-cluster all open tabs into domain cohorts", TerminalLineType.OUTPUT))
     lines.add(TerminalLine("", TerminalLineType.OUTPUT))

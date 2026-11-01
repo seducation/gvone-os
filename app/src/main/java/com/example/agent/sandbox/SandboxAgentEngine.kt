@@ -30,17 +30,11 @@ import java.util.UUID
  * - AUTO: Dynamically selects best paradigm based on goal
  */
 enum class AgentPersona(val displayName: String, val badge: String, val description: String) {
-    ATLAS("ChatGPT Atlas", "ATLAS", "Autonomous Browser Operator & Step-by-Step Task Agent"),
-    COMET("Comet", "COMET", "Multi-Source Research & Intelligent Tab Group Cohorts"),
-    DIA("Dia Browser", "DIA", "Live File & Code Sandbox Workspace with Group Tabs"),
-    AUTO("Auto-Agent", "AUTO", "Adaptive Agentic Engine");
+    AUTO("GVONE Assistant", "CNS", "CNS routes each task to the appropriate capability");
 
     companion object {
         fun fromString(name: String): AgentPersona {
             return when (name.trim().lowercase()) {
-                "atlas" -> ATLAS
-                "comet" -> COMET
-                "dia" -> DIA
                 "auto" -> AUTO
                 else -> AUTO
             }
@@ -88,25 +82,13 @@ class SandboxAgentEngine(
             return
         }
 
-        val persona = if (activePersona == AgentPersona.AUTO) detectBestPersona(cleanGoal) else activePersona
+        val persona = AgentPersona.AUTO
 
         // Browser actions go through CNS and BrowserAgent so they act on the actual active page.
-        if (isBrowserActionGoal(cleanGoal, persona)) {
-            emit(TerminalLine("╭─────────────────────────────────────────────────────────────╮", TerminalLineType.AGENT_PLAN))
-            emit(TerminalLine("│ 🌐 AUTONOMOUS BROWSER AGENT: ${persona.displayName.uppercase()}", TerminalLineType.AGENT_PLAN))
-            emit(TerminalLine("│ Goal: \"$cleanGoal\"", TerminalLineType.AGENT_PLAN))
-            emit(TerminalLine("│ Execution Loop: PLAN ➜ ACT ➜ OBSERVE ➜ VERIFY", TerminalLineType.AGENT_PLAN))
-            emit(TerminalLine("╰─────────────────────────────────────────────────────────────╯", TerminalLineType.AGENT_PLAN))
-            emit(TerminalLine("[BROWSER AGENT] Routing this request to CNS and the active-page browser tools...", TerminalLineType.AGENT_STEP))
-            val cnsResult = CentralNervousSystem.global.orchestrateGoal(cleanGoal)
-            emit(TerminalLine(cnsResult.synthesis, if (cnsResult.success) TerminalLineType.SUCCESS else TerminalLineType.ERROR))
-            return
-        }
-
         // File edits target an existing file in the selected terminal directory, then reopen it in IDE.
         val requestedFile = FILE_NAME_REGEX.find(cleanGoal)?.value
         val isEditRequest = EDIT_INTENT_REGEX.containsMatchIn(cleanGoal)
-        if (persona == AgentPersona.DIA && isEditRequest && requestedFile != null) {
+        if (isEditRequest && requestedFile != null) {
             val targetPath = resolveWorkspaceFilePath(currentDir, requestedFile)
             if (fileSystem.getFileItem(targetPath) == null) {
                 emit(TerminalLine("[IDE AGENT] Could not find '$targetPath' in the selected workspace. Check the path and retry.", TerminalLineType.ERROR))
@@ -129,6 +111,11 @@ class SandboxAgentEngine(
             runFileEditWorkflow(cleanGoal, targetPath, emit)
             return
         }
+
+        emit(TerminalLine("[CNS] Routing your request to the GVONE agent...", TerminalLineType.AGENT_STEP))
+        val cnsResult = CentralNervousSystem.global.orchestrateGoal(cleanGoal)
+        emit(TerminalLine(cnsResult.synthesis, if (cnsResult.success) TerminalLineType.SUCCESS else TerminalLineType.ERROR))
+        return
 
         // Initialize task tracking after specialized routing to avoid duplicate CNS tasks.
         val runtimeState = RuntimeStateManager.global
@@ -206,7 +193,7 @@ class SandboxAgentEngine(
         emit(TerminalLine("  ✔ Multi-source synthesis generated (${aiResponse.length} chars)", TerminalLineType.AGENT_TOOL))
 
         // For COMET / ATLAS: optionally create a research tab for the topic
-        if (persona == AgentPersona.COMET || persona == AgentPersona.ATLAS) {
+        if (persona == AgentPersona.AUTO) {
             delay(150)
             val searchTopic = cleanGoal.take(40).replace("\"", "").trim()
             val researchUrl = "https://www.google.com/search?q=" + java.net.URLEncoder.encode(searchTopic, "UTF-8")
@@ -409,7 +396,7 @@ class SandboxAgentEngine(
         if (lower.contains("youtube") || lower.startsWith("/yt")) return true
         val hasAction = BROWSER_ACTION_REGEX.containsMatchIn(lower)
         val hasBrowserTarget = BROWSER_TARGET_REGEX.containsMatchIn(lower) || URL_REGEX.containsMatchIn(goal)
-        return persona == AgentPersona.ATLAS && hasAction && hasBrowserTarget
+        return hasAction && hasBrowserTarget
     }
 
     private suspend fun runFileEditWorkflow(
@@ -487,17 +474,6 @@ class SandboxAgentEngine(
                 normalizedPath.startsWith("Documents/", ignoreCase = true) -> normalizedPath
             normalizedDir.isBlank() || normalizedPath.startsWith("$normalizedDir/", ignoreCase = true) -> normalizedPath
             else -> "$normalizedDir/$normalizedPath"
-        }
-    }
-
-    private fun detectBestPersona(goal: String): AgentPersona {
-        val lower = goal.lowercase()
-        return when {
-            lower.contains("website") || lower.contains("webpage") || lower.contains("web site") || lower.contains("html") ||
-            lower.contains("file") || lower.contains("code") || lower.contains("sandbox") || lower.contains("script") || lower.contains("save") || lower.contains("notes") -> AgentPersona.DIA
-            lower.contains("click") || lower.contains("form") || lower.contains("navigate") || lower.contains("inspect") || lower.contains("login") -> AgentPersona.ATLAS
-            lower.contains("research") || lower.contains("search") || lower.contains("compare") || lower.contains("find out") || lower.contains("sources") -> AgentPersona.COMET
-            else -> AgentPersona.ATLAS
         }
     }
 

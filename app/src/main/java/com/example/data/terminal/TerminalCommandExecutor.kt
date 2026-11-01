@@ -99,13 +99,7 @@ class TerminalCommandExecutor(
         _activePersona.value = persona
         agentEngine.activePersona = persona
         agentPrefs.edit().putString("persona", persona.name.lowercase()).apply()
-        viewModel.setActiveBotPersona(
-            when (persona) {
-                AgentPersona.COMET -> com.example.ui.screens.ide.GrokBotPersona.WEB_SCRAPER
-                AgentPersona.DIA -> com.example.ui.screens.ide.GrokBotPersona.CODE_ARCHITECT
-                AgentPersona.ATLAS, AgentPersona.AUTO -> com.example.ui.screens.ide.GrokBotPersona.GROK_CODER
-            }
-        )
+        viewModel.setActiveBotPersona(com.example.ui.screens.ide.GrokBotPersona.GROK_CODER)
     }
 
     /**
@@ -848,7 +842,7 @@ class TerminalCommandExecutor(
                         setAgenticMode(true)
                         runtimeState.activateAgentOnly()
                         outputLines.add(TerminalLine("[AGENTIC MODE] ACTIVATED. Persona: ${_activePersona.value.displayName}", TerminalLineType.SUCCESS))
-                        outputLines.add(TerminalLine("Interactive agent prompt active. Use '/agent persona <atlas|comet|dia|auto>' or '/agent off' to exit.", TerminalLineType.INFO))
+                        outputLines.add(TerminalLine("Interactive agent prompt active. CNS will route each request. Use '/agent off' to exit.", TerminalLineType.INFO))
                     }
                     queryArg.equals("off", ignoreCase = true) || queryArg.equals("stop", ignoreCase = true) || queryArg.equals("disable", ignoreCase = true) -> {
                         setAgenticMode(false)
@@ -857,20 +851,8 @@ class TerminalCommandExecutor(
                     }
                     queryArg.startsWith("persona", ignoreCase = true) -> {
                         val personaArg = queryArg.removePrefix("persona").trim().lowercase()
-                        val newPersona = when (personaArg) {
-                            "atlas", "chatgpt" -> AgentPersona.ATLAS
-                            "comet", "perplexity" -> AgentPersona.COMET
-                            "dia", "sandbox" -> AgentPersona.DIA
-                            else -> AgentPersona.AUTO
-                        }
+                        val newPersona = AgentPersona.AUTO
                         setPersona(newPersona)
-                        viewModel.setActiveBotPersona(
-                            when (newPersona) {
-                                AgentPersona.COMET -> com.example.ui.screens.ide.GrokBotPersona.WEB_SCRAPER
-                                AgentPersona.DIA -> com.example.ui.screens.ide.GrokBotPersona.CODE_ARCHITECT
-                                AgentPersona.ATLAS, AgentPersona.AUTO -> com.example.ui.screens.ide.GrokBotPersona.GROK_CODER
-                            }
-                        )
                         outputLines.add(TerminalLine("[AGENTIC PERSONA] Switched to: ${newPersona.displayName} (${newPersona.description})", TerminalLineType.SUCCESS))
                     }
                     queryArg.equals("dashboard", ignoreCase = true) || queryArg.equals("ui", ignoreCase = true) || queryArg.equals("cns", ignoreCase = true) -> {
@@ -2319,7 +2301,7 @@ class TerminalCommandExecutor(
         lines.add(TerminalLine("[2] AGENTIC RUNTIME (ChatGPT Atlas, Comet, Dia)", TerminalLineType.SUCCESS))
         lines.add(TerminalLine("  /agent [goal]        Execute autonomous multi-step agentic goal", TerminalLineType.OUTPUT))
         lines.add(TerminalLine("  /agent on|off        Toggle persistent agentic input prompt", TerminalLineType.OUTPUT))
-        lines.add(TerminalLine("  /agent persona <p>   Switch persona: atlas, comet, dia, auto", TerminalLineType.OUTPUT))
+        lines.add(TerminalLine("  /agent persona auto  Use the unified CNS assistant", TerminalLineType.OUTPUT))
         lines.add(TerminalLine("  /agent status        Inspect active agent runtime, sandbox group & tools", TerminalLineType.OUTPUT))
         lines.add(TerminalLine("  /organize            Auto-cluster all open tabs into domain cohorts", TerminalLineType.OUTPUT))
         lines.add(TerminalLine("", TerminalLineType.OUTPUT))
