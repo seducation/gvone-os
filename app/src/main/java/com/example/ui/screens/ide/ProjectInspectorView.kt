@@ -166,7 +166,11 @@ fun ProjectInspectorView(
                     border = BorderStroke(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E2638)),
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { selectedProjectId = proj.id }
+                        .clickable {
+                            selectedProjectId = proj.id
+                            currentFolder = ""
+                            activeSubTab = ProjectSubTab.FILES
+                        }
                         .testTag("project_chip_${proj.id}")
                 ) {
                     Row(
