@@ -104,41 +104,4 @@ class GVONEFileSystemUnitTest {
         assertEquals(FileType.TEXT, fileSystem.determineFileType("notes.txt", false))
         assertEquals(FileType.FOLDER, fileSystem.determineFileType("Projects", true))
     }
-
-    @Test
-    fun testProjectIsolationAndSubfolder() = runBlocking {
-        // Starter project KotlinCalculator should exist
-        val projectFiles = fileSystem.listProjectFiles("KotlinCalculator")
-        assertNotNull(projectFiles)
-        assertTrue("Project root must contain src or files", projectFiles.isNotEmpty())
-
-        val fileNames = projectFiles.map { it.name }
-        // Should only contain files in Projects/KotlinCalculator
-        assertFalse("Documents must not leak into project", fileNames.contains("Documents"))
-        assertFalse("Images must not leak into project", fileNames.contains("Images"))
-        assertFalse("notes.md must not leak into project", fileNames.contains("notes.md"))
-
-        // Test subfolder listing
-        val srcFiles = fileSystem.listProjectFiles("KotlinCalculator", "src")
-        assertTrue("src directory should contain Calculator.kt", srcFiles.any { it.name == "Calculator.kt" })
-    }
-
-    @Test
-    fun testProjectFileCreation() = runBlocking {
-        val created = fileSystem.createProjectFile(
-            projectName = "KotlinCalculator",
-            subfolder = "src",
-            fileName = "NewFeature.kt",
-            content = "fun newFeature() = true"
-        )
-        assertNotNull(created)
-        assertEquals("NewFeature.kt", created.name)
-
-        val srcFiles = fileSystem.listProjectFiles("KotlinCalculator", "src")
-        assertTrue(srcFiles.any { it.name == "NewFeature.kt" })
-
-        // Ensure file is isolated to KotlinCalculator and not in root
-        val rootFiles = fileSystem.listFiles(StorageLocation.MY_FILES, "")
-        assertFalse(rootFiles.any { it.name == "NewFeature.kt" })
-    }
 }

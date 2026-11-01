@@ -2,7 +2,6 @@ package com.example.data.files
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
@@ -41,7 +40,6 @@ class GVONEFileSystem(private val context: Context) {
             "Documents",
             "Projects",
             "Images",
-            "Audio",
             "GVONE",
             "Downloads",
             "Cloud"
@@ -219,125 +217,6 @@ class GVONEFileSystem(private val context: Context) {
                 File(webProjDir, ".gitignore").writeText("dist/\nnode_modules/\n*.log\n")
             }
 
-            // Project 3: GVONE Browser Core
-            val coreProjDir = File(projectsFolder, "GVONEBrowserCore")
-            if (!coreProjDir.exists()) {
-                coreProjDir.mkdirs()
-                val srcDir = File(coreProjDir, "src")
-                srcDir.mkdirs()
-                val resDir = File(coreProjDir, "res/values")
-                resDir.mkdirs()
-
-                File(srcDir, "MainActivity.kt").writeText(
-                    """
-                    package com.gvone.browser
-
-                    class MainActivity {
-                        fun onCreate() {
-                            println("GVONE Browser Core Engine Initialized")
-                        }
-                    }
-                    """.trimIndent()
-                )
-                File(srcDir, "BrowserViewModel.kt").writeText(
-                    """
-                    package com.gvone.browser
-
-                    class BrowserViewModel {
-                        val activeUrl = "https://www.google.com"
-                        val tabCount = 4
-                    }
-                    """.trimIndent()
-                )
-                File(srcDir, "QuickMenuCard.kt").writeText(
-                    """
-                    package com.gvone.browser
-
-                    class QuickMenuCard {
-                        fun renderProjects() = listOf("GVONE Browser Core", "Kotlin Calculator", "React Mobile UI")
-                    }
-                    """.trimIndent()
-                )
-                File(resDir, "strings.xml").writeText(
-                    """
-                    <resources>
-                        <string name="app_name">GVONE Core</string>
-                    </resources>
-                    """.trimIndent()
-                )
-                File(coreProjDir, "README.md").writeText(
-                    """
-                    # GVONE Browser Core
-                    High performance web engine with tabs and integrated terminal.
-                    """.trimIndent()
-                )
-                File(coreProjDir, "build.gradle.kts").writeText(
-                    """
-                    plugins { kotlin("jvm") version "2.0.0" }
-                    """.trimIndent()
-                )
-                File(coreProjDir, ".gitignore").writeText("build/\n.gradle/\n*.log\n")
-            }
-
-            // Project 4: React Mobile UI
-            val reactProjDir = File(projectsFolder, "ReactMobileUI")
-            if (!reactProjDir.exists()) {
-                reactProjDir.mkdirs()
-                val srcDir = File(reactProjDir, "src")
-                srcDir.mkdirs()
-
-                File(srcDir, "App.tsx").writeText(
-                    """
-                    import React from 'react';
-
-                    export function App() {
-                        return <div className="app"><h1>React Mobile UI</h1></div>;
-                    }
-                    """.trimIndent()
-                )
-                File(srcDir, "Navigation.tsx").writeText(
-                    """
-                    import React from 'react';
-
-                    export function Navigation() {
-                        return <nav><span>Home</span><span>Projects</span></nav>;
-                    }
-                    """.trimIndent()
-                )
-                File(srcDir, "Button.tsx").writeText(
-                    """
-                    import React from 'react';
-
-                    export function Button({ label }: { label: string }) {
-                        return <button className="btn">{label}</button>;
-                    }
-                    """.trimIndent()
-                )
-                File(srcDir, "index.css").writeText(
-                    """
-                    body { margin: 0; background: #0f172a; color: #f8fafc; font-family: sans-serif; }
-                    """.trimIndent()
-                )
-                File(reactProjDir, "package.json").writeText(
-                    """
-                    {
-                      "name": "react-mobile-ui",
-                      "version": "1.0.0",
-                      "dependencies": {
-                        "react": "^18.2.0"
-                      }
-                    }
-                    """.trimIndent()
-                )
-                File(reactProjDir, "README.md").writeText(
-                    """
-                    # React Mobile UI
-                    Cross-platform touch components and interactive widgets.
-                    """.trimIndent()
-                )
-                File(reactProjDir, ".gitignore").writeText("node_modules/\ndist/\n*.log\n")
-            }
-
             val specsFile = File(docsFolder, "specs.txt")
             if (!specsFile.exists()) {
                 specsFile.writeText(
@@ -381,130 +260,8 @@ class GVONEFileSystem(private val context: Context) {
             if (!samplePdf.exists()) {
                 createSamplePdf(samplePdf)
             }
-
-            val imagesFolder = File(rootDir, "Images")
-            val sampleImage = File(imagesFolder, "preview.png")
-            if (!sampleImage.exists()) {
-                createSampleImage(sampleImage)
-            }
-
-            val audioFolder = File(rootDir, "Audio")
-            val sampleAudio = File(audioFolder, "sample_track.wav")
-            if (!sampleAudio.exists()) {
-                createSampleAudio(sampleAudio)
-            }
         } catch (_: Exception) {
         }
-    }
-
-    /**
-     * Creates a high-resolution, valid PNG asset for immediate Image Viewer rendering.
-     */
-    private fun createSampleImage(file: File) {
-        try {
-            val bitmap = Bitmap.createBitmap(800, 600, Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(bitmap)
-            canvas.drawColor(AndroidColor.rgb(15, 23, 42))
-
-            val titlePaint = Paint().apply {
-                isAntiAlias = true
-                color = AndroidColor.rgb(56, 189, 248)
-                textSize = 36f
-                isFakeBoldText = true
-            }
-            canvas.drawText("GVONE Universal Studio", 50f, 90f, titlePaint)
-
-            val subPaint = Paint().apply {
-                isAntiAlias = true
-                textSize = 20f
-                color = AndroidColor.rgb(167, 139, 250)
-            }
-            canvas.drawText("High-Resolution Asset Preview (800 × 600 PNG)", 50f, 130f, subPaint)
-
-            val boxPaint = Paint().apply {
-                color = AndroidColor.rgb(30, 41, 59)
-                style = Paint.Style.FILL
-            }
-            canvas.drawRoundRect(50f, 170f, 750f, 530f, 16f, 16f, boxPaint)
-
-            val borderPaint = Paint().apply {
-                color = AndroidColor.rgb(56, 189, 248)
-                style = Paint.Style.STROKE
-                strokeWidth = 3f
-            }
-            canvas.drawRoundRect(50f, 170f, 750f, 530f, 16f, 16f, borderPaint)
-
-            val textPaint = Paint().apply {
-                isAntiAlias = true
-                color = AndroidColor.rgb(226, 232, 240)
-                textSize = 20f
-            }
-            canvas.drawText("✓ Native Hardware-Accelerated Rendering", 80f, 230f, textPaint)
-            canvas.drawText("✓ Pinch-to-Zoom & Pan Viewport", 80f, 280f, textPaint)
-            canvas.drawText("✓ 90° Stepped Rotation Engine", 80f, 330f, textPaint)
-            canvas.drawText("✓ Light / Dark / Inverted Canvas Modes", 80f, 380f, textPaint)
-            canvas.drawText("✓ Supported Formats: PNG, JPG, WebP, SVG, GIF, BMP", 80f, 430f, textPaint)
-            canvas.drawText("✓ Metadata Inspection: 800 × 600 • 32-bit ARGB", 80f, 480f, textPaint)
-
-            FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            }
-        } catch (_: Exception) {}
-    }
-
-    /**
-     * Creates a valid, real PCM WAV audio file with a short synthesized tone,
-     * allowing the Media Player to play audio natively without network dependency.
-     */
-    private fun createSampleAudio(file: File) {
-        try {
-            val sampleRate = 8000
-            val durationSec = 2
-            val numSamples = sampleRate * durationSec
-            val dataSize = numSamples * 2
-            val totalSize = 36 + dataSize
-            val buffer = ByteArray(44 + dataSize)
-
-            // RIFF chunk descriptor
-            buffer[0] = 'R'.code.toByte(); buffer[1] = 'I'.code.toByte(); buffer[2] = 'F'.code.toByte(); buffer[3] = 'F'.code.toByte()
-            buffer[4] = (totalSize and 0xff).toByte()
-            buffer[5] = ((totalSize shr 8) and 0xff).toByte()
-            buffer[6] = ((totalSize shr 16) and 0xff).toByte()
-            buffer[7] = ((totalSize shr 24) and 0xff).toByte()
-            buffer[8] = 'W'.code.toByte(); buffer[9] = 'A'.code.toByte(); buffer[10] = 'V'.code.toByte(); buffer[11] = 'E'.code.toByte()
-
-            // fmt sub-chunk
-            buffer[12] = 'f'.code.toByte(); buffer[13] = 'm'.code.toByte(); buffer[14] = 't'.code.toByte(); buffer[15] = ' '.code.toByte()
-            buffer[16] = 16; buffer[17] = 0; buffer[18] = 0; buffer[19] = 0
-            buffer[20] = 1; buffer[21] = 0
-            buffer[22] = 1; buffer[23] = 0
-            buffer[24] = (sampleRate and 0xff).toByte()
-            buffer[25] = ((sampleRate shr 8) and 0xff).toByte()
-            buffer[26] = 0; buffer[27] = 0
-            val byteRate = sampleRate * 2
-            buffer[28] = (byteRate and 0xff).toByte()
-            buffer[29] = ((byteRate shr 8) and 0xff).toByte()
-            buffer[30] = 0; buffer[31] = 0
-            buffer[32] = 2; buffer[33] = 0
-            buffer[34] = 16; buffer[35] = 0
-
-            // data sub-chunk
-            buffer[36] = 'd'.code.toByte(); buffer[37] = 'a'.code.toByte(); buffer[38] = 't'.code.toByte(); buffer[39] = 'a'.code.toByte()
-            buffer[40] = (dataSize and 0xff).toByte()
-            buffer[41] = ((dataSize shr 8) and 0xff).toByte()
-            buffer[42] = ((dataSize shr 16) and 0xff).toByte()
-            buffer[43] = ((dataSize shr 24) and 0xff).toByte()
-
-            for (i in 0 until numSamples) {
-                val freq = if (i < numSamples / 2) 440.0 else 554.37
-                val angle = 2.0 * Math.PI * i * freq / sampleRate
-                val sample = (Math.sin(angle) * 16000 * (1.0 - i.toDouble() / numSamples)).toInt().toShort()
-                buffer[44 + i * 2] = (sample.toInt() and 0xff).toByte()
-                buffer[44 + i * 2 + 1] = ((sample.toInt() shr 8) and 0xff).toByte()
-            }
-
-            file.writeBytes(buffer)
-        } catch (_: Exception) {}
     }
 
     /**
@@ -566,19 +323,11 @@ class GVONEFileSystem(private val context: Context) {
 
         val rawList = when (location) {
             StorageLocation.MY_FILES -> {
-                val cleanFolder = currentFolder.trim().removePrefix("/")
-                val targetDir = if (cleanFolder.isBlank()) rootDir else File(rootDir, cleanFolder)
+                val targetDir = if (currentFolder.isBlank()) rootDir else File(rootDir, currentFolder)
                 scanDirectory(targetDir, showHidden)
             }
             StorageLocation.PROJECTS -> {
-                val cleanFolder = currentFolder.trim().removePrefix("/")
-                val targetDir = if (cleanFolder.isBlank()) {
-                    File(rootDir, "Projects")
-                } else if (cleanFolder.startsWith("Projects/")) {
-                    File(rootDir, cleanFolder)
-                } else {
-                    File(File(rootDir, "Projects"), cleanFolder)
-                }
+                val targetDir = if (currentFolder.isBlank()) File(rootDir, "Projects") else File(rootDir, currentFolder)
                 scanDirectory(targetDir, showHidden)
             }
             StorageLocation.CLOUD -> {
@@ -618,201 +367,93 @@ class GVONEFileSystem(private val context: Context) {
         return files.filter { file ->
             if (!showHidden && file.name.startsWith(".")) false else true
         }.map { file ->
-            val relPath = try {
-                file.relativeTo(rootDir).path
-            } catch (_: Exception) {
-                file.name
-            }
+            val relPath = file.relativeTo(rootDir).path
             val status = if (file.isDirectory) GitFileStatus.UNMODIFIED else gitManager.getFileGitStatus(relPath)
             toFileItem(file, favorites, status)
         }
     }
 
-    /**
-     * Resolves the real directory File for a project inside Projects/.
-     * Matches exact name, no-spaces, or hyphenated name against existing folders.
-     */
+    /** Returns the existing project directory matching a project name or id. */
     fun findProjectFolder(projectName: String): File {
         val clean = projectName.removePrefix("Projects/").removePrefix("proj_").trim()
         val noSpaces = clean.replace(" ", "")
         val hyphenated = clean.replace(" ", "-")
-        val projectsDir = File(rootDir, "Projects")
-        if (!projectsDir.exists()) projectsDir.mkdirs()
-
-        val existing = projectsDir.listFiles()?.firstOrNull {
-            it.isDirectory && (
-                it.name.equals(clean, ignoreCase = true) ||
-                it.name.equals(noSpaces, ignoreCase = true) ||
-                it.name.equals(hyphenated, ignoreCase = true)
-            )
-        }
-        if (existing != null) return existing
-        return File(projectsDir, noSpaces.ifEmpty { "DefaultProject" })
+        val projectsDir = File(rootDir, "Projects").apply { if (!exists()) mkdirs() }
+        return projectsDir.listFiles()?.firstOrNull { file ->
+            file.isDirectory && listOf(clean, noSpaces, hyphenated).any { file.name.equals(it, ignoreCase = true) }
+        } ?: File(projectsDir, noSpaces.ifEmpty { "DefaultProject" })
     }
 
-    /**
-     * Checks if a given folder name represents a project in Projects/.
-     */
     fun isProjectFolder(folderName: String): Boolean {
         val clean = folderName.removePrefix("Projects/").removePrefix("proj_").trim()
         val projectsDir = File(rootDir, "Projects")
-        if (!projectsDir.exists()) return false
-        val noSpaces = clean.replace(" ", "")
-        val hyphenated = clean.replace(" ", "-")
-        return projectsDir.listFiles()?.any {
-            it.isDirectory && (
-                it.name.equals(clean, ignoreCase = true) ||
-                it.name.equals(noSpaces, ignoreCase = true) ||
-                it.name.equals(hyphenated, ignoreCase = true)
-            )
-        } == true
+        val names = setOf(clean, clean.replace(" ", ""), clean.replace(" ", "-"))
+        return projectsDir.listFiles()?.any { it.isDirectory && names.any { name -> it.name.equals(name, ignoreCase = true) } } == true
     }
 
-    /**
-     * Returns project-scoped relative path (e.g. "Projects/KotlinCalculator/src").
-     */
     fun getProjectRelativePath(projectName: String, subfolder: String = ""): String {
         val projectDir = findProjectFolder(projectName)
-        val projRel = projectDir.relativeTo(rootDir).path
-        if (subfolder.isBlank() || subfolder == "/" || subfolder == ".") return projRel
-        val cleanSub = subfolder
-            .removePrefix("Projects/")
-            .removePrefix(projectDir.name)
-            .trim('/')
-        return if (cleanSub.isBlank()) projRel else "$projRel/$cleanSub"
+        val cleanSubfolder = subfolder.removePrefix("Projects/").removePrefix(projectDir.name).trim('/')
+        return listOf("Projects", projectDir.name, cleanSubfolder).filter { it.isNotBlank() }.joinToString("/")
     }
 
-    /**
-     * Lists ONLY files and subdirectories belonging to the specified project.
-     * Enforces strict path containment so parent, root, or other project files cannot leak in.
-     */
+    private fun projectTarget(projectDir: File, subfolder: String): File? {
+        val cleanSubfolder = subfolder.removePrefix("Projects/").removePrefix(projectDir.name).trim('/')
+        val target = if (cleanSubfolder.isBlank() || cleanSubfolder == ".") projectDir else File(projectDir, cleanSubfolder)
+        val rootPath = projectDir.canonicalFile.path
+        val targetPath = target.canonicalFile.path
+        return if (targetPath == rootPath || targetPath.startsWith(rootPath + File.separator)) target else null
+    }
+
     suspend fun listProjectFiles(
         projectName: String,
         subfolder: String = "",
         searchQuery: String = "",
         showHidden: Boolean = false
     ): List<GVONEFileItem> = withContext(Dispatchers.IO) {
-        val projectDir = findProjectFolder(projectName)
-        if (!projectDir.exists()) {
-            projectDir.mkdirs()
-        }
-
-        val targetDir = if (subfolder.isBlank() || subfolder == "/" || subfolder == ".") {
-            projectDir
-        } else {
-            val cleanSub = subfolder
-                .removePrefix("Projects/")
-                .removePrefix(projectDir.name)
-                .trim('/')
-            if (cleanSub.isBlank()) projectDir else File(projectDir, cleanSub)
-        }
-
-        // Security boundary check: ensure targetDir is strictly within projectDir
-        try {
-            val canonicalTarget = targetDir.canonicalFile
-            val canonicalProject = projectDir.canonicalFile
-            if (!canonicalTarget.path.startsWith(canonicalProject.path)) {
-                return@withContext emptyList()
-            }
-        } catch (_: Exception) {
-            return@withContext emptyList()
-        }
-
-        if (!targetDir.exists() || !targetDir.isDirectory) return@withContext emptyList()
-
+        val projectDir = findProjectFolder(projectName).apply { if (!exists()) mkdirs() }
+        val targetDir = projectTarget(projectDir, subfolder) ?: return@withContext emptyList()
+        if (!targetDir.isDirectory) return@withContext emptyList()
         val favorites = getFavoritePaths()
-        val files = targetDir.listFiles() ?: return@withContext emptyList()
-        val items = files.filter { file ->
-            if (!showHidden && file.name.startsWith(".")) false else true
-        }.map { file ->
-            val relPath = file.relativeTo(rootDir).path
-            val status = if (file.isDirectory) GitFileStatus.UNMODIFIED else gitManager.getFileGitStatus(relPath)
-            toFileItem(file, favorites, status)
-        }
-
-        val filtered = if (searchQuery.isNotBlank()) {
-            val query = searchQuery.trim().lowercase(Locale.ROOT)
-            items.filter { it.name.lowercase(Locale.ROOT).contains(query) }
-        } else {
-            items
-        }
-
+        val items = (targetDir.listFiles() ?: return@withContext emptyList())
+            .filter { showHidden || !it.name.startsWith(".") }
+            .map { file ->
+                val path = file.relativeTo(rootDir).path
+                val status = if (file.isDirectory) GitFileStatus.UNMODIFIED else gitManager.getFileGitStatus(path)
+                toFileItem(file, favorites, status)
+            }
+        val filtered = if (searchQuery.isBlank()) items else items.filter { it.name.contains(searchQuery.trim(), ignoreCase = true) }
         filtered.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase(Locale.ROOT) }))
     }
 
-    /**
-     * Imports a file directly into a project's folder or subfolder.
-     */
-    suspend fun importProjectFile(
-        uri: Uri,
-        projectName: String,
-        subfolder: String = ""
-    ): GVONEFileItem? = withContext(Dispatchers.IO) {
+    suspend fun importProjectFile(uri: Uri, projectName: String, subfolder: String = ""): GVONEFileItem? = withContext(Dispatchers.IO) {
         try {
-            val projectDir = findProjectFolder(projectName)
-            if (!projectDir.exists()) projectDir.mkdirs()
-
-            val targetDir = if (subfolder.isBlank() || subfolder == "/" || subfolder == ".") {
-                projectDir
-            } else {
-                val cleanSub = subfolder
-                    .removePrefix("Projects/")
-                    .removePrefix(projectDir.name)
-                    .trim('/')
-                if (cleanSub.isBlank()) projectDir else File(projectDir, cleanSub)
-            }
-
-            if (!targetDir.canonicalFile.path.startsWith(projectDir.canonicalFile.path)) {
-                return@withContext null
-            }
+            val projectDir = findProjectFolder(projectName).apply { if (!exists()) mkdirs() }
+            val targetDir = projectTarget(projectDir, subfolder) ?: return@withContext null
             if (!targetDir.exists()) targetDir.mkdirs()
-
             val fileName = queryFileName(uri) ?: "imported_${System.currentTimeMillis()}"
             val targetFile = File(targetDir, fileName)
-
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(targetFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-
-            val item = toFileItem(targetFile, getFavoritePaths())
-            recordRecent(item)
-            item
+            context.contentResolver.openInputStream(uri)?.use { input -> FileOutputStream(targetFile).use(input::copyTo) }
+                ?: return@withContext null
+            toFileItem(targetFile, getFavoritePaths()).also(::recordRecent)
         } catch (_: Exception) {
             null
         }
     }
 
-    /**
-     * Creates a new file directly into a project's directory or subfolder.
-     */
     suspend fun createProjectFile(
         projectName: String,
         subfolder: String = "",
         fileName: String,
         content: String = ""
     ): GVONEFileItem = withContext(Dispatchers.IO) {
-        val projectDir = findProjectFolder(projectName)
-        if (!projectDir.exists()) projectDir.mkdirs()
-
-        val targetDir = if (subfolder.isBlank() || subfolder == "/" || subfolder == ".") {
-            projectDir
-        } else {
-            val cleanSub = subfolder
-                .removePrefix("Projects/")
-                .removePrefix(projectDir.name)
-                .trim('/')
-            if (cleanSub.isBlank()) projectDir else File(projectDir, cleanSub)
-        }
-
+        require(fileName.isNotBlank() && File(fileName).name == fileName) { "File name must not contain a path" }
+        val projectDir = findProjectFolder(projectName).apply { if (!exists()) mkdirs() }
+        val targetDir = projectTarget(projectDir, subfolder) ?: error("Project path is outside the project")
         if (!targetDir.exists()) targetDir.mkdirs()
-
         val targetFile = File(targetDir, fileName)
         targetFile.writeText(content)
-        val item = toFileItem(targetFile, getFavoritePaths())
-        recordRecent(item)
-        item
+        toFileItem(targetFile, getFavoritePaths()).also(::recordRecent)
     }
 
     fun toFileItem(
@@ -860,12 +501,10 @@ class GVONEFileSystem(private val context: Context) {
         return when (ext) {
             "md", "markdown" -> FileType.MARKDOWN
             "txt", "log", "conf", "cfg", "env" -> FileType.TEXT
-            "json", "yaml", "yml" -> FileType.JSON
+            "json" -> FileType.JSON
             "kt", "java", "py", "js", "ts", "html", "htm", "css", "sh", "bash", "xml", "c", "cpp", "h", "rs", "go", "sql" -> FileType.CODE
             "pdf" -> FileType.PDF
             "png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "ico" -> FileType.IMAGE
-            "mp3", "wav", "aac", "m4a", "ogg", "flac" -> FileType.AUDIO
-            "mp4", "webm", "mkv", "mov", "avi" -> FileType.VIDEO
             "zip", "tar", "gz", "rar", "7z" -> FileType.ARCHIVE
             else -> FileType.UNKNOWN
         }
@@ -876,7 +515,6 @@ class GVONEFileSystem(private val context: Context) {
             "md", "markdown" -> "text/markdown"
             "txt", "log" -> "text/plain"
             "json" -> "application/json"
-            "yaml", "yml" -> "text/yaml"
             "kt" -> "text/x-kotlin"
             "java" -> "text/x-java-source"
             "py" -> "text/x-python"
@@ -888,12 +526,6 @@ class GVONEFileSystem(private val context: Context) {
             "jpg", "jpeg" -> "image/jpeg"
             "webp" -> "image/webp"
             "svg" -> "image/svg+xml"
-            "wav" -> "audio/wav"
-            "mp3" -> "audio/mpeg"
-            "m4a", "aac" -> "audio/mp4"
-            "ogg" -> "audio/ogg"
-            "mp4" -> "video/mp4"
-            "webm" -> "video/webm"
             "zip" -> "application/zip"
             else -> "application/octet-stream"
         }

@@ -2300,7 +2300,6 @@ fun TabOverviewScreen(
                                 border = BorderStroke(1.dp, Color(0xFF233554)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 420.dp, max = 580.dp)
                                     .testTag("navigator_extensions_container")
                             ) {
                                 IdeExtensionsView(
@@ -2351,7 +2350,6 @@ fun TabOverviewScreen(
                                 border = BorderStroke(1.dp, Color(0xFF233554)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 450.dp, max = 650.dp)
                                     .testTag("navigator_mcp_container")
                             ) {
                                     IdeMcpView(
@@ -2373,7 +2371,6 @@ fun TabOverviewScreen(
                                 border = BorderStroke(1.dp, Color(0xFF233554)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 450.dp, max = 650.dp)
                                     .testTag("navigator_settings_container")
                             ) {
                                 if (activeProject != null) {

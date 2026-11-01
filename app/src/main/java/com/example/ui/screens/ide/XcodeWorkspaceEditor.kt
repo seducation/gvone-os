@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.sp
 import com.example.data.files.FileType
 import com.example.data.files.GVONEFileItem
 import com.example.data.files.GVONEFileSystem
-import com.example.ui.screens.files.ImageFileViewer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -196,17 +195,6 @@ fun XcodeWorkspaceEditor(
                             }
                         }
                     }
-                }
-            } else if (activeTab.fileItem.fileType == FileType.IMAGE ||
-                activeTab.fileItem.extension.lowercase() in listOf("png", "jpg", "jpeg", "webp", "gif", "svg", "bmp")
-            ) {
-                val imgFile = remember(activeTab.fileItem.path) { fileSystem.getFile(activeTab.fileItem.path) }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("xcode_image_viewer_pane")
-                ) {
-                    ImageFileViewer(imageFile = imgFile)
                 }
             } else {
                 // Code Buffer with Line Numbers Gutter

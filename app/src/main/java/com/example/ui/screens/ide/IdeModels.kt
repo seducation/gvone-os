@@ -100,18 +100,12 @@ data class IdeTreeNode(
     val isLoaded: Boolean = false
 )
 
-/**
- * Severity level for extension and linter diagnostics.
- */
 enum class ProblemSeverity(val label: String, val colorHex: Long) {
     ERROR("Error", 0xFFEF4444),
     WARNING("Warning", 0xFFF59E0B),
     INFO("Info", 0xFF38BDF8)
 }
 
-/**
- * Diagnostic problem or issue reported by an extension (ESLint, Prettier, AdBlocker, etc.).
- */
 data class ExtensionProblem(
     val id: String,
     val extensionId: String,

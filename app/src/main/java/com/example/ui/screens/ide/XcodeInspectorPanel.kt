@@ -31,8 +31,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.agent.safety.PermissionSystem
+import com.example.data.files.GVONEFileSystem
 import com.example.data.model.BrowserTab
-import com.example.ui.screens.files.UnifiedFileExplorerView
 
 /**
  * Bottom-right Inspector Panel for the unified Xcode-style IDE browser window.
@@ -46,7 +46,7 @@ fun XcodeInspectorPanel(
     workspaceMode: XcodeWorkspaceMode,
     activeWebView: WebView?,
     isTorActive: Boolean,
-    fileSystem: com.example.data.files.GVONEFileSystem? = null,
+    fileSystem: GVONEFileSystem? = null,
     onOpenFileInTab: ((com.example.data.files.GVONEFileItem, Boolean) -> Unit)? = null,
     onOpenFileInIde: ((com.example.data.files.GVONEFileItem) -> Unit)? = null,
     webConsoleLogs: List<com.example.ui.components.DevConsoleLog> = emptyList(),
@@ -77,12 +77,6 @@ fun XcodeInspectorPanel(
             Toast.makeText(context, "WebView not available", Toast.LENGTH_SHORT).show()
         }
     }
-
-    LaunchedEffect(initialTab) {
-        selectedTab = initialTab
-    }
-    val extensionProblems = ExtensionProblemsManager.problems.collectAsState().value
-    val problemsCount = extensionProblems.size
 
     Surface(
         modifier = modifier
@@ -176,15 +170,10 @@ fun XcodeInspectorPanel(
             ) {
                 XcodeInspectorTab.values().forEach { tab ->
                     val isSelected = selectedTab == tab
-                    val tabBadge = if (tab == XcodeInspectorTab.PROBLEMS && problemsCount > 0) " ($problemsCount)" else ""
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = if (isSelected) Color(0xFF1E293B) else Color.Transparent,
-                        border = if (isSelected) {
-                            BorderStroke(1.dp, if (tab == XcodeInspectorTab.PROBLEMS && problemsCount > 0) Color(0xFFEF4444) else Color(0xFFF59E0B))
-                        } else {
-                            BorderStroke(0.5.dp, Color(0xFF283548))
-                        },
+                        border = if (isSelected) BorderStroke(1.dp, Color(0xFFF59E0B)) else BorderStroke(0.5.dp, Color(0xFF283548)),
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
                             .clickable { selectedTab = tab }
@@ -198,24 +187,14 @@ fun XcodeInspectorPanel(
                             Icon(
                                 imageVector = tab.icon,
                                 contentDescription = tab.title,
-                                tint = if (isSelected) {
-                                    if (tab == XcodeInspectorTab.PROBLEMS && problemsCount > 0) Color(0xFFEF4444) else Color(0xFFF59E0B)
-                                } else if (tab == XcodeInspectorTab.PROBLEMS && problemsCount > 0) {
-                                    Color(0xFFEF4444)
-                                } else {
-                                    Color(0xFF64748B)
-                                },
+                                tint = if (isSelected) Color(0xFFF59E0B) else Color(0xFF64748B),
                                 modifier = Modifier.size(13.dp)
                             )
                             Text(
-                                text = "${tab.title}$tabBadge",
+                                text = tab.title,
                                 fontSize = 11.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) {
-                                    if (tab == XcodeInspectorTab.PROBLEMS && problemsCount > 0) Color(0xFFEF4444) else Color(0xFFE2E8F0)
-                                } else {
-                                    Color(0xFF64748B)
-                                }
+                                color = if (isSelected) Color(0xFFE2E8F0) else Color(0xFF64748B)
                             )
                         }
                     }
@@ -334,6 +313,9 @@ fun XcodeInspectorPanel(
                             }
                         )
                     }
+                    XcodeInspectorTab.SAFETY_RULES -> {
+                        SafetyRulesInspectorView()
+                    }
                     XcodeInspectorTab.PROBLEMS -> {
                         ExtensionProblemsInspectorView(
                             onOpenFileInEditor = { file, line ->
@@ -342,13 +324,7 @@ fun XcodeInspectorPanel(
                         )
                     }
                     XcodeInspectorTab.EXTENSIONS -> {
-                        ExtensionSidePanelsInspectorView(
-                            activeWebView = activeWebView,
-                            activeTab = currentTab
-                        )
-                    }
-                    XcodeInspectorTab.SAFETY_RULES -> {
-                        SafetyRulesInspectorView()
+                        ExtensionSidePanelsInspectorView(activeWebView = activeWebView, activeTab = currentTab)
                     }
                 }
             }

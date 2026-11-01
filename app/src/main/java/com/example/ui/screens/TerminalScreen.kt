@@ -170,7 +170,6 @@ fun TerminalScreen(
     var workspaceProjectsList by remember { mutableStateOf<List<String>>(listOf("Projects", "Projects/KotlinCalculator", "Documents", "Downloads", "Images")) }
 
     LaunchedEffect(persistedTargetDir) {
-        shellEngine.changeDirectory(persistedTargetDir)
         currentCwd = shellEngine.promptPath
         workspaceProjectsList = viewModel.getWorkspaceProjectsAndSubfolders()
     }
@@ -396,7 +395,10 @@ fun TerminalScreen(
     LaunchedEffect(activeSession.lines.size) {
         if (activeSession.lines.isNotEmpty()) {
             try {
-                listState.animateScrollToItem(activeSession.lines.size - 1)
+                val totalItems = listState.layoutInfo.totalItemsCount
+                if (totalItems > 0) {
+                    listState.animateScrollToItem(totalItems - 1)
+                }
             } catch (_: Throwable) {
                 // Ignore scroll animation interruptions
             }
@@ -507,13 +509,13 @@ fun TerminalScreen(
                 commandHistory.add(trimmed)
             }
             historyIndex = -1
-        }
-
             viewModel.observeBotContext(
                 "Terminal command: $trimmed\nWorking directory: $currentCwd\n" +
                     "Recent terminal output:\n" + globalTerminalLines.takeLast(30).joinToString("\n") { it.text },
                 "terminal"
             )
+        }
+
         // If any item is attached, dispatch in form of an attachment (photo, file, research, website)
         if (itemToSend != null) {
             when (itemToSend.type) {
@@ -860,19 +862,6 @@ fun TerminalScreen(
                             workspaceDirectories = workspaceProjectsList,
                             onSelectTargetDirectory = { chosenDir ->
                                 viewModel.setTerminalTargetDirectory(chosenDir)
-                                coroutineScope.launch {
-                                    if (chosenDir.isBlank()) {
-                                        shellEngine.changeDirectory("~")
-                                        currentCwd = shellEngine.promptPath
-                                        val feedbackLine = TerminalLine("📁 Target cleared: Returned to global root workspace (~)", TerminalLineType.INFO)
-                                        viewModel.appendTerminalLines(listOf(feedbackLine))
-                                    } else {
-                                        shellEngine.changeDirectory(chosenDir)
-                                        currentCwd = shellEngine.promptPath
-                                        val feedbackLine = TerminalLine("📁 Target set to: $chosenDir (AI tasks, tabs and file edits scoped)", TerminalLineType.SUCCESS)
-                                        viewModel.appendTerminalLines(listOf(feedbackLine))
-                                    }
-                                }
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -1996,19 +1985,6 @@ fun TerminalScreen(
                         workspaceDirectories = workspaceProjectsList,
                         onSelectTargetDirectory = { chosenDir ->
                             viewModel.setTerminalTargetDirectory(chosenDir)
-                            coroutineScope.launch {
-                                if (chosenDir.isBlank()) {
-                                    shellEngine.changeDirectory("~")
-                                    currentCwd = shellEngine.promptPath
-                                    val feedbackLine = TerminalLine("📁 Target cleared: Returned to global root workspace (~)", TerminalLineType.INFO)
-                                    viewModel.appendTerminalLines(listOf(feedbackLine))
-                                } else {
-                                    shellEngine.changeDirectory(chosenDir)
-                                    currentCwd = shellEngine.promptPath
-                                    val feedbackLine = TerminalLine("📁 Target set to: $chosenDir (AI tasks, tabs and file edits scoped)", TerminalLineType.SUCCESS)
-                                    viewModel.appendTerminalLines(listOf(feedbackLine))
-                                }
-                            }
                         },
                         modifier = Modifier.fillMaxWidth()
                     )

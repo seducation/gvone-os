@@ -6,7 +6,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -66,282 +65,277 @@ fun IdeNavigatorSettingsView(
     val context = LocalContext.current
     val prefs by WorkspacePreferencesManager.prefs.collectAsState()
 
-    LazyColumn(
+    Column(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .background(Color(0xFF0F172A))
             .padding(12.dp)
+            .padding(bottom = 60.dp)
             .testTag("navigator_settings_container"),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 60.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // --- HEADER BANNER ---
-        item {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF1E293B),
-                border = BorderStroke(1.dp, Color(0xFF334155)),
-                modifier = Modifier.fillMaxWidth()
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF1E293B),
+            border = BorderStroke(1.dp, Color(0xFF334155)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFF64748B), Color(0xFF334155))
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(Color(0xFF64748B), Color(0xFF334155))
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Settings,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Workspace & IDE Settings",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Navigator layout, editor studio, MCP tools & privacy",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 11.sp
-                        )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Workspace & IDE Settings",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Navigator layout, editor studio, MCP tools & privacy",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp
+                    )
+                }
+
+                Button(
+                    onClick = onOpenFullSettings,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.height(30.dp).testTag("open_system_settings_btn")
+                ) {
+                    Icon(Icons.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("All Settings", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+
+
+        // --- SECTION 1: DEVELOPER BAR & WORKSPACE MODE ---
+        SettingsCategoryCard(
+            title = "Developer Bar & Layout",
+            icon = Icons.Rounded.DashboardCustomize,
+            iconTint = Color(0xFF00E5FF)
+        ) {
+            SettingsToggleRow(
+                title = "Unified Dropdown Menu",
+                subtitle = "Single dropdown menu replacing switchable toggle in top bar",
+                checked = prefs.unifiedDeveloperBarDropdown,
+                onCheckedChange = {
+                    WorkspacePreferencesManager.updatePrefs { p -> p.copy(unifiedDeveloperBarDropdown = it) }
+                    Toast.makeText(context, "Developer Bar set to ${if (it) "Unified Dropdown" else "Segmented"}", Toast.LENGTH_SHORT).show()
+                }
+            )
+
+            HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+
+            SettingsToggleRow(
+                title = "Show Line Numbers",
+                subtitle = "Display line numbers in Monospace code studio editor",
+                checked = prefs.showLineNumbers,
+                onCheckedChange = {
+                    WorkspacePreferencesManager.updatePrefs { p -> p.copy(showLineNumbers = it) }
+                }
+            )
+
+            HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+
+            SettingsToggleRow(
+                title = "Editor Word Wrap",
+                subtitle = "Soft-wrap long lines of code in workspace editor",
+                checked = prefs.wordWrap,
+                onCheckedChange = {
+                    WorkspacePreferencesManager.updatePrefs { p -> p.copy(wordWrap = it) }
+                }
+            )
+
+            HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+
+            SettingsToggleRow(
+                title = "Format on Save (Prettier)",
+                subtitle = "Automatically run formatting when saving files",
+                checked = prefs.formatOnSave,
+                onCheckedChange = {
+                    WorkspacePreferencesManager.updatePrefs { p -> p.copy(formatOnSave = it) }
+                }
+            )
+
+            HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+
+            // Tab size selector
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Tab Indentation Size", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Number of spaces per indentation level", color = Color(0xFF94A3B8), fontSize = 10.sp)
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(2, 4).forEach { size ->
+                        val isSelected = prefs.tabSize == size
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isSelected) Color(0xFF00E5FF).copy(alpha = 0.2f) else Color(0xFF0F172A),
+                            border = BorderStroke(1.dp, if (isSelected) Color(0xFF00E5FF) else Color(0xFF334155)),
+                            modifier = Modifier.clickable {
+                                WorkspacePreferencesManager.updatePrefs { p -> p.copy(tabSize = size) }
+                            }
+                        ) {
+                            Text(
+                                text = "$size Spaces",
+                                color = if (isSelected) Color(0xFF00E5FF) else Color(0xFF94A3B8),
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+
+        // --- SECTION 2: MODEL CONTEXT PROTOCOL & AI AGENTS ---
+        SettingsCategoryCard(
+            title = "Model Context Protocol & Copilot",
+            icon = Icons.Rounded.Hub,
+            iconTint = Color(0xFFEC4899)
+        ) {
+            SettingsToggleRow(
+                title = "Auto-connect MCP Servers",
+                subtitle = "Automatically initialize stdio/SSE tool servers on launch",
+                checked = prefs.mcpAutoConnect,
+                onCheckedChange = {
+                    WorkspacePreferencesManager.updatePrefs { p -> p.copy(mcpAutoConnect = it) }
+                }
+            )
+
+            HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+
+            SettingsToggleRow(
+                title = "Require Tool Call Approval",
+                subtitle = "Prompt before AI executes file writes or shell commands",
+                checked = prefs.requireToolApproval,
+                onCheckedChange = {
+                    WorkspacePreferencesManager.updatePrefs { p -> p.copy(requireToolApproval = it) }
+                }
+            )
+        }
+
+
+        // --- SECTION 3: PRIVACY & NETWORK ---
+        SettingsCategoryCard(
+            title = "Privacy, Security & Onion Routing",
+            icon = Icons.Rounded.Security,
+            iconTint = Color(0xFF10B981)
+        ) {
+            SettingsToggleRow(
+                title = "Tor Onion Routing Proxy",
+                subtitle = "Route all web & API traffic through the Tor anonymity network",
+                checked = prefs.torEnabled,
+                onCheckedChange = {
+                    WorkspacePreferencesManager.updatePrefs { p -> p.copy(torEnabled = it) }
+                    Toast.makeText(context, if (it) "Tor routing activated" else "Tor routing disabled", Toast.LENGTH_SHORT).show()
+                }
+            )
+
+            HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+
+            SettingsToggleRow(
+                title = "Strict HTTPS Enforcement",
+                subtitle = "Automatically upgrade connections to secure TLS 1.3",
+                checked = prefs.strictHttps,
+                onCheckedChange = {
+                    WorkspacePreferencesManager.updatePrefs { p -> p.copy(strictHttps = it) }
+                }
+            )
+
+            HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+
+            SettingsToggleRow(
+                title = "Block Third-Party Cookies",
+                subtitle = "Prevent cross-site tracking scripts and cookies",
+                checked = prefs.blockThirdPartyCookies,
+                onCheckedChange = {
+                    WorkspacePreferencesManager.updatePrefs { p -> p.copy(blockThirdPartyCookies = it) }
+                }
+            )
+        }
+
+
+        // --- SECTION 4: QUICK MAINTENANCE & RESET ACTIONS ---
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = Color(0xFF161F2E),
+            border = BorderStroke(1.dp, Color(0xFF2C3E5A)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Workspace Maintenance", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            Toast.makeText(context, "Workspace cache cleared", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f).height(34.dp)
+                    ) {
+                        Icon(Icons.Rounded.CleaningServices, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Clear Cache", fontSize = 11.sp)
                     }
 
                     Button(
-                        onClick = onOpenFullSettings,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                        onClick = {
+                            WorkspacePreferencesManager.updatePrefs { WorkspacePreferences() }
+                            Toast.makeText(context, "Workspace reset to default", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF475569)),
                         shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        modifier = Modifier.height(30.dp).testTag("open_system_settings_btn")
+                        modifier = Modifier.weight(1f).height(34.dp)
                     ) {
-                        Icon(Icons.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("All Settings", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Icon(Icons.Rounded.RestartAlt, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Reset Layout", fontSize = 11.sp)
                     }
                 }
             }
         }
 
-        // --- SECTION 1: DEVELOPER BAR & WORKSPACE MODE ---
-        item {
-            SettingsCategoryCard(
-                title = "Developer Bar & Layout",
-                icon = Icons.Rounded.DashboardCustomize,
-                iconTint = Color(0xFF00E5FF)
-            ) {
-                SettingsToggleRow(
-                    title = "Unified Dropdown Menu",
-                    subtitle = "Single dropdown menu replacing switchable toggle in top bar",
-                    checked = prefs.unifiedDeveloperBarDropdown,
-                    onCheckedChange = {
-                        WorkspacePreferencesManager.updatePrefs { p -> p.copy(unifiedDeveloperBarDropdown = it) }
-                        Toast.makeText(context, "Developer Bar set to ${if (it) "Unified Dropdown" else "Segmented"}", Toast.LENGTH_SHORT).show()
-                    }
-                )
-
-                HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
-
-                SettingsToggleRow(
-                    title = "Show Line Numbers",
-                    subtitle = "Display line numbers in Monospace code studio editor",
-                    checked = prefs.showLineNumbers,
-                    onCheckedChange = {
-                        WorkspacePreferencesManager.updatePrefs { p -> p.copy(showLineNumbers = it) }
-                    }
-                )
-
-                HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
-
-                SettingsToggleRow(
-                    title = "Editor Word Wrap",
-                    subtitle = "Soft-wrap long lines of code in workspace editor",
-                    checked = prefs.wordWrap,
-                    onCheckedChange = {
-                        WorkspacePreferencesManager.updatePrefs { p -> p.copy(wordWrap = it) }
-                    }
-                )
-
-                HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
-
-                SettingsToggleRow(
-                    title = "Format on Save (Prettier)",
-                    subtitle = "Automatically run formatting when saving files",
-                    checked = prefs.formatOnSave,
-                    onCheckedChange = {
-                        WorkspacePreferencesManager.updatePrefs { p -> p.copy(formatOnSave = it) }
-                    }
-                )
-
-                HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
-
-                // Tab size selector
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text("Tab Indentation Size", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Number of spaces per indentation level", color = Color(0xFF94A3B8), fontSize = 10.sp)
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        listOf(2, 4).forEach { size ->
-                            val isSelected = prefs.tabSize == size
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (isSelected) Color(0xFF00E5FF).copy(alpha = 0.2f) else Color(0xFF0F172A),
-                                border = BorderStroke(1.dp, if (isSelected) Color(0xFF00E5FF) else Color(0xFF334155)),
-                                modifier = Modifier.clickable {
-                                    WorkspacePreferencesManager.updatePrefs { p -> p.copy(tabSize = size) }
-                                }
-                            ) {
-                                Text(
-                                    text = "$size Spaces",
-                                    color = if (isSelected) Color(0xFF00E5FF) else Color(0xFF94A3B8),
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- SECTION 2: MODEL CONTEXT PROTOCOL & AI AGENTS ---
-        item {
-            SettingsCategoryCard(
-                title = "Model Context Protocol & Copilot",
-                icon = Icons.Rounded.Hub,
-                iconTint = Color(0xFFEC4899)
-            ) {
-                SettingsToggleRow(
-                    title = "Auto-connect MCP Servers",
-                    subtitle = "Automatically initialize stdio/SSE tool servers on launch",
-                    checked = prefs.mcpAutoConnect,
-                    onCheckedChange = {
-                        WorkspacePreferencesManager.updatePrefs { p -> p.copy(mcpAutoConnect = it) }
-                    }
-                )
-
-                HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
-
-                SettingsToggleRow(
-                    title = "Require Tool Call Approval",
-                    subtitle = "Prompt before AI executes file writes or shell commands",
-                    checked = prefs.requireToolApproval,
-                    onCheckedChange = {
-                        WorkspacePreferencesManager.updatePrefs { p -> p.copy(requireToolApproval = it) }
-                    }
-                )
-            }
-        }
-
-        // --- SECTION 3: PRIVACY & NETWORK ---
-        item {
-            SettingsCategoryCard(
-                title = "Privacy, Security & Onion Routing",
-                icon = Icons.Rounded.Security,
-                iconTint = Color(0xFF10B981)
-            ) {
-                SettingsToggleRow(
-                    title = "Tor Onion Routing Proxy",
-                    subtitle = "Route all web & API traffic through the Tor anonymity network",
-                    checked = prefs.torEnabled,
-                    onCheckedChange = {
-                        WorkspacePreferencesManager.updatePrefs { p -> p.copy(torEnabled = it) }
-                        Toast.makeText(context, if (it) "Tor routing activated" else "Tor routing disabled", Toast.LENGTH_SHORT).show()
-                    }
-                )
-
-                HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
-
-                SettingsToggleRow(
-                    title = "Strict HTTPS Enforcement",
-                    subtitle = "Automatically upgrade connections to secure TLS 1.3",
-                    checked = prefs.strictHttps,
-                    onCheckedChange = {
-                        WorkspacePreferencesManager.updatePrefs { p -> p.copy(strictHttps = it) }
-                    }
-                )
-
-                HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
-
-                SettingsToggleRow(
-                    title = "Block Third-Party Cookies",
-                    subtitle = "Prevent cross-site tracking scripts and cookies",
-                    checked = prefs.blockThirdPartyCookies,
-                    onCheckedChange = {
-                        WorkspacePreferencesManager.updatePrefs { p -> p.copy(blockThirdPartyCookies = it) }
-                    }
-                )
-            }
-        }
-
-        // --- SECTION 4: QUICK MAINTENANCE & RESET ACTIONS ---
-        item {
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = Color(0xFF161F2E),
-                border = BorderStroke(1.dp, Color(0xFF2C3E5A)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Workspace Maintenance", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                Toast.makeText(context, "Workspace cache cleared", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f).height(34.dp)
-                        ) {
-                            Icon(Icons.Rounded.CleaningServices, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Clear Cache", fontSize = 11.sp)
-                        }
-
-                        Button(
-                            onClick = {
-                                WorkspacePreferencesManager.updatePrefs { WorkspacePreferences() }
-                                Toast.makeText(context, "Workspace reset to default", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF475569)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f).height(34.dp)
-                        ) {
-                            Icon(Icons.Rounded.RestartAlt, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Reset Layout", fontSize = 11.sp)
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -356,96 +350,92 @@ fun ProjectNavigatorSettingsView(
     val selectedPersona = personas.firstOrNull { it.id == project.defaultBotPersonaId } ?: GrokBotPersona.GROK_CODER
     var personaMenuOpen by remember(project.id) { mutableStateOf(false) }
 
-    LazyColumn(
+    Column(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .background(Color(0xFF0F172A))
             .padding(12.dp)
+            .padding(bottom = 60.dp)
             .testTag("project_settings_container"),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 60.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xFF1E293B),
-                border = BorderStroke(1.dp, Color(0xFF334155)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(project.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    Text("Project settings", color = Color(0xFF94A3B8), fontSize = 11.sp)
-                    Text("Folder: Projects/${project.name}", color = Color(0xFF38BDF8), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                }
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF1E293B),
+            border = BorderStroke(1.dp, Color(0xFF334155)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(project.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text("Project settings", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                Text("Folder: Projects/${project.name}", color = Color(0xFF38BDF8), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
             }
         }
 
-        item {
-            SettingsCategoryCard("Assistant", Icons.Rounded.AutoAwesome, Color(0xFFA855F7)) {
-                Text("Default persona for this project", color = Color(0xFF94A3B8), fontSize = 11.sp)
-                Box {
-                    OutlinedButton(onClick = { personaMenuOpen = true }) {
-                        Text(selectedPersona.displayName)
-                        Icon(Icons.Rounded.ExpandMore, contentDescription = null)
-                    }
-                    DropdownMenu(expanded = personaMenuOpen, onDismissRequest = { personaMenuOpen = false }) {
-                        personas.forEach { persona ->
-                            DropdownMenuItem(
-                                text = { Text(persona.displayName) },
-                                onClick = {
-                                    personaMenuOpen = false
-                                    onProjectChange(project.copy(defaultBotPersonaId = persona.id))
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
 
-        item {
-            SettingsCategoryCard("MCP servers", Icons.Rounded.Hub, Color(0xFFEC4899)) {
-                Text(
-                    if (project.useWorkspaceMcpServers) "Using all workspace MCP servers" else "Choose the MCP servers available to this project",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 11.sp
-                )
-                if (servers.isEmpty()) {
-                    Text("No MCP servers are configured.", color = Color(0xFF64748B), fontSize = 11.sp)
-                } else {
-                    servers.forEach { server ->
-                        val included = project.useWorkspaceMcpServers || server.id in project.mcpServerIds
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(checked = included, onCheckedChange = { checked ->
-                                val current = if (project.useWorkspaceMcpServers) servers.map { it.id } else project.mcpServerIds
-                                val next = if (checked) (current + server.id).distinct() else current.filterNot { it == server.id }
-                                val useWorkspace = next.toSet() == servers.map { it.id }.toSet()
-                                onProjectChange(project.copy(
-                                    mcpServerIds = if (useWorkspace) emptyList() else next,
-                                    useWorkspaceMcpServers = useWorkspace
-                                ))
-                            })
-                            Column(Modifier.weight(1f)) {
-                                Text(server.name, color = Color(0xFFE2E8F0), fontSize = 12.sp)
-                                Text(if (server.isConnected) "Connected" else "Disconnected", color = Color(0xFF94A3B8), fontSize = 10.sp)
+        SettingsCategoryCard("Assistant", Icons.Rounded.AutoAwesome, Color(0xFFA855F7)) {
+            Text("Default persona for this project", color = Color(0xFF94A3B8), fontSize = 11.sp)
+            Box {
+                OutlinedButton(onClick = { personaMenuOpen = true }) {
+                    Text(selectedPersona.displayName)
+                    Icon(Icons.Rounded.ExpandMore, contentDescription = null)
+                }
+                DropdownMenu(expanded = personaMenuOpen, onDismissRequest = { personaMenuOpen = false }) {
+                    personas.forEach { persona ->
+                        DropdownMenuItem(
+                            text = { Text(persona.displayName) },
+                            onClick = {
+                                personaMenuOpen = false
+                                onProjectChange(project.copy(defaultBotPersonaId = persona.id))
                             }
+                        )
+                    }
+                }
+            }
+        }
+
+
+        SettingsCategoryCard("MCP servers", Icons.Rounded.Hub, Color(0xFFEC4899)) {
+            Text(
+                if (project.useWorkspaceMcpServers) "Using all workspace MCP servers" else "Choose the MCP servers available to this project",
+                color = Color(0xFF94A3B8),
+                fontSize = 11.sp
+            )
+            if (servers.isEmpty()) {
+                Text("No MCP servers are configured.", color = Color(0xFF64748B), fontSize = 11.sp)
+            } else {
+                servers.forEach { server ->
+                    val included = project.useWorkspaceMcpServers || server.id in project.mcpServerIds
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = included, onCheckedChange = { checked ->
+                            val current = if (project.useWorkspaceMcpServers) servers.map { it.id } else project.mcpServerIds
+                            val next = if (checked) (current + server.id).distinct() else current.filterNot { it == server.id }
+                            val useWorkspace = next.toSet() == servers.map { it.id }.toSet()
+                            onProjectChange(project.copy(
+                                mcpServerIds = if (useWorkspace) emptyList() else next,
+                                useWorkspaceMcpServers = useWorkspace
+                            ))
+                        })
+                        Column(Modifier.weight(1f)) {
+                            Text(server.name, color = Color(0xFFE2E8F0), fontSize = 12.sp)
+                            Text(if (server.isConnected) "Connected" else "Disconnected", color = Color(0xFF94A3B8), fontSize = 10.sp)
                         }
                     }
                 }
             }
         }
 
-        item {
-            Text(
-                "CNS approval and permission rules continue to follow the workspace settings.",
-                color = Color(0xFF64748B),
-                fontSize = 10.sp,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
-        }
+
+        Text(
+            "CNS approval and permission rules continue to follow the workspace settings.",
+            color = Color(0xFF64748B),
+            fontSize = 10.sp,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+
     }
 }
 

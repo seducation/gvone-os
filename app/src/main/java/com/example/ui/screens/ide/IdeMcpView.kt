@@ -7,8 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -211,7 +209,7 @@ fun IdeMcpView(
 
     Column(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .background(Color(0xFF0F172A))
             .padding(12.dp)
     ) {
@@ -390,37 +388,34 @@ fun IdeMcpView(
         Spacer(modifier = Modifier.height(10.dp))
 
         // --- SERVERS LIST ---
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .padding(bottom = 60.dp)
                 .testTag("mcp_servers_list"),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 60.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (filteredServers.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 40.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Rounded.SearchOff, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(36.dp))
-                            Text("No MCP servers found", color = Color(0xFF94A3B8), fontSize = 13.sp)
-                            Button(
-                                onClick = { searchQuery = ""; selectedFilter = "All" },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Reset Filters", fontSize = 11.sp)
-                            }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.SearchOff, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(36.dp))
+                        Text("No MCP servers found", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                        Button(
+                            onClick = { searchQuery = ""; selectedFilter = "All" },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Reset Filters", fontSize = 11.sp)
                         }
                     }
                 }
             } else {
-                items(filteredServers, key = { it.id }) { server ->
+                filteredServers.forEach { server ->
                     val isExpanded = expandedServerId == server.id
                     McpServerCard(
                         server = server,

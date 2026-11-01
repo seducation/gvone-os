@@ -29,13 +29,6 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.MyApplication">
-
-        <meta-data
-            android:name="android.webkit.WebView.EnableSafeBrowsing"
-            android:value="false" />
-        <meta-data
-            android:name="android.webkit.WebView.MetricsOptOut"
-            android:value="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -66,9 +59,13 @@
                 <data android:scheme="content" />
                 <data android:scheme="file" />
                 <data android:mimeType="*/*" />
-
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".data.sync.GVONEMediaPlaybackService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
 
         <service
             android:name=".data.sync.BotAssistantService"
@@ -78,11 +75,6 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="User-enabled autonomous assistant completing GVONE browser, terminal, and IDE tasks" />
         </service>
-
-        <service
-            android:name=".data.sync.GVONEMediaPlaybackService"
-            android:foregroundServiceType="mediaPlayback"
-            android:exported="false" />
     </application>
 
 </manifest>

@@ -14,13 +14,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.*
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,10 +30,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.agent.BotAssistantStatus
-import com.example.ui.viewmodel.BrowserViewModel
 import com.example.data.ai.GVONEAIService
 import com.example.data.files.*
+import com.example.data.agent.BotAssistantStatus
+import com.example.ui.viewmodel.BrowserViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,16 +56,12 @@ fun IdeSidebar(
     onOpenCommandPalette: () -> Unit,
     onFormatDocument: () -> Unit = {},
     onLivePreview: (GVONEFileItem) -> Unit = {},
-    viewModel: BrowserViewModel,
     aiService: GVONEAIService,
     coroutineScope: CoroutineScope,
+    viewModel: BrowserViewModel,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val botMessages by viewModel.botMessages.collectAsStateWithLifecycle()
-    val botPersona by viewModel.activeBotPersona.collectAsStateWithLifecycle()
-    val botStatus by viewModel.botAssistantStatus.collectAsStateWithLifecycle()
-    val botTask by viewModel.botAssistantActiveTask.collectAsStateWithLifecycle()
 
     // Explorer tree nodes
     var workspaceNodes by remember { mutableStateOf<List<IdeTreeNode>>(emptyList()) }
@@ -79,10 +73,6 @@ fun IdeSidebar(
     var newItemName by remember { mutableStateOf("") }
     var currentFolder by remember { mutableStateOf("") }
     var selectedTargetFolder by remember { mutableStateOf("Projects") }
-
-    LaunchedEffect(currentFolder) {
-        selectedTargetFolder = if (currentFolder.isNotEmpty()) currentFolder else "Projects"
-    }
 
     // Global Search state
     var searchQuery by remember { mutableStateOf("") }
@@ -98,13 +88,6 @@ fun IdeSidebar(
     // Extensions state
     val extensions = remember {
         mutableStateListOf(
-            IdeExtension("youtube_enhancer", "YouTube Media & Ad Enhancer", "v2.5.0", "GVONE Web", "Blocks video ads, enables background audio playback, bypasses Shorts loop, auto-skips sponsor segments, and cinema mode", Icons.Rounded.PlayCircle, true, "Media & YouTube"),
-            IdeExtension("youtube_audio_pip", "YouTube Audio & Shorts Pill", "v1.4.0", "GVONE Media", "Floating audio mini-player, background audio lock, and gesture-driven shorts controller", Icons.Rounded.SmartDisplay, true, "Media & YouTube"),
-            IdeExtension("adblock_pro", "AdBlocker Pro & Tracker Shield", "v3.6.0", "uBlock/GVONE", "Blocks intrusive popups, banner ads, tracking beacons, and script miners across all tabs", Icons.Rounded.Shield, true, "Privacy & Security"),
-            IdeExtension("dark_reader", "Dark Reader & Night Shift", "v4.9.0", "DarkReader", "Inverts luminance to provide high-contrast dark theme on all web pages and YouTube", Icons.Rounded.DarkMode, true, "Appearance"),
-            IdeExtension("data_saver", "Data Saver Pro & Stream Saver", "v2.1.0", "GVONE", "Optimizes media streams, compresses web images, defers offscreen content to save mobile data", Icons.Rounded.DataUsage, true, "Performance"),
-            IdeExtension("page_translator", "Smart Page Translator", "v1.8.0", "GVONE AI", "Instant one-tap translation for articles, foreign web pages, and YouTube video captions", Icons.Rounded.Translate, true, "Productivity"),
-            IdeExtension("web_inspector", "Safari Web Inspector & DevTools", "v2.0.0", "WebKit", "DOM tree inspection, network request timeline, console logs, and storage viewer", Icons.Rounded.DeveloperMode, true, "Developer"),
             IdeExtension("prettier", "Prettier - Code Formatter", "v3.2.0", "Prettier Team", "Opinionated code formatter for Kotlin, Python, JS, HTML, CSS, JSON", Icons.Rounded.FormatPaint, true, "Formatters"),
             IdeExtension("eslint", "ESLint & Code Linter", "v8.56.0", "OpenJS Foundation", "Identifies syntax errors, code smells, and TODO/FIXME markers", Icons.Rounded.Rule, true, "Linters"),
             IdeExtension("gitlens", "GitLens - Git supercharged", "v14.0.0", "GitKraken", "Supercharge Git with blame annotations, commit history, and diff navigation", Icons.Rounded.AccountTree, true, "Git"),
@@ -118,15 +101,17 @@ fun IdeSidebar(
     var aiResponse by remember { mutableStateOf("") }
     var isAiGenerating by remember { mutableStateOf(false) }
 
-    // Load project directory tree (supports root and subfolder navigation)
+    // Load the selected workspace folder. The root combines project and document folders.
     val refreshFiles: () -> Unit = {
         isLoadingFiles = true
         coroutineScope.launch {
             try {
-                val combined = if (currentFolder.isEmpty()) {
-                    fileSystem.listFiles(StorageLocation.PROJECTS, "")
+                val combined = if (currentFolder.isBlank()) {
+                    val projects = fileSystem.listFiles(StorageLocation.PROJECTS, "")
+                    val docs = fileSystem.listFiles(StorageLocation.MY_FILES, "Documents")
+                    (projects + docs).distinctBy { it.path }
                 } else {
-                    fileSystem.listFiles(StorageLocation.PROJECTS, currentFolder)
+                    fileSystem.listFiles(StorageLocation.MY_FILES, currentFolder)
                 }
 
                 val rootNodes = combined.map { item ->
@@ -146,6 +131,7 @@ fun IdeSidebar(
     }
 
     LaunchedEffect(currentFolder) {
+        selectedTargetFolder = currentFolder.ifBlank { "Projects" }
         refreshFiles()
     }
 
@@ -439,7 +425,8 @@ fun IdeSidebar(
                                             coroutineScope.launch {
                                                 try {
                                                     val results = mutableListOf<IdeSearchResult>()
-                                                    val allFiles = fileSystem.listFiles(StorageLocation.PROJECTS, "")
+                                                    val allFiles = fileSystem.listFiles(StorageLocation.PROJECTS, "") +
+                                                            fileSystem.listFiles(StorageLocation.MY_FILES, "Documents")
                                                     for (file in allFiles) {
                                                         if (!file.isDirectory) {
                                                             val content = fileSystem.readFileContent(file.path)
@@ -505,6 +492,10 @@ fun IdeSidebar(
                                 )
                             }
                             IdeActivityTab.AI_ASSISTANT -> {
+                                val botMessages by viewModel.botMessages.collectAsStateWithLifecycle()
+                                val botPersona by viewModel.activeBotPersona.collectAsStateWithLifecycle()
+                                val botStatus by viewModel.botAssistantStatus.collectAsStateWithLifecycle()
+                                val botTask by viewModel.botAssistantActiveTask.collectAsStateWithLifecycle()
                                 IdeGrokBotsView(
                                     activeTab = activeTab,
                                     openTabs = openTabs,
@@ -556,13 +547,7 @@ fun IdeSidebar(
                                             Toast.makeText(context, "Open a web file to live preview", Toast.LENGTH_SHORT).show()
                                         }
                                     },
-                                    activeTab = activeTab,
-                                    onOpenProblems = { extId ->
-                                        Toast.makeText(context, "Extension problems view opened: ${extId ?: "All"}", Toast.LENGTH_SHORT).show()
-                                    },
-                                    onOpenSidePanel = { extId ->
-                                        Toast.makeText(context, "Opened $extId Side Panel", Toast.LENGTH_SHORT).show()
-                                    }
+                                    activeTab = activeTab
                                 )
                             }
                         }
@@ -664,7 +649,7 @@ fun IdeSidebar(
 }
 
 /**
- * File Explorer Tree View with Unified Subfolder Drilling
+ * File Explorer Tree View
  */
 @Composable
 private fun ExplorerView(
@@ -677,97 +662,61 @@ private fun ExplorerView(
     onDeleteFile: (GVONEFileItem) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Navigation Bar when inside a subfolder
-        if (currentFolder.isNotEmpty()) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.fillMaxWidth()
+        if (currentFolder.isNotBlank()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                TextButton(
+                    onClick = {
+                        onNavigateFolder(if (currentFolder.contains("/")) currentFolder.substringBeforeLast('/') else "")
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                 ) {
-                    IconButton(
-                        onClick = {
-                            val parent = if (currentFolder.contains("/")) currentFolder.substringBeforeLast("/") else ""
-                            onNavigateFolder(parent)
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Up to parent",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Rounded.FolderOpen,
-                        contentDescription = null,
-                        tint = Color(0xFFF59E0B),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = currentFolder,
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.5.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = { onNavigateFolder("") },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Home,
-                            contentDescription = "Workspace Root",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                    Text("‹ Back", style = MaterialTheme.typography.labelMedium)
                 }
+                Text(
+                    text = currentFolder,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                thickness = 1.dp
-            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
         }
 
         if (isLoading && nodes.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp))
             }
-            return
+            return@Column
         }
 
         if (nodes.isEmpty()) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .weight(1f)
+                    .fillMaxWidth()
                     .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    if (currentFolder.isNotEmpty()) "This folder is empty." else "No workspace files found.\nTap + to create a file.",
+                    if (currentFolder.isBlank()) "No workspace files found.\nTap + to create a file." else "This project folder is empty.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
             }
-            return
+            return@Column
         }
 
         LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxWidth()
                 .testTag("ide_explorer_tree"),
             contentPadding = PaddingValues(vertical = 4.dp)
         ) {
@@ -775,12 +724,8 @@ private fun ExplorerView(
                 ExplorerItemRow(
                     item = node.item,
                     isSelected = activeTab?.id == node.item.path,
-                    onItemClick = { item ->
-                        if (item.isDirectory) {
-                            onNavigateFolder(item.path)
-                        } else {
-                            onOpenFile(item)
-                        }
+                    onClick = { item ->
+                        if (item.isDirectory) onNavigateFolder(item.path) else onOpenFile(item)
                     },
                     onDelete = { onDeleteFile(node.item) }
                 )
@@ -793,7 +738,7 @@ private fun ExplorerView(
 private fun ExplorerItemRow(
     item: GVONEFileItem,
     isSelected: Boolean,
-    onItemClick: (GVONEFileItem) -> Unit,
+    onClick: (GVONEFileItem) -> Unit,
     onDelete: () -> Unit
 ) {
     val fileIcon = when (item.fileType) {
@@ -819,7 +764,7 @@ private fun ExplorerItemRow(
         else Color.Transparent,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onItemClick(item) }
+            .clickable { onClick(item) }
             .testTag("ide_tree_item_${item.name}")
     ) {
         Row(
@@ -847,28 +792,6 @@ private fun ExplorerItemRow(
                 else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
-
-            if (item.isDirectory) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = "Open folder",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(16.dp)
-                )
-            } else if (item.fileType == FileType.IMAGE) {
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = Color(0xFFEC4899).copy(alpha = 0.15f)
-                ) {
-                    Text(
-                        text = item.extension.uppercase().ifEmpty { "IMG" },
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFEC4899),
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                    )
-                }
-            }
 
             if (item.gitStatus == GitFileStatus.MODIFIED) {
                 Text(

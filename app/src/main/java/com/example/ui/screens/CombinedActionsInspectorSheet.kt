@@ -36,21 +36,6 @@ fun CombinedActionsInspectorSheet(
         val activeEditorTab = remember(ideOpenTabs, ideActiveTabId) {
             ideOpenTabs.find { it.id == ideActiveTabId }
         }
-        val requestedTabStr = viewModel.inspectorRequestedTab.value
-        val computedInitialTab = remember(activeSheet, requestedTabStr) {
-            if (activeSheet == ActiveSheet.Inspector) {
-                when (requestedTabStr?.uppercase()) {
-                    "PROBLEMS" -> SafariActionTab.PROBLEMS
-                    "EXTENSIONS", "SIDE_PANEL", "SIDEPANEL", "SIDE_PANELS" -> SafariActionTab.EXTENSIONS
-                    "CONSOLE" -> SafariActionTab.CONSOLE
-                    "DOM", "DOM_INSPECT" -> SafariActionTab.DOM_INSPECT
-                    "SECURITY" -> SafariActionTab.SECURITY
-                    else -> SafariActionTab.ATTRIBUTES
-                }
-            } else {
-                SafariActionTab.MAIN
-            }
-        }
         SafariActionsSheet(
             tab = currentTab,
             isTorActive = isTorActive,
@@ -90,8 +75,6 @@ fun CombinedActionsInspectorSheet(
             onOpenTorDiagnostics = { viewModel.openSheet(ActiveSheet.TorDiagnostics) },
             onOpenCustomCommands = { viewModel.openSheet(ActiveSheet.CustomCommands) },
             onOpenFiles = { viewModel.openFiles(isSelectionMode = false) },
-            fileSystem = viewModel.fileSystem,
-            onOpenFileInTab = { file, inNewTab -> viewModel.openFileInTab(file, inNewTab) },
             onOpenWebsiteConnectors = { viewModel.openSheet(ActiveSheet.WebsiteConnectors) },
             onOpenConnectorHub = { viewModel.openConnectorHub() },
             onOpenResearchWorkspace = { viewModel.openResearchWorkspace() },
@@ -104,7 +87,7 @@ fun CombinedActionsInspectorSheet(
             activeEditorTab = activeEditorTab,
             workspaceMode = workspaceMode,
             activeWebView = currentTab?.let { viewModel.getActiveWebView(it.id) },
-            initialTab = computedInitialTab,
+            initialTab = if (activeSheet == ActiveSheet.Inspector) SafariActionTab.ATTRIBUTES else SafariActionTab.MAIN,
             onClose = { viewModel.closeSheet() }
         )
     }

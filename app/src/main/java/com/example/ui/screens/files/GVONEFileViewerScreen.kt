@@ -1,13 +1,10 @@
 package com.example.ui.screens.files
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
-import android.media.MediaPlayer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.webkit.WebView
@@ -26,7 +23,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -39,7 +35,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,9 +42,6 @@ import androidx.core.content.FileProvider
 import com.example.data.files.FileType
 import com.example.data.files.GVONEFileItem
 import com.example.data.files.GVONEFileSystem
-import com.example.data.model.BrowserTab
-import com.example.ui.components.WebsiteDeveloperBar
-import com.example.ui.screens.ide.XcodeWorkspaceMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,17 +60,6 @@ fun GVONEFileViewerScreen(
     onOpenTerminalWithCommand: (String) -> Unit = {},
     isDeveloperBarEnabled: Boolean = true,
     onToggleDeveloperBar: () -> Unit = {},
-    tab: BrowserTab? = null,
-    isTorActive: Boolean = false,
-    workspaceMode: XcodeWorkspaceMode? = null,
-    onToggleWorkspaceMode: ((XcodeWorkspaceMode) -> Unit)? = null,
-    onOpenIde: (() -> Unit)? = null,
-    onOpenInspector: (() -> Unit)? = null,
-    onOpenConsole: (() -> Unit)? = null,
-    onOpenNavigator: (() -> Unit)? = null,
-    onOpenMcp: (() -> Unit)? = null,
-    onOpenSettings: (() -> Unit)? = null,
-    onAddressClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -106,25 +87,6 @@ fun GVONEFileViewerScreen(
 
     val hasUnsavedChanges by remember(fileContent, originalContent) {
         derivedStateOf { fileContent != originalContent }
-    }
-
-    var pdfZoomScale by remember { mutableFloatStateOf(1f) }
-    var imageZoomScale by remember { mutableFloatStateOf(1f) }
-    var imageRotation by remember { mutableFloatStateOf(0f) }
-    var imageDarkCanvas by remember { mutableStateOf(true) }
-    var isMediaPlaying by remember { mutableStateOf(false) }
-
-    val currentWorkspaceMode = workspaceMode ?: when (fileType) {
-        FileType.PDF -> XcodeWorkspaceMode.PDF_VIEWER
-        FileType.IMAGE -> XcodeWorkspaceMode.IMAGE_VIEWER
-        FileType.MARKDOWN -> XcodeWorkspaceMode.MARKDOWN
-        FileType.JSON -> XcodeWorkspaceMode.DATA_INSPECTOR
-        FileType.AUDIO, FileType.VIDEO -> XcodeWorkspaceMode.MEDIA_PLAYER
-        FileType.CODE, FileType.TEXT -> {
-            if (isHtmlFile && htmlLivePreviewMode) XcodeWorkspaceMode.BROWSER
-            else XcodeWorkspaceMode.CODE_EDITOR
-        }
-        else -> XcodeWorkspaceMode.BROWSER
     }
 
     LaunchedEffect(toastMessage) {
@@ -192,130 +154,212 @@ fun GVONEFileViewerScreen(
             .background(Color(0xFF0B0F17))
             .testTag("gvone_file_viewer_screen")
     ) {
-        // TOP APP BAR / VIEWER CONTROLS (Uses modern WebsiteDeveloperBar when enabled)
+        // TOP APP BAR / VIEWER CONTROLS (Respects developerBarEnabled setting)
         if (isDeveloperBarEnabled) {
-            val activeTab = tab ?: BrowserTab(
-                id = "file-$fileRelativePath",
-                title = fileName,
-                url = "gvone-file://$fileRelativePath"
-            )
-
-            WebsiteDeveloperBar(
-                tab = activeTab,
-                activeWebView = null,
-                isTorActive = isTorActive,
-                onToggleOff = onToggleDeveloperBar,
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                onOpenIde = onOpenIde,
-                workspaceMode = currentWorkspaceMode,
-                onToggleWorkspaceMode = { newMode ->
-                    onToggleWorkspaceMode?.invoke(newMode)
-                },
-                activeFileName = fileName,
-                isFileDirty = hasUnsavedChanges,
-                onOpenInspector = { onOpenInspector?.invoke() ?: run { showInfoDialog = true } },
-                onOpenConsole = { onOpenConsole?.invoke() ?: onOpenTerminalWithCommand("/run $fileRelativePath") },
-                onOpenNavigator = onOpenNavigator,
-                onOpenMcp = onOpenMcp,
-                onOpenSettings = onOpenSettings,
-                onSaveFile = { saveChanges() },
-                onFormatCode = {
-                    if (fileType == FileType.JSON) {
-                        try {
-                            val trimmed = fileContent.trim()
-                            val formatted = if (trimmed.startsWith("[")) {
-                                org.json.JSONArray(trimmed).toString(2)
-                            } else {
-                                JSONObject(trimmed).toString(2)
+                color = Color(0xFF111726),
+                border = BorderStroke(1.dp, Color(0xFF1E293B))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // Left: File icon & Breadcrumb Name
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = fileType.color.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, fileType.color.copy(alpha = 0.4f)),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = when (fileType) {
+                                        FileType.MARKDOWN -> Icons.Rounded.Description
+                                        FileType.TEXT -> Icons.Rounded.Article
+                                        FileType.JSON -> Icons.Rounded.DataObject
+                                        FileType.CODE -> Icons.Rounded.Code
+                                        FileType.PDF -> Icons.Rounded.PictureAsPdf
+                                        FileType.IMAGE -> Icons.Rounded.Image
+                                        FileType.ARCHIVE -> Icons.Rounded.FolderZip
+                                        else -> Icons.Rounded.InsertDriveFile
+                                    },
+                                    contentDescription = null,
+                                    tint = fileType.color,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
-                            fileContent = formatted
-                            toastMessage = "JSON Prettified"
-                        } catch (e: Exception) {
-                            toastMessage = "Invalid JSON"
                         }
-                    } else {
-                        toastMessage = "Formatted document"
-                    }
-                },
-                onAddressClick = onAddressClick,
-                onZoomIn = {
-                    if (fileType == FileType.PDF) {
-                        if (pdfZoomScale < 2.5f) pdfZoomScale += 0.2f
-                    } else if (fileType == FileType.IMAGE) {
-                        if (imageZoomScale < 3f) imageZoomScale += 0.2f
-                    }
-                },
-                onZoomOut = {
-                    if (fileType == FileType.PDF) {
-                        if (pdfZoomScale > 0.6f) pdfZoomScale -= 0.2f
-                    } else if (fileType == FileType.IMAGE) {
-                        if (imageZoomScale > 0.4f) imageZoomScale -= 0.2f
-                    }
-                },
-                onResetZoom = {
-                    if (fileType == FileType.PDF) {
-                        pdfZoomScale = 1f
-                    } else if (fileType == FileType.IMAGE) {
-                        imageZoomScale = 1f
-                        imageRotation = 0f
-                    }
-                },
-                onRotate = {
-                    imageRotation = (imageRotation + 90f) % 360f
-                },
-                onInvertCanvas = {
-                    imageDarkCanvas = !imageDarkCanvas
-                },
-                onTogglePreviewMode = {
-                    if (fileType == FileType.MARKDOWN) {
-                        mdEditMode = !mdEditMode
-                    } else if (isHtmlFile) {
-                        htmlLivePreviewMode = !htmlLivePreviewMode
-                    }
-                },
-                isPreviewMode = if (fileType == FileType.MARKDOWN) !mdEditMode else htmlLivePreviewMode,
-                onTogglePlayPause = {
-                    isMediaPlaying = !isMediaPlaying
-                },
-                isPlaying = isMediaPlaying,
-                onBeautifyData = {
-                    try {
-                        val trimmed = fileContent.trim()
-                        val formatted = if (trimmed.startsWith("[")) {
-                            org.json.JSONArray(trimmed).toString(2)
-                        } else {
-                            JSONObject(trimmed).toString(2)
+
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = fileName,
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (hasUnsavedChanges) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF38BDF8))
+                                    )
+                                }
+                            }
+                            Text(
+                                text = fileRelativePath,
+                                color = Color(0xFF64748B),
+                                fontSize = 11.sp,
+                                maxLines = 1
+                            )
                         }
-                        fileContent = formatted
-                        toastMessage = "JSON Beautified"
-                    } catch (e: Exception) {
-                        toastMessage = "Invalid JSON"
                     }
-                },
-                onMinifyData = {
-                    try {
-                        val trimmed = fileContent.trim()
-                        val formatted = if (trimmed.startsWith("[")) {
-                            org.json.JSONArray(trimmed).toString()
-                        } else {
-                            JSONObject(trimmed).toString()
+
+                    // Right: Action Buttons
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Markdown Mode Toggle
+                        if (fileType == FileType.MARKDOWN) {
+                            IconButton(
+                                onClick = { mdEditMode = !mdEditMode },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (mdEditMode) Icons.Rounded.Visibility else Icons.Rounded.Edit,
+                                    contentDescription = if (mdEditMode) "Preview" else "Edit",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
                         }
-                        fileContent = formatted
-                        toastMessage = "JSON Minified"
-                    } catch (e: Exception) {
-                        toastMessage = "Invalid JSON"
+
+                        // HTML Live Website Preview Toggle
+                        if (isHtmlFile) {
+                            IconButton(
+                                onClick = { htmlLivePreviewMode = !htmlLivePreviewMode },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (htmlLivePreviewMode) Icons.Rounded.Code else Icons.Rounded.PlayArrow,
+                                    contentDescription = if (htmlLivePreviewMode) "Source Code" else "Run Website",
+                                    tint = if (htmlLivePreviewMode) Color(0xFFA78BFA) else Color(0xFF10B981),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // GitHub Style Commit Changes Button
+                        if (hasUnsavedChanges) {
+                            Button(
+                                onClick = {
+                                    commitMessageInput = "Update $fileName"
+                                    showCommitDialog = true
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier
+                                    .height(32.dp)
+                                    .testTag("file_commit_changes_btn")
+                            ) {
+                                Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Commit changes...", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+
+                        // Favorite Toggle
+                        IconButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    isFavorite = fileSystem.toggleFavorite(fileRelativePath)
+                                    toastMessage = if (isFavorite) "Added to Favorites" else "Removed from Favorites"
+                                }
+                            },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                contentDescription = "Favorite",
+                                tint = if (isFavorite) Color(0xFFFBBF24) else Color(0xFF94A3B8),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Share
+                        IconButton(
+                            onClick = { shareFile() },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(Icons.Rounded.Share, contentDescription = "Share", tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
+                        }
+
+                        // Info Dialog
+                        IconButton(
+                            onClick = { showInfoDialog = true },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(Icons.Rounded.Info, contentDescription = "Info", tint = Color(0xFF94A3B8), modifier = Modifier.size(19.dp))
+                        }
+
+                        // Developer Bar ON/OFF Toggle Button
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF064E3B),
+                            border = BorderStroke(1.dp, Color(0xFF10B981)),
+                            modifier = Modifier
+                                .clickable { onToggleDeveloperBar() }
+                                .testTag("file_dev_bar_toggle_off_btn")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .background(Color(0xFF34D399), CircleShape)
+                                )
+                                Text(
+                                    text = "DEV ON",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFF34D399)
+                                )
+                                Icon(
+                                    imageVector = Icons.Rounded.PowerSettingsNew,
+                                    contentDescription = "Turn Developer Bar OFF",
+                                    tint = Color(0xFF34D399),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
+                        }
+
+                        // Close Tab
+                        IconButton(
+                            onClick = onCloseTab,
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(Icons.Rounded.Close, contentDescription = "Close", tint = Color(0xFFE2E8F0), modifier = Modifier.size(20.dp))
+                        }
                     }
-                },
-                onCopyData = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("File Content", fileContent))
-                    toastMessage = "Copied to clipboard"
-                },
-                onShareFile = { shareFile() },
-                onSearchDoc = {
-                    toastMessage = "Searching in $fileName"
                 }
-            )
+            }
         } else {
             // When Developer Bar is toggled OFF: Bar is hidden from files too!
             // Provide a minimal tab close button at top-end
@@ -403,27 +447,11 @@ fun GVONEFileViewerScreen(
                     }
 
                     FileType.PDF -> {
-                        PdfDocumentViewer(
-                            pdfFile = file,
-                            externalZoomScale = pdfZoomScale,
-                            onZoomChange = { pdfZoomScale = it }
-                        )
+                        PdfDocumentViewer(pdfFile = file)
                     }
 
                     FileType.IMAGE -> {
-                        ImageFileViewer(
-                            imageFile = file,
-                            externalZoomScale = imageZoomScale,
-                            externalRotation = imageRotation,
-                            externalDarkCanvas = imageDarkCanvas,
-                            onZoomChange = { imageZoomScale = it },
-                            onRotationChange = { imageRotation = it },
-                            onToggleDarkCanvas = { imageDarkCanvas = !imageDarkCanvas }
-                        )
-                    }
-
-                    FileType.AUDIO, FileType.VIDEO -> {
-                        MediaPlayerViewer(mediaFile = file, fileType = fileType)
+                        ImageFileViewer(imageFile = file)
                     }
 
                     else -> {
@@ -917,20 +945,12 @@ fun HtmlLiveWebsiteViewer(
  * Native Android PDF Document Viewer using PdfRenderer.
  */
 @Composable
-fun PdfDocumentViewer(
-    pdfFile: File,
-    externalZoomScale: Float = 1f,
-    onZoomChange: ((Float) -> Unit)? = null
-) {
+fun PdfDocumentViewer(pdfFile: File) {
     var currentPageIndex by remember { mutableStateOf(0) }
     var pageCount by remember { mutableStateOf(0) }
     var currentBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var zoomScale by remember { mutableFloatStateOf(externalZoomScale) }
+    var zoomScale by remember { mutableStateOf(1f) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(externalZoomScale) {
-        zoomScale = externalZoomScale
-    }
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -1068,18 +1088,10 @@ fun PdfDocumentViewer(
 }
 
 /**
- * Image Viewer with resolution metadata, zoom controls, 90° stepped rotation, and canvas inversion.
+ * Image Viewer with resolution metadata and pinch-zoom layout.
  */
 @Composable
-fun ImageFileViewer(
-    imageFile: File,
-    externalZoomScale: Float = 1f,
-    externalRotation: Float = 0f,
-    externalDarkCanvas: Boolean = true,
-    onZoomChange: ((Float) -> Unit)? = null,
-    onRotationChange: ((Float) -> Unit)? = null,
-    onToggleDarkCanvas: (() -> Unit)? = null
-) {
+fun ImageFileViewer(imageFile: File) {
     val bitmap = remember(imageFile) {
         try {
             BitmapFactory.decodeFile(imageFile.absolutePath)
@@ -1088,343 +1100,48 @@ fun ImageFileViewer(
         }
     }
 
-    var zoomScale by remember { mutableFloatStateOf(externalZoomScale) }
-    var rotationDegrees by remember { mutableFloatStateOf(externalRotation) }
-    var isDarkCanvas by remember { mutableStateOf(externalDarkCanvas) }
-
-    LaunchedEffect(externalZoomScale) { zoomScale = externalZoomScale }
-    LaunchedEffect(externalRotation) { rotationDegrees = externalRotation }
-    LaunchedEffect(externalDarkCanvas) { isDarkCanvas = externalDarkCanvas }
-
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(if (isDarkCanvas) Color(0xFF070B12) else Color(0xFFF1F5F9))
+            .background(Color(0xFF070B12)),
+        contentAlignment = Alignment.Center
     ) {
-        // Image Action Toolbar
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFF111827),
-            border = BorderStroke(1.dp, Color(0xFF1E293B))
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        if (bitmap != null) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(16.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = { if (zoomScale > 0.4f) zoomScale -= 0.2f }, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Rounded.ZoomOut, contentDescription = "Zoom Out", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
-                    }
-                    Text(
-                        text = "${(zoomScale * 100).toInt()}%",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = { if (zoomScale < 3f) zoomScale += 0.2f }, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Rounded.ZoomIn, contentDescription = "Zoom In", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = { zoomScale = 1f; rotationDegrees = 0f }, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Rounded.RestartAlt, contentDescription = "Reset", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
-                    }
-                    IconButton(onClick = { rotationDegrees = (rotationDegrees + 90f) % 360f }, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Rounded.RotateRight, contentDescription = "Rotate 90°", tint = Color(0xFFA78BFA), modifier = Modifier.size(16.dp))
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    IconButton(onClick = { isDarkCanvas = !isDarkCanvas }, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Rounded.Contrast, contentDescription = "Invert Canvas", tint = Color(0xFFEC4899), modifier = Modifier.size(16.dp))
-                    }
-                    if (bitmap != null) {
-                        Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFF1E293B)) {
-                            Text(
-                                text = "${bitmap.width}×${bitmap.height} • ${imageFile.length() / 1024} KB",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Image Canvas with Zoom & Rotate
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .horizontalScroll(rememberScrollState())
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            if (bitmap != null) {
                 Card(
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, if (isDarkCanvas) Color(0xFF1E293B) else Color(0xFFCBD5E1)),
-                    colors = CardDefaults.cardColors(containerColor = if (isDarkCanvas) Color(0xFF0F172A) else Color.White)
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF111827))
                 ) {
                     Image(
                         bitmap = bitmap.asImageBitmap(),
                         contentDescription = imageFile.name,
                         modifier = Modifier
-                            .size(
-                                width = (bitmap.width * zoomScale * 0.5f).dp,
-                                height = (bitmap.height * zoomScale * 0.5f).dp
-                            )
-                            .rotate(rotationDegrees)
-                            .padding(4.dp)
+                            .fillMaxWidth()
+                            .padding(8.dp)
                     )
                 }
-            } else {
-                Text("Unable to render image bitmap", color = Color(0xFF64748B), fontSize = 13.sp)
-            }
-        }
-    }
-}
 
-/**
- * Media Player Viewer for Audio and Video formats (MP3, WAV, AAC, M4A, OGG, MP4, WEBM).
- */
-@Composable
-fun MediaPlayerViewer(
-    mediaFile: File,
-    fileType: FileType
-) {
-    val context = LocalContext.current
-    var isPlaying by remember { mutableStateOf(false) }
-    var currentPositionMs by remember { mutableIntStateOf(0) }
-    var durationMs by remember { mutableIntStateOf(0) }
-    var playbackSpeed by remember { mutableFloatStateOf(1f) }
-    var isLooping by remember { mutableStateOf(false) }
-    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    var errorMsg by remember { mutableStateOf<String?>(null) }
-
-    DisposableEffect(mediaFile) {
-        val player = MediaPlayer().apply {
-            try {
-                setDataSource(context, Uri.fromFile(mediaFile))
-                prepare()
-                durationMs = duration
-                setOnCompletionListener {
-                    if (!isLooping) isPlaying = false
-                }
-            } catch (e: Exception) {
-                errorMsg = "Playback error: ${e.localizedMessage}"
-            }
-        }
-        mediaPlayer = player
-
-        onDispose {
-            player.release()
-            mediaPlayer = null
-        }
-    }
-
-    LaunchedEffect(isPlaying) {
-        while (isPlaying) {
-            mediaPlayer?.let {
-                if (it.isPlaying) {
-                    currentPositionMs = it.currentPosition
-                }
-            }
-            kotlinx.coroutines.delay(200)
-        }
-    }
-
-    fun togglePlayPause() {
-        mediaPlayer?.let { player ->
-            if (player.isPlaying) {
-                player.pause()
-                isPlaying = false
-            } else {
-                try {
-                    player.playbackParams = player.playbackParams.setSpeed(playbackSpeed)
-                } catch (_: Exception) {}
-                player.isLooping = isLooping
-                player.start()
-                isPlaying = true
-            }
-        }
-    }
-
-    fun seekTo(posMs: Int) {
-        mediaPlayer?.seekTo(posMs)
-        currentPositionMs = posMs
-    }
-
-    fun cycleSpeed() {
-        val nextSpeed = when (playbackSpeed) {
-            0.75f -> 1f
-            1f -> 1.25f
-            1.25f -> 1.5f
-            1.5f -> 2f
-            else -> 0.75f
-        }
-        playbackSpeed = nextSpeed
-        mediaPlayer?.let {
-            if (it.isPlaying) {
-                try {
-                    it.playbackParams = it.playbackParams.setSpeed(nextSpeed)
-                } catch (_: Exception) {}
-            }
-        }
-    }
-
-    fun formatTime(ms: Int): String {
-        val totalSec = ms / 1000
-        val min = totalSec / 60
-        val sec = totalSec % 60
-        return "%d:%02d".format(min, sec)
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF090D16))
-            .padding(24.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-            border = BorderStroke(1.dp, Color(0xFF1E293B)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 520.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Vinyl / Waveform Album Art
+                Spacer(modifier = Modifier.height(14.dp))
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFF161F30),
-                    border = BorderStroke(1.dp, Color(0xFF2C3E55)),
-                    modifier = Modifier.size(140.dp)
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFF1E293B)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (fileType == FileType.VIDEO) Icons.Rounded.Movie else Icons.Rounded.Audiotrack,
-                            contentDescription = null,
-                            tint = if (fileType == FileType.VIDEO) Color(0xFFF97316) else Color(0xFF8B5CF6),
-                            modifier = Modifier.size(60.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Text(
-                    text = mediaFile.name,
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Text(
-                    text = "${mediaFile.extension.uppercase()} Media Track • ${mediaFile.length() / 1024} KB",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // Progress Bar
-                Slider(
-                    value = if (durationMs > 0) (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
-                    onValueChange = { fraction ->
-                        val targetMs = (fraction * durationMs).toInt()
-                        seekTo(targetMs)
-                    },
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color(0xFFF97316),
-                        activeTrackColor = Color(0xFFF97316),
-                        inactiveTrackColor = Color(0xFF1E293B)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(text = formatTime(currentPositionMs), color = Color(0xFF94A3B8), fontSize = 11.sp)
-                    Text(text = formatTime(durationMs), color = Color(0xFF94A3B8), fontSize = 11.sp)
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Media Controls
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Speed Button
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF1F2937),
-                        modifier = Modifier.clickable { cycleSpeed() }
-                    ) {
-                        Text(
-                            text = "${playbackSpeed}x",
-                            color = Color(0xFF38BDF8),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
-                        )
-                    }
-
-                    // Seek backward 5s
-                    IconButton(onClick = { seekTo(maxOf(0, currentPositionMs - 5000)) }) {
-                        Icon(Icons.Rounded.Replay5, contentDescription = "Back 5s", tint = Color.White)
-                    }
-
-                    // Main Play/Pause Button
-                    FilledIconButton(
-                        onClick = { togglePlayPause() },
-                        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFF97316)),
-                        modifier = Modifier.size(52.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-
-                    // Seek forward 5s
-                    IconButton(onClick = { seekTo(minOf(durationMs, currentPositionMs + 5000)) }) {
-                        Icon(Icons.Rounded.Forward5, contentDescription = "Forward 5s", tint = Color.White)
-                    }
-
-                    // Loop button
-                    IconButton(onClick = {
-                        isLooping = !isLooping
-                        mediaPlayer?.isLooping = isLooping
-                    }) {
-                        Icon(
-                            Icons.Rounded.Repeat,
-                            contentDescription = "Loop",
-                            tint = if (isLooping) Color(0xFFF97316) else Color(0xFF64748B)
-                        )
-                    }
-                }
-
-                if (errorMsg != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(text = errorMsg.orEmpty(), color = Color(0xFFF87171), fontSize = 12.sp)
+                    Text(
+                        text = "${bitmap.width} × ${bitmap.height} px  •  ${imageFile.length() / 1024} KB",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                    )
                 }
             }
+        } else {
+            Text("Unable to render image bitmap", color = Color(0xFF64748B), fontSize = 13.sp)
         }
     }
 }
