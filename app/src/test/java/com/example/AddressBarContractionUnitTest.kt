@@ -53,4 +53,32 @@ class AddressBarContractionUnitTest {
         assertFalse(unpinnedSettings.terminalPinnedToScreen)
         assertEquals(0.85f, unpinnedSettings.terminalHeightFraction, 0.001f)
     }
+
+    @Test
+    fun testGeminiLiveVoiceCaptionFormatting() {
+        val userSpeech = "Explain coroutines in Kotlin"
+        val userLine = com.example.data.terminal.TerminalLine(
+            text = "🗣️ User: $userSpeech",
+            type = com.example.data.terminal.TerminalLineType.COMMAND
+        )
+        assertTrue(userLine.text.startsWith("🗣️ User:"))
+        assertTrue(userLine.text.contains(userSpeech))
+        assertEquals(com.example.data.terminal.TerminalLineType.COMMAND, userLine.type)
+
+        val aiAnswer = "Coroutines are lightweight threads that provide asynchronous non-blocking execution in Kotlin."
+        val aiLine = com.example.data.terminal.TerminalLine(
+            text = "🤖 Gemini Live: $aiAnswer",
+            type = com.example.data.terminal.TerminalLineType.AI_RESPONSE
+        )
+        assertTrue(aiLine.text.startsWith("🤖 Gemini Live:"))
+        assertTrue(aiLine.text.contains(aiAnswer))
+        assertEquals(com.example.data.terminal.TerminalLineType.AI_RESPONSE, aiLine.type)
+
+        val systemStartLine = com.example.data.terminal.TerminalLine(
+            text = "🎙️ [Gemini Live] Session started. Listening for your voice...",
+            type = com.example.data.terminal.TerminalLineType.SYSTEM
+        )
+        assertTrue(systemStartLine.text.contains("Session started"))
+        assertEquals(com.example.data.terminal.TerminalLineType.SYSTEM, systemStartLine.type)
+    }
 }

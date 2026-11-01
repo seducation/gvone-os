@@ -15,6 +15,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -285,6 +287,9 @@ fun BrowserApp(
     val terminalTargetDir by viewModel.terminalTargetDirectory.collectAsStateWithLifecycle()
     val terminalExecutionStatus by viewModel.terminalExecutionStatus.collectAsStateWithLifecycle()
     val terminalExecutionMessage by viewModel.terminalExecutionMessage.collectAsStateWithLifecycle()
+    val isGeminiLiveActive by viewModel.isGeminiLiveActive.collectAsStateWithLifecycle()
+    val isGeminiLiveListening by viewModel.isGeminiLiveListening.collectAsStateWithLifecycle()
+    val isGeminiLiveSpeaking by viewModel.isGeminiLiveSpeaking.collectAsStateWithLifecycle()
 
     LaunchedEffect(currentTab?.id, currentTab?.url, currentTab?.title, isPrivateMode, workspaceMode) {
         if (workspaceMode == XcodeWorkspaceMode.BROWSER && !isPrivateMode && currentTab != null) {
@@ -364,6 +369,28 @@ fun BrowserApp(
             Toast.makeText(context, "Camera permission granted", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(context, "Camera permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.toggleGeminiLiveSession()
+        } else {
+            Toast.makeText(context, "Microphone permission is required for Gemini Live voice conversation", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val onToggleGeminiLive = {
+        val hasAudioPermission = ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasAudioPermission) {
+            viewModel.toggleGeminiLiveSession()
+        } else {
+            recordAudioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
         }
     }
 
@@ -1026,6 +1053,10 @@ fun BrowserApp(
                 workspaceDirectories = workspaceDirs,
                 onSelectTargetDirectory = { viewModel.setTerminalTargetDirectory(it) },
                 onExecuteTerminalCommand = { cmd -> viewModel.executeTerminalCommand(cmd) },
+                isGeminiLiveActive = isGeminiLiveActive,
+                isGeminiLiveListening = isGeminiLiveListening,
+                isGeminiLiveSpeaking = isGeminiLiveSpeaking,
+                onToggleGeminiLive = onToggleGeminiLive,
                 modifier = Modifier
                     .align(if (settings.addressBarBottom) Alignment.BottomCenter else Alignment.TopCenter)
                     .onGloballyPositioned { coordinates ->

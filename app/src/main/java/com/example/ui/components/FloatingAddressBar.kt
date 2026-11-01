@@ -136,6 +136,10 @@ fun FloatingAddressBar(
     workspaceDirectories: List<String> = emptyList(),
     onSelectTargetDirectory: ((String) -> Unit)? = null,
     onExecuteTerminalCommand: ((String) -> Unit)? = null,
+    isGeminiLiveActive: Boolean = false,
+    isGeminiLiveListening: Boolean = false,
+    isGeminiLiveSpeaking: Boolean = false,
+    onToggleGeminiLive: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -921,24 +925,59 @@ fun FloatingAddressBar(
                                     }
                                 }
 
+                                val livePulseTransition = rememberInfiniteTransition(label = "gemini_live_pulse")
+                                val livePulseScale by livePulseTransition.animateFloat(
+                                    initialValue = 1.0f,
+                                    targetValue = 1.25f,
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(750, easing = FastOutSlowInEasing),
+                                        repeatMode = RepeatMode.Reverse
+                                    ),
+                                    label = "livePulseScale"
+                                )
+
                                 IconButton(
                                     onClick = {
-                                        isFocused = false
-                                        onWritingStateChanged?.invoke(false)
-                                        focusManager.clearFocus()
-                                        inputText = ""
-                                        onNavigate(HOME_WEB_APP_URL)
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onToggleGeminiLive()
                                     },
                                     modifier = Modifier
-                                        .size(28.dp)
-                                        .testTag("address_bar_home_close_button")
+                                        .size(32.dp)
+                                        .testTag("address_bar_gemini_live_button")
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = "Return to Home",
-                                        tint = Color(0xFF8E9BAE),
-                                        modifier = Modifier.size(17.dp)
-                                    )
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        if (isGeminiLiveActive) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(26.dp)
+                                                    .scale(livePulseScale)
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        Brush.radialGradient(
+                                                            listOf(
+                                                                Color(0xFF00E5FF).copy(alpha = 0.45f),
+                                                                Color(0xFFA855F7).copy(alpha = 0.25f),
+                                                                Color.Transparent
+                                                            )
+                                                        )
+                                                    )
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = when {
+                                                isGeminiLiveSpeaking -> Icons.Rounded.VolumeUp
+                                                isGeminiLiveListening -> Icons.Rounded.GraphicEq
+                                                isGeminiLiveActive -> Icons.Rounded.Mic
+                                                else -> Icons.Rounded.AutoAwesome
+                                            },
+                                            contentDescription = if (isGeminiLiveActive) "Gemini Live Active (Tap to Stop)" else "Gemini Live Voice (Tap to Talk)",
+                                            tint = if (isGeminiLiveActive) Color(0xFF00E5FF) else Color(0xFF38BDF8),
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -21,6 +21,7 @@ import com.example.data.sync.*
 import com.example.data.terminal.TerminalLine
 import com.example.data.terminal.TerminalLineType
 import com.example.data.tor.*
+import com.example.data.voice.GeminiLiveVoiceManager
 import com.example.ui.contextmenu.LinkContextMenuData
 import com.example.ui.contextmenu.PagePreviewData
 import com.example.ui.screens.ide.XcodeWorkspaceMode
@@ -108,6 +109,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         shellEngine = shellEngine,
         agentEngine = agentEngine
     )
+    val geminiLiveVoiceManager = GeminiLiveVoiceManager(application, viewModelScope)
+    val isGeminiLiveActive: StateFlow<Boolean> = geminiLiveVoiceManager.isVoiceActive
+    val isGeminiLiveListening: StateFlow<Boolean> = geminiLiveVoiceManager.isListening
+    val isGeminiLiveSpeaking: StateFlow<Boolean> = geminiLiveVoiceManager.isSpeaking
+
     private val _terminalLines = MutableStateFlow<List<TerminalLine>>(emptyList())
     val terminalLines: StateFlow<List<TerminalLine>> = _terminalLines.asStateFlow()
 
@@ -1380,6 +1386,18 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             botAssistant.terminalOutput.collect { output ->
                 appendTerminalLine(output.text, output.type)
             }
+        }
+
+        geminiLiveVoiceManager.onTranscriptRecognized = { transcript ->
+            handleGeminiLiveTranscript(transcript)
+        }
+        geminiLiveVoiceManager.onSpeechError = { errorMsg ->
+            appendTerminalLine(
+                TerminalLine(
+                    text = "⚠️ [Gemini Live] $errorMsg",
+                    type = TerminalLineType.WARNING
+                )
+            )
         }
 
         val savedSessions = terminalRepository.getSavedSessions()
@@ -3093,5 +3111,88 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             repository.deleteHistoryByDomain(domain)
             Toast.makeText(context, "History cleared for $domain", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun toggleGeminiLiveSession() {
+        if (geminiLiveVoiceManager.isVoiceActive.value) {
+            geminiLiveVoiceManager.stopLiveSession()
+            appendTerminalLine(
+                TerminalLine(
+                    text = "🛑 [Gemini Live] Voice session stopped.",
+                    type = TerminalLineType.SYSTEM
+                )
+            )
+        } else {
+            openSheet(ActiveSheet.Terminal)
+            appendTerminalLine(
+                TerminalLine(
+                    text = "🎙️ [Gemini Live] Session started. Listening for your voice...",
+                    type = TerminalLineType.SYSTEM
+                )
+            )
+            geminiLiveVoiceManager.startLiveSession()
+        }
+    }
+
+    fun handleGeminiLiveTranscript(transcript: String) {
+        if (transcript.isBlank()) return
+
+        // 1. Caption user speech in terminal just like a chatbot
+        appendTerminalLine(
+            TerminalLine(
+                text = "🗣️ User: $transcript",
+                type = TerminalLineType.COMMAND
+            )
+        )
+
+        // 2. Show thinking indicator caption in terminal
+        val thinkingId = UUID.randomUUID().toString()
+        appendTerminalLine(
+            TerminalLine(
+                id = thinkingId,
+                text = "🤖 Gemini Live: 💭 Thinking...",
+                type = TerminalLineType.INFO
+            )
+        )
+
+        viewModelScope.launch {
+            try {
+                val prompt = """
+                    You are Gemini Live, a fast, direct, witty, and conversational AI voice assistant for GVONE Browser.
+                    Answer the user's query naturally, concisely (1-3 sentences maximum), and clearly so it can be spoken aloud seamlessly.
+                    
+                    User query: "$transcript"
+                """.trimIndent()
+                val response = aiService.askAI(prompt)?.trim()
+                    ?: "I heard you, but I couldn't reach the AI server right now."
+
+                // 3. Caption AI response in terminal just like a chatbot!
+                appendTerminalLine(
+                    TerminalLine(
+                        text = "🤖 Gemini Live: $response",
+                        type = TerminalLineType.AI_RESPONSE
+                    )
+                )
+
+                // 4. Speak aloud using TextToSpeech
+                geminiLiveVoiceManager.speakAloud(response)
+            } catch (e: Exception) {
+                appendTerminalLine(
+                    TerminalLine(
+                        text = "🤖 Gemini Live: Error: ${e.message}",
+                        type = TerminalLineType.ERROR
+                    )
+                )
+            }
+        }
+    }
+
+    fun simulateGeminiLiveVoiceInput(transcript: String) {
+        handleGeminiLiveTranscript(transcript)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        geminiLiveVoiceManager.destroy()
     }
 }
