@@ -4,6 +4,8 @@ import com.example.data.model.BrowserTab
 import com.example.ui.components.DevBarTab
 import com.example.ui.components.DevConsoleLog
 import android.webkit.ConsoleMessage
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -56,7 +58,7 @@ class WebsiteDeveloperBarUnitTest {
             path = "GVONE/architecture.md",
             mode = com.example.ui.screens.ide.XcodeWorkspaceMode.MARKDOWN,
             description = "Markdown Docs",
-            icon = androidx.compose.material.icons.Icons.Rounded.Description,
+            icon = Icons.Rounded.Description,
             tintColor = androidx.compose.ui.graphics.Color(0xFF10B981)
         )
         assertEquals("architecture.md", markdownFile.title)
@@ -67,7 +69,7 @@ class WebsiteDeveloperBarUnitTest {
             path = "Downloads/document.pdf",
             mode = com.example.ui.screens.ide.XcodeWorkspaceMode.PDF_VIEWER,
             description = "PDF Multi-page Document",
-            icon = androidx.compose.material.icons.Icons.Rounded.PictureAsPdf,
+            icon = Icons.Rounded.PictureAsPdf,
             tintColor = androidx.compose.ui.graphics.Color(0xFFEF4444)
         )
         assertEquals("document.pdf", pdfFile.title)

@@ -179,10 +179,17 @@ fun XcodeWorkspaceStage(
                     onSendMessage = { message, ctx -> viewModel.sendBotMessage(message, ctx) },
                     onContextChanged = { viewModel.observeBotContext(it, "ide") },
                     onPersonaChange = { viewModel.setActiveBotPersona(it) },
-                    onSelectSpecializedTask = { task, targetAgent ->
-                        viewModel.executeBotSpecializedTask(task, targetAgent)
+                    onApplyCodeToEditor = { code ->
+                        activeEditorTab?.let { tabItem ->
+                            onSaveFileContent(tabItem.fileItem.path, code)
+                        }
                     },
-                    onOpenIdeEditor = { viewModel.setWorkspaceMode(XcodeWorkspaceMode.CODE_EDITOR) },
+                    onCreateFileFromCode = { filename, code ->
+                        mainScope.launch {
+                            viewModel.fileSystem.createFile(viewModel.terminalTargetDirectory.value, filename, code)
+                            onNewFileTab()
+                        }
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             }

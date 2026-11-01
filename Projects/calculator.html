@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>GVONE OS Calculator</title>
+    <style>
+        :root {
+            --bg-color: #090C10;
+            --surface-color: #0D1117;
+            --surface-elevated: #161B22;
+            --border-color: #21262D;
+            --text-primary: #E6EDF3;
+            --text-secondary: #8B949E;
+            --accent-cyan: #00E5FF;
+            --accent-purple: #A855F7;
+            --accent-green: #3FB950;
+            --accent-amber: #F59E0B;
+            --accent-red: #F85149;
+            --btn-num-bg: #1A2130;
+            --btn-num-hover: #263349;
+            --btn-op-bg: #212638;
+            --btn-op-hover: #2F3952;
+            --btn-special-bg: #1E1B4B;
+            --btn-special-hover: #312E81;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji";
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            overflow-x: hidden;
+        }
+
+        .calculator-container {
+            width: 100%;
+            max-width: 400px;
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(0, 229, 255, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(12px);
+        }
+
+        /* Top Header */
+        .calculator-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: var(--text-primary);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        .badge-cns {
+            background: rgba(0, 229, 255, 0.15);
+            border: 1px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-weight: 800;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .icon-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .icon-btn:hover {
+            background: var(--surface-elevated);
+            color: var(--text-primary);
+        }
+
+        .icon-btn.active {
+            color: var(--accent-cyan);
+            background: rgba(0, 229, 255, 0.1);
+        }
+
+        /* Screen / Display Area */
+        .display-area {
+            padding: 20px 20px 14px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: flex-end;
+            min-height: 130px;
+            background: linear-gradient(180deg, rgba(13, 17, 23, 0.9) 0%, rgba(22, 27, 34, 0.6) 100%);
+            border-bottom: 1px solid var(--border-color);
+            position: relative;
+        }
+
+        .memory-indicator {
+            position: absolute;
+            top: 12px;
+            left: 18px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent-purple);
+            font-family: ui-monospace, monospace;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .memory-indicator.visible {
+            opacity: 1;
+        }
+
+        .history-expression {
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-family: ui-monospace, monospace;
+            min-height: 20px;
+            word-break: break-all;
+            text-align: right;
+            margin-bottom: 6px;
+        }
+
+        .main-display {
+            font-size: 42px;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-family: ui-monospace, monospace;
+            letter-spacing: -1px;
+            word-break: break-all;
+            text-align: right;
+            width: 100%;
+            transition: font-size 0.15s ease;
+        }
+
+        /* Memory Buttons Bar */
+        .memory-bar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            padding: 10px 14px 4px;
+            background: var(--surface-color);
+        }
+
+        .mem-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 6px 0;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: ui-monospace, monospace;
+        }
+
+        .mem-btn:hover {
+            background: rgba(168, 85, 247, 0.15);
+            color: var(--accent-purple);
+            border-color: rgba(168, 85, 247, 0.3);
+        }
+
+        /* Keypad Grid */
+        .keypad {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            padding: 14px;
+        }
+
+        .btn {
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            font-size: 19px;
+            font-weight: 600;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.08s ease, background-color 0.15s ease, border-color 0.15s ease;
+            outline: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Button Variant Themes */
+        .btn-number {
+            background: var(--btn-num-bg);
+            color: var(--text-primary);
+        }
+        .btn-number:hover {
+            background: var(--btn-num-hover);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-operator {
+            background: var(--btn-op-bg);
+            color: var(--accent-cyan);
+            font-family: ui-monospace, monospace;
+            font-size: 21px;
+        }
+        .btn-operator:hover {
+            background: var(--btn-op-hover);
+            border-color: var(--accent-cyan);
+        }
+
+        .btn-special {
+            background: var(--btn-special-bg);
+            color: #C084FC;
+            font-size: 16px;
+        }
+        .btn-special:hover {
+            background: var(--btn-special-hover);
+            border-color: var(--accent-purple);
+        }
+
+        .btn-clear {
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--accent-red);
+            border-color: rgba(248, 81, 73, 0.3);
+        }
+        .btn-clear:hover {
+            background: rgba(248, 81, 73, 0.25);
+            border-color: var(--accent-red);
+        }
+
+        .btn-equals {
+            background: linear-gradient(135deg, #0083B0 0%, #00E5FF 100%);
+            color: #090C10;
+            font-weight: 800;
+            font-size: 24px;
+            border: none;
+            box-shadow: 0 4px 15px rgba(0, 229, 255, 0.35);
+        }
+        .btn-equals:hover {
+            box-shadow: 0 6px 20px rgba(0, 229, 255, 0.55);
+            transform: translateY(-1px);
+        }
+        .btn-equals:active {
+            transform: scale(0.96);
+        }
+
+        /* History Flyout Drawer */
+        .history-drawer {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: #0B0F17;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .history-drawer.open {
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .history-list {
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .history-item {
+            padding: 8px 10px;
+            background: var(--surface-elevated);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .history-item:hover {
+            background: rgba(0, 229, 255, 0.08);
+            border-color: var(--accent-cyan);
+        }
+
+        .history-item-calc {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-family: ui-monospace, monospace;
+        }
+
+        .history-item-result {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            font-family: ui-monospace, monospace;
+        }
+
+        .history-empty {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-align: center;
+            padding: 16px 0;
+            font-family: ui-monospace, monospace;
+        }
+
+        /* Bottom status / hints */
+        .calculator-footer {
+            padding: 8px 16px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-secondary);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            font-family: ui-monospace, monospace;
+        }
+
+        .footer-key-hint {
+            color: var(--accent-cyan);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="calculator-container" id="calcApp">
+        <!-- Top Bar -->
+        <div class="calculator-header">
+            <div class="header-title">
+                <span>GVONE CALCULATOR</span>
+                <span class="badge-cns">CNS 2.0</span>
+            </div>
+            <div class="header-actions">
+                <button class="icon-btn" id="historyToggleBtn" title="Toggle Calculation History">🕒</button>
+                <button class="icon-btn" id="clearHistoryBtn" title="Clear History">🗑️</button>
+            </div>
+        </div>
+
+        <!-- History Drawer -->
+        <div class="history-drawer" id="historyDrawer">
+            <div class="history-list" id="historyList">
+                <div class="history-empty">No calculations yet</div>
+            </div>
+        </div>
+
+        <!-- Display Area -->
+        <div class="display-area">
+            <span class="memory-indicator" id="memIndicator">M</span>
+            <div class="history-expression" id="historyDisplay">&nbsp;</div>
+            <div class="main-display" id="mainDisplay">0</div>
+        </div>
+
+        <!-- Memory Operations Row -->
+        <div class="memory-bar">
+            <button class="mem-btn" data-action="mc">MC</button>
+            <button class="mem-btn" data-action="mr">MR</button>
+            <button class="mem-btn" data-action="m-plus">M+</button>
+            <button class="mem-btn" data-action="m-minus">M−</button>
+        </div>
+
+        <!-- Interactive Keypad -->
+        <div class="keypad">
+            <!-- Row 1: Special & Clear -->
+            <button class="btn btn-clear" data-action="clear-all">AC</button>
+            <button class="btn btn-special" data-action="backspace">⌫</button>
+            <button class="btn btn-special" data-action="percent">%</button>
+            <button class="btn btn-operator" data-op="÷">÷</button>
+
+            <!-- Row 2: Powers & Multiply -->
+            <button class="btn btn-number" data-num="7">7</button>
+            <button class="btn btn-number" data-num="8">8</button>
+            <button class="btn btn-number" data-num="9">9</button>
+            <button class="btn btn-operator" data-op="×">×</button>
+
+            <!-- Row 3: Square Root & Subtract -->
+            <button class="btn btn-number" data-num="4">4</button>
+            <button class="btn btn-number" data-num="5">5</button>
+            <button class="btn btn-number" data-num="6">6</button>
+            <button class="btn btn-operator" data-op="−">−</button>
+
+            <!-- Row 4: Power & Add -->
+            <button class="btn btn-number" data-num="1">1</button>
+            <button class="btn btn-number" data-num="2">2</button>
+            <button class="btn btn-number" data-num="3">3</button>
+            <button class="btn btn-operator" data-op="+">+</button>
+
+            <!-- Row 5: Sign, Zero, Dot, Equals -->
+            <button class="btn btn-special" data-action="negate">±</button>
+            <button class="btn btn-number" data-num="0">0</button>
+            <button class="btn btn-special" data-action="decimal">.</button>
+            <button class="btn btn-equals" data-action="calculate">=</button>
+        </div>
+
+        <!-- Footer -->
+        <div class="calculator-footer">
+            <span>Keyboard Supported</span>
+            <span>Press <span class="footer-key-hint">Enter</span> or <span class="footer-key-hint">=</span></span>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // State
+            let currentInput = "0";
+            let previousOperand = null;
+            let currentOperator = null;
+            let shouldResetScreen = false;
+            let memoryValue = 0;
+            const history = [];
+
+            // DOM Elements
+            const mainDisplay = document.getElementById("mainDisplay");
+            const historyDisplay = document.getElementById("historyDisplay");
+            const memIndicator = document.getElementById("memIndicator");
+            const historyDrawer = document.getElementById("historyDrawer");
+            const historyList = document.getElementById("historyList");
+            const historyToggleBtn = document.getElementById("historyToggleBtn");
+            const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+
+            // Format number cleanly (avoid 0.30000000000000004 floating quirks)
+            function formatNumber(num) {
+                if (num === null || isNaN(num) || !isFinite(num)) return "Error";
+                // Trim floating inaccuracies up to 10 decimal digits
+                const rounded = parseFloat(Number(num).toPrecision(12));
+                const parts = rounded.toString().split(".");
+                parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+                return parts.join(".");
+            }
+
+            function updateDisplay() {
+                // Adjust font size dynamically if input grows long
+                const len = currentInput.length;
+                if (len > 12) {
+                    mainDisplay.style.fontSize = "26px";
+                } else if (len > 9) {
+                    mainDisplay.style.fontSize = "32px";
+                } else {
+                    mainDisplay.style.fontSize = "42px";
+                }
+
+                if (currentInput === "Cannot divide by 0" || currentInput === "Error") {
+                    mainDisplay.textContent = currentInput;
+                    return;
+                }
+
+                if (currentInput.includes(".")) {
+                    const [intPart, decPart] = currentInput.split(".");
+                    const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+                    mainDisplay.textContent = formattedInt + "." + decPart;
+                } else {
+                    mainDisplay.textContent = currentInput.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+                }
+            }
+
+            function updateHistoryDisplay() {
+                if (previousOperand !== null && currentOperator !== null) {
+                    historyDisplay.textContent = `${formatNumber(previousOperand)} ${currentOperator}`;
+                } else {
+                    historyDisplay.innerHTML = "&nbsp;";
+                }
+            }
+
+            // Input Number
+            function inputDigit(digit) {
+                if (currentInput === "Cannot divide by 0" || currentInput === "Error" || shouldResetScreen) {
+                    currentInput = digit;
+                    shouldResetScreen = false;
+                } else {
+                    if (currentInput === "0") {
+                        currentInput = digit;
+                    } else if (currentInput.length < 16) {
+                        currentInput += digit;
+                    }
+                }
+                updateDisplay();
+            }
+
+            // Decimal Point handling (prevents multiple dots)
+            function inputDecimal() {
+                if (shouldResetScreen || currentInput === "Cannot divide by 0" || currentInput === "Error") {
+                    currentInput = "0.";
+                    shouldResetScreen = false;
+                } else if (!currentInput.includes(".")) {
+                    currentInput += ".";
+                }
+                updateDisplay();
+            }
+
+            // Negate +/-
+            function toggleSign() {
+                if (currentInput === "0" || currentInput === "Cannot divide by 0" || currentInput === "Error") return;
+                if (currentInput.startsWith("-")) {
+                    currentInput = currentInput.substring(1);
+                } else {
+                    currentInput = "-" + currentInput;
+                }
+                updateDisplay();
+            }
+
+            // Percentage
+            function applyPercent() {
+                const val = parseFloat(currentInput);
+                if (isNaN(val)) return;
+                currentInput = (val / 100).toString();
+                updateDisplay();
+            }
+
+            // Backspace / Delete last character
+            function handleBackspace() {
+                if (shouldResetScreen || currentInput === "Cannot divide by 0" || currentInput === "Error") {
+                    currentInput = "0";
+                } else if (currentInput.length > 1) {
+                    currentInput = currentInput.slice(0, -1);
+                    if (currentInput === "-") currentInput = "0";
+                } else {
+                    currentInput = "0";
+                }
+                updateDisplay();
+            }
+
+            // Operators (+, -, ×, ÷)
+            function handleOperator(op) {
+                const inputVal = parseFloat(currentInput);
+
+                if (currentOperator !== null && !shouldResetScreen) {
+                    // Chained operation: compute intermediate first
+                    calculateResult();
+                    previousOperand = parseFloat(currentInput);
+                } else {
+                    previousOperand = inputVal;
+                }
+
+                currentOperator = op;
+                shouldResetScreen = true;
+                updateHistoryDisplay();
+            }
+
+            // Core Calculation Engine
+            function calculateResult() {
+                if (previousOperand === null || currentOperator === null) return;
+
+                const currentVal = parseFloat(currentInput);
+                let result = 0;
+
+                switch (currentOperator) {
+                    case "+":
+                        result = previousOperand + currentVal;
+                        break;
+                    case "−":
+                    case "-":
+                        result = previousOperand - currentVal;
+                        break;
+                    case "×":
+                    case "*":
+                        result = previousOperand * currentVal;
+                        break;
+                    case "÷":
+                    case "/":
+                        // Edge Case: Division by zero
+                        if (currentVal === 0) {
+                            currentInput = "Cannot divide by 0";
+                            previousOperand = null;
+                            currentOperator = null;
+                            updateDisplay();
+                            updateHistoryDisplay();
+                            return;
+                        }
+                        result = previousOperand / currentVal;
+                        break;
+                    default:
+                        return;
+                }
+
+                // Add to History
+                const record = {
+                    expr: `${formatNumber(previousOperand)} ${currentOperator} ${formatNumber(currentVal)} =`,
+                    result: formatNumber(result),
+                    rawResult: result
+                };
+                history.unshift(record);
+                renderHistory();
+
+                // Clean precision formatting
+                currentInput = parseFloat(Number(result).toPrecision(12)).toString();
+                previousOperand = null;
+                currentOperator = null;
+                shouldResetScreen = true;
+
+                updateDisplay();
+                updateHistoryDisplay();
+            }
+
+            // Clear All
+            function clearAll() {
+                currentInput = "0";
+                previousOperand = null;
+                currentOperator = null;
+                shouldResetScreen = false;
+                updateDisplay();
+                updateHistoryDisplay();
+            }
+
+            // Memory Functions
+            function handleMemory(action) {
+                const currentVal = parseFloat(currentInput) || 0;
+                switch (action) {
+                    case "mc":
+                        memoryValue = 0;
+                        memIndicator.classList.remove("visible");
+                        break;
+                    case "mr":
+                        currentInput = memoryValue.toString();
+                        shouldResetScreen = true;
+                        updateDisplay();
+                        break;
+                    case "m-plus":
+                        memoryValue += currentVal;
+                        memIndicator.classList.add("visible");
+                        shouldResetScreen = true;
+                        break;
+                    case "m-minus":
+                        memoryValue -= currentVal;
+                        memIndicator.classList.add("visible");
+                        shouldResetScreen = true;
+                        break;
+                }
+            }
+
+            // History Rendering
+            function renderHistory() {
+                if (history.length === 0) {
+                    historyList.innerHTML = '<div class="history-empty">No calculations yet</div>';
+                    return;
+                }
+                historyList.innerHTML = "";
+                history.slice(0, 20).forEach((item, idx) => {
+                    const row = document.createElement("div");
+                    row.className = "history-item";
+                    row.innerHTML = `
+                        <div class="history-item-calc">${item.expr}</div>
+                        <div class="history-item-result">${item.result}</div>
+                    `;
+                    row.addEventListener("click", () => {
+                        currentInput = item.rawResult.toString();
+                        shouldResetScreen = true;
+                        updateDisplay();
+                        historyDrawer.classList.remove("open");
+                        historyToggleBtn.classList.remove("active");
+                    });
+                    historyList.appendChild(row);
+                });
+            }
+
+            // Keypad Event Delegation
+            document.querySelector(".keypad").addEventListener("click", (e) => {
+                const btn = e.target.closest("button");
+                if (!btn) return;
+
+                if (btn.dataset.num !== undefined) {
+                    inputDigit(btn.dataset.num);
+                } else if (btn.dataset.op !== undefined) {
+                    handleOperator(btn.dataset.op);
+                } else if (btn.dataset.action) {
+                    switch (btn.dataset.action) {
+                        case "clear-all": clearAll(); break;
+                        case "backspace": handleBackspace(); break;
+                        case "decimal": inputDecimal(); break;
+                        case "negate": toggleSign(); break;
+                        case "percent": applyPercent(); break;
+                        case "calculate": calculateResult(); break;
+                    }
+                }
+            });
+
+            // Memory Bar Event Delegation
+            document.querySelector(".memory-bar").addEventListener("click", (e) => {
+                const btn = e.target.closest("button");
+                if (btn && btn.dataset.action) {
+                    handleMemory(btn.dataset.action);
+                }
+            });
+
+            // History Drawer Toggles
+            historyToggleBtn.addEventListener("click", () => {
+                historyDrawer.classList.toggle("open");
+                historyToggleBtn.classList.toggle("active");
+            });
+
+            clearHistoryBtn.addEventListener("click", () => {
+                history.length = 0;
+                renderHistory();
+            });
+
+            // Physical Keyboard Listener
+            window.addEventListener("keydown", (e) => {
+                if (e.key >= "0" && e.key <= "9") {
+                    inputDigit(e.key);
+                } else if (e.key === ".") {
+                    inputDecimal();
+                } else if (e.key === "+" || e.key === "-") {
+                    handleOperator(e.key === "-" ? "−" : "+");
+                } else if (e.key === "*" || e.key === "x" || e.key === "X") {
+                    handleOperator("×");
+                } else if (e.key === "/") {
+                    e.preventDefault();
+                    handleOperator("÷");
+                } else if (e.key === "Enter" || e.key === "=") {
+                    e.preventDefault();
+                    calculateResult();
+                } else if (e.key === "Backspace") {
+                    handleBackspace();
+                } else if (e.key === "Escape" || e.key.toLowerCase() === "c") {
+                    clearAll();
+                } else if (e.key === "%") {
+                    applyPercent();
+                }
+            });
+
+            // Initial render
+            updateDisplay();
+        })();
+    </script>
+</body>
+</html>
