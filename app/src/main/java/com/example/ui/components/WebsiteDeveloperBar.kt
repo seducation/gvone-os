@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.ViewSidebar
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -144,7 +145,7 @@ fun WebsiteDeveloperBar(
         border = BorderStroke(1.dp, Color(0xFF1E293B))
     ) {
         Column {
-            // ================= TOP UNIVERSAL BAR (Browser + IDE Unified) =================
+            // ================= TOP BAR (Restored Classic Developer Bar) =================
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -154,29 +155,29 @@ fun WebsiteDeveloperBar(
             ) {
                 val isCodeMode = (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR)
 
-                // 1. LEFT CONTROLS: Navigator & Mode-Specific Tools
+                // 1. LEFT CONTROLS: Mode-Specific Tools / Navigation
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    // Navigator Toggle (Opens Tabs, Projects, Files, Bots)
-                    if (onOpenNavigator != null) {
-                        IconButton(
-                            onClick = onOpenNavigator,
-                            modifier = Modifier
-                                .size(30.dp)
-                                .testTag("dev_bar_navigator_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.ViewSidebar,
-                                contentDescription = "Navigator Panel (Tabs & Files)",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(17.dp)
-                            )
-                        }
-                    }
-
                     if (isCodeMode) {
+                        // Navigator Toggle (Opens Tabs, Projects, Files, Bots)
+                        if (onOpenNavigator != null) {
+                            IconButton(
+                                onClick = onOpenNavigator,
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_navigator_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ViewSidebar,
+                                    contentDescription = "Navigator Panel (Tabs & Files)",
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+                        }
+
                         // Code Mode: Save & Format buttons
                         IconButton(
                             onClick = { onSaveFile?.invoke() },
@@ -208,7 +209,7 @@ fun WebsiteDeveloperBar(
                             }
                         }
                     } else {
-                        // Browser Mode: Back, Forward, Reload
+                        // Classic Browser Developer Bar: Back, Forward, Reload
                         IconButton(
                             onClick = { onGoBack?.invoke() ?: run { if (activeWebView?.canGoBack() == true) activeWebView.goBack() } },
                             enabled = canGoBack || activeWebView?.canGoBack() == true,
@@ -255,7 +256,7 @@ fun WebsiteDeveloperBar(
                     }
                 }
 
-                // 2. CENTER CAPSULE: Target Scheme / Active File Pill
+                // 2. CENTER CAPSULE: Target Host / URL / Active File Pill
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = Color(0xFF0F1523),
@@ -276,25 +277,25 @@ fun WebsiteDeveloperBar(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
-                            color = when (workspaceMode) {
-                                XcodeWorkspaceMode.CODE_EDITOR -> Color(0xFFA855F7).copy(alpha = 0.2f)
-                                XcodeWorkspaceMode.BOT_CHAT -> Color(0xFF10B981).copy(alpha = 0.2f)
+                            color = when {
+                                isCodeMode -> Color(0xFFA855F7).copy(alpha = 0.2f)
+                                isHttps -> Color(0xFF10B981).copy(alpha = 0.2f)
                                 else -> Color(0xFF38BDF8).copy(alpha = 0.2f)
                             },
                             modifier = Modifier.size(20.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = when (workspaceMode) {
-                                        XcodeWorkspaceMode.CODE_EDITOR -> Icons.Rounded.Code
-                                        XcodeWorkspaceMode.BOT_CHAT -> Icons.Rounded.AutoAwesome
-                                        else -> if (isHttps) Icons.Rounded.Lock else Icons.Rounded.Public
+                                    imageVector = when {
+                                        isCodeMode -> Icons.Rounded.Code
+                                        isHttps -> Icons.Rounded.Lock
+                                        else -> Icons.Rounded.Public
                                     },
                                     contentDescription = null,
-                                    tint = when (workspaceMode) {
-                                        XcodeWorkspaceMode.CODE_EDITOR -> Color(0xFFA855F7)
-                                        XcodeWorkspaceMode.BOT_CHAT -> Color(0xFF34D399)
-                                        else -> if (isHttps) Color(0xFF4ADE80) else Color(0xFF38BDF8)
+                                    tint = when {
+                                        isCodeMode -> Color(0xFFA855F7)
+                                        isHttps -> Color(0xFF34D399)
+                                        else -> Color(0xFF38BDF8)
                                     },
                                     modifier = Modifier.size(12.dp)
                                 )
@@ -304,14 +305,15 @@ fun WebsiteDeveloperBar(
                         Column(modifier = Modifier.weight(1f, fill = false)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = when (workspaceMode) {
-                                        XcodeWorkspaceMode.CODE_EDITOR -> (activeFileName ?: "Xcode Editor")
-                                        XcodeWorkspaceMode.BOT_CHAT -> (activeFileName ?: "Bot Chat Copilot")
-                                        else -> (tab.title.takeIf { it.isNotBlank() } ?: "Web Workspace")
+                                    text = if (isCodeMode) {
+                                        activeFileName ?: "Code Studio Editor"
+                                    } else {
+                                        hostDomain.ifBlank { tab.title.takeIf { it.isNotBlank() } ?: "Web DevTools" }
                                     },
                                     color = Color.White,
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -338,134 +340,176 @@ fun WebsiteDeveloperBar(
                     }
                 }
 
-                // 3. RIGHT CONTROLS: Mode Switcher, Execution, Inspector, Console, Chevron
+                // 3. RIGHT CONTROLS: Developer Tools, Console, Outlines, Inspector, Drawer Toggle, DEV Pill
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    // Segmented Workspace Mode Switcher: [Web | Code | Bots]
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF0B101C))
-                            .border(0.5.dp, Color(0xFF2C384D), RoundedCornerShape(12.dp))
-                            .padding(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val isWeb = (workspaceMode == XcodeWorkspaceMode.BROWSER)
-                        val isCode = (workspaceMode == XcodeWorkspaceMode.CODE_EDITOR)
-                        val isBot = (workspaceMode == XcodeWorkspaceMode.BOT_CHAT)
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isWeb) Color(0xFF0284C7).copy(alpha = 0.35f) else Color.Transparent,
-                            modifier = Modifier
-                                .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER) }
-                                .testTag("dev_bar_mode_web_btn")
-                        ) {
-                            Text(
-                                "WEB",
-                                fontSize = 9.sp,
-                                color = if (isWeb) Color(0xFF38BDF8) else Color(0xFF64748B),
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isCode) Color(0xFFA855F7).copy(alpha = 0.35f) else Color.Transparent,
-                            modifier = Modifier
-                                .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.CODE_EDITOR) }
-                                .testTag("dev_bar_mode_code_btn")
-                        ) {
-                            Text(
-                                "CODE",
-                                fontSize = 9.sp,
-                                color = if (isCode) Color(0xFFC084FC) else Color(0xFF64748B),
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isBot) Color(0xFF10B981).copy(alpha = 0.35f) else Color.Transparent,
-                            modifier = Modifier
-                                .clickable { onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BOT_CHAT) }
-                                .testTag("dev_bar_mode_bots_btn")
-                        ) {
-                            Text(
-                                "BOTS",
-                                fontSize = 9.sp,
-                                color = if (isBot) Color(0xFF34D399) else Color(0xFF64748B),
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-
-                    // Run / Preview Action Button
-                    IconButton(
-                        onClick = {
-                            if (isCodeMode) {
+                    if (isCodeMode) {
+                        // Code Mode right tools: Preview in browser, Inspector, Console
+                        IconButton(
+                            onClick = {
                                 onToggleWorkspaceMode?.invoke(XcodeWorkspaceMode.BROWSER)
                                 Toast.makeText(context, "Running & Previewing in Web Browser", Toast.LENGTH_SHORT).show()
-                            } else {
-                                onReload?.invoke() ?: run {
-                                    activeWebView?.clearCache(true)
-                                    activeWebView?.reload()
-                                }
-                                Toast.makeText(context, "Reloading Web App", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier
-                            .size(30.dp)
-                            .testTag("dev_bar_run_action_btn")
-                    ) {
-                        Icon(
-                            imageVector = if (isCodeMode) Icons.Rounded.PlayArrow else Icons.Rounded.Refresh,
-                            contentDescription = if (isCodeMode) "Run & Preview in Browser" else "Reload Web App",
-                            tint = if (isCodeMode) Color(0xFF34D399) else Color(0xFF38BDF8),
-                            modifier = Modifier.size(17.dp)
-                        )
-                    }
-
-                    // Open Xcode Inspector Panel
-                    if (onOpenInspector != null) {
-                        IconButton(
-                            onClick = onOpenInspector,
+                            },
                             modifier = Modifier
                                 .size(30.dp)
-                                .testTag("dev_bar_inspector_btn")
+                                .testTag("dev_bar_run_action_btn")
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Info,
-                                contentDescription = "Inspector Panel",
-                                tint = Color(0xFFF59E0B),
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = "Run & Preview in Browser",
+                                tint = Color(0xFF34D399),
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+
+                        if (onOpenInspector != null) {
+                            IconButton(
+                                onClick = onOpenInspector,
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_inspector_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Info,
+                                    contentDescription = "Inspector Panel",
+                                    tint = Color(0xFFF59E0B),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        if (onOpenConsole != null) {
+                            IconButton(
+                                onClick = onOpenConsole,
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_console_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Terminal,
+                                    contentDescription = "Debug Console",
+                                    tint = Color(0xFF34D399),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        // Classic Web Developer Bar Right Tools:
+                        // 1. Live DOM Visual Outlines Toggle Button
+                        IconButton(
+                            onClick = {
+                                outlinesEnabled = !outlinesEnabled
+                                val script = if (outlinesEnabled) {
+                                    "(function(){var s=document.createElement('style');s.id='__gvone_dev_outlines__';s.innerHTML='* { outline: 1px dashed rgba(56,189,248,0.7) !important; }';document.head.appendChild(s);return 'Outlines Active';})()"
+                                } else {
+                                    "(function(){var s=document.getElementById('__gvone_dev_outlines__');if(s)s.remove();return 'Outlines Removed';})()"
+                                }
+                                executeJs(script) {
+                                    Toast.makeText(context, if (outlinesEnabled) "Visual DOM Outlines Enabled" else "Visual Outlines Disabled", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .size(30.dp)
+                                .testTag("dev_bar_outlines_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Layers,
+                                contentDescription = "Visual Outlines",
+                                tint = if (outlinesEnabled) Color(0xFF38BDF8) else Color(0xFF94A3B8),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
-                    }
 
-                    // Open Xcode Debug Console / Terminal
-                    if (onOpenConsole != null) {
+                        // 2. Click-to-Inspect Element Toggle Button
                         IconButton(
-                            onClick = onOpenConsole,
+                            onClick = {
+                                clickInspectorEnabled = !clickInspectorEnabled
+                                val script = if (clickInspectorEnabled) {
+                                    """
+                                    (function(){
+                                        window.__gvone_inspect_fn__ = function(e){
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            var el = e.target;
+                                            var info = '<' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + '> ' + Math.round(el.offsetWidth) + 'x' + Math.round(el.offsetHeight) + 'px';
+                                            alert('Element: ' + info);
+                                        };
+                                        window.addEventListener('click', window.__gvone_inspect_fn__, true);
+                                        return 'Inspector On';
+                                    })()
+                                    """.trimIndent()
+                                } else {
+                                    """
+                                    (function(){
+                                        if (window.__gvone_inspect_fn__) {
+                                            window.removeEventListener('click', window.__gvone_inspect_fn__, true);
+                                            window.__gvone_inspect_fn__ = null;
+                                        }
+                                        return 'Inspector Off';
+                                    })()
+                                    """.trimIndent()
+                                }
+                                executeJs(script) {
+                                    Toast.makeText(context, if (clickInspectorEnabled) "Click Inspector ON: Tap any element to view tag" else "Click Inspector OFF", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .size(30.dp)
+                                .testTag("dev_bar_inspect_element_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AdsClick,
+                                contentDescription = "Inspect Element",
+                                tint = if (clickInspectorEnabled) Color(0xFF34D399) else Color(0xFF94A3B8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        // 3. Dev Console Button
+                        IconButton(
+                            onClick = {
+                                if (!isExpanded) {
+                                    selectedTab = DevBarTab.CONSOLE
+                                    isExpanded = true
+                                } else if (selectedTab != DevBarTab.CONSOLE) {
+                                    selectedTab = DevBarTab.CONSOLE
+                                } else {
+                                    onOpenConsole?.invoke()
+                                }
+                            },
                             modifier = Modifier
                                 .size(30.dp)
                                 .testTag("dev_bar_console_btn")
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Terminal,
-                                contentDescription = "Debug Console",
+                                contentDescription = "Dev Console",
                                 tint = Color(0xFF34D399),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
+
+                        // 4. Code Studio IDE Button
+                        if (onOpenIde != null) {
+                            IconButton(
+                                onClick = onOpenIde,
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .testTag("dev_bar_ide_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Code,
+                                    contentDescription = "Code Studio IDE",
+                                    tint = Color(0xFFA78BFA),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
 
-                    // Expand / Collapse Live DevTools Drawer
+                    // 5. Expand / Collapse Live DevTools Drawer
                     val rotation by animateFloatAsState(targetValue = if (isExpanded) 180f else 0f, label = "chevron")
                     IconButton(
                         onClick = { isExpanded = !isExpanded },
@@ -483,7 +527,7 @@ fun WebsiteDeveloperBar(
                         )
                     }
 
-                    // DEV ON/OFF Toggle
+                    // 6. DEV ON/OFF Toggle Badge Pill
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = Color(0xFF064E3B),
