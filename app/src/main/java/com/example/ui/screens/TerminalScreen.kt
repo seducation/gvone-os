@@ -509,6 +509,11 @@ fun TerminalScreen(
             historyIndex = -1
         }
 
+            viewModel.observeBotContext(
+                "Terminal command: $trimmed\nWorking directory: $currentCwd\n" +
+                    "Recent terminal output:\n" + globalTerminalLines.takeLast(30).joinToString("\n") { it.text },
+                "terminal"
+            )
         // If any item is attached, dispatch in form of an attachment (photo, file, research, website)
         if (itemToSend != null) {
             when (itemToSend.type) {

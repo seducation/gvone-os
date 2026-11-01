@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.MainActivity
 import com.example.data.ai.GVONEAIService
+import com.example.data.agent.BotAssistantRuntime
 import com.example.data.command.CommandEngine
 import com.example.data.download.BrowserDownloadManager
 import com.example.data.environment.EnvironmentManager
@@ -77,6 +78,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val repository = BrowserRepository(application)
     val torManager = TorManager()
     val downloadManager = BrowserDownloadManager(application, repository)
+    private val botAssistant = BotAssistantRuntime.get(application)
+    val botMessages: StateFlow<List<com.example.ui.screens.ide.BotChatMessage>> = botAssistant.messages
+    val activeBotPersona: StateFlow<GrokBotPersona> = botAssistant.persona
+    val botAssistantEnabled: StateFlow<Boolean> = botAssistant.enabled
+    val botAssistantPaused: StateFlow<Boolean> = botAssistant.paused
+    val botAssistantStatus = botAssistant.status
+    val botAssistantActiveTask = botAssistant.activeTask
     val aiService = GVONEAIService(torManager, application)
     val fileSystem = com.example.data.files.GVONEFileSystem(application)
     val terminalRepository = com.example.data.terminal.TerminalRepository(application)
@@ -744,13 +752,51 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val activeBotPersona: StateFlow<GrokBotPersona> = _activeBotPersona.asStateFlow()
 
     fun openBotChat(persona: GrokBotPersona) {
-        _activeBotPersona.value = persona
+        botAssistant.setPersona(persona)
         _workspaceMode.value = XcodeWorkspaceMode.BOT_CHAT
         closeSheet()
     }
 
     fun setActiveBotPersona(persona: GrokBotPersona) {
-        _activeBotPersona.value = persona
+        botAssistant.setPersona(persona)
+    }
+
+    fun sendBotMessage(message: String, context: String) {
+        botAssistant.submitMessage(message, buildAssistantContext(context))
+    }
+
+    fun submitTerminalAgentMission(message: String, context: String = "") {
+        botAssistant.submitMessage(message, buildAssistantContext(context), echoToTerminal = true)
+    }
+
+    private fun buildAssistantContext(context: String): String {
+        val browser = if (_isPrivateMode.value) "" else currentTab.value?.let {
+            "Active browser page: ${it.title}\nURL: ${it.url}"
+        }.orEmpty()
+        val terminal = terminalLines.value.takeLast(30).joinToString("\n") { it.text }
+        return listOf(context, browser, "Recent terminal output:\n$terminal")
+            .filter(String::isNotBlank)
+            .joinToString("\n\n")
+    }
+
+    fun observeBotContext(context: String, sourceKey: String) {
+        botAssistant.observeContext(context, sourceKey)
+    }
+
+    fun pauseBotAssistant() {
+        botAssistant.setPaused(true)
+    }
+
+    fun resumeBotAssistant() {
+        botAssistant.setPaused(false)
+    }
+
+    fun stopBotAssistant() {
+        botAssistant.stop()
+    }
+
+    fun enableBotAssistant() {
+        botAssistant.setPaused(false)
     }
 
     suspend fun getWorkspaceProjectsAndSubfolders(): List<String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -1301,6 +1347,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             viewModel = this,
             repository = repository,
             aiService = aiService,
+        viewModelScope.launch {
+            botAssistant.terminalOutput.collect { output ->
+                appendTerminalLine(output.text, output.type)
+            }
+        }
+
             environmentManager = environmentManager
         )
 

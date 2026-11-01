@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URL
@@ -58,6 +59,25 @@ class TerminalCommandExecutor(
                 if (_isAgenticMode.value != isAgent) {
                     _isAgenticMode.value = isAgent
                     agentEngine.isAgenticModeEnabled = isAgent
+                    if (isAgent) viewModel.enableBotAssistant() else viewModel.pauseBotAssistant()
+                }
+            }
+        }
+        viewModel.viewModelScope.launch {
+            viewModel.botAssistantEnabled.collect { enabled ->
+                if (!enabled && _isAgenticMode.value) {
+                    _isAgenticMode.value = false
+                    agentEngine.isAgenticModeEnabled = false
+                    RuntimeStateManager.global.resetToTextChat()
+                }
+            }
+        }
+        viewModel.viewModelScope.launch {
+            viewModel.botAssistantPaused.collect { paused ->
+                if (paused && _isAgenticMode.value) {
+                    _isAgenticMode.value = false
+                    agentEngine.isAgenticModeEnabled = false
+                    RuntimeStateManager.global.resetToTextChat()
                 }
             }
         }
@@ -83,8 +103,10 @@ class TerminalCommandExecutor(
         _isAgenticMode.value = enabled
         agentEngine.isAgenticModeEnabled = enabled
         if (enabled) {
+            viewModel.enableBotAssistant()
             RuntimeStateManager.global.activateAgentOnly()
         } else {
+            viewModel.pauseBotAssistant()
             RuntimeStateManager.global.resetToTextChat()
         }
     }
@@ -830,6 +852,13 @@ class TerminalCommandExecutor(
                             else -> AgentPersona.AUTO
                         }
                         setPersona(newPersona)
+                        viewModel.setActiveBotPersona(
+                            when (newPersona) {
+                                AgentPersona.COMET -> com.example.ui.screens.ide.GrokBotPersona.WEB_SCRAPER
+                                AgentPersona.DIA -> com.example.ui.screens.ide.GrokBotPersona.CODE_ARCHITECT
+                                AgentPersona.ATLAS, AgentPersona.AUTO -> com.example.ui.screens.ide.GrokBotPersona.GROK_CODER
+                            }
+                        )
                         outputLines.add(TerminalLine("[AGENTIC PERSONA] Switched to: ${newPersona.displayName} (${newPersona.description})", TerminalLineType.SUCCESS))
                     }
                     queryArg.equals("dashboard", ignoreCase = true) || queryArg.equals("ui", ignoreCase = true) || queryArg.equals("cns", ignoreCase = true) -> {
@@ -848,6 +877,8 @@ class TerminalCommandExecutor(
                         val activeTask = runtimeState.activeTask.value
                         outputLines.add(TerminalLine("── AGENTIC RUNTIME STATUS ──", TerminalLineType.SYSTEM))
                         outputLines.add(TerminalLine("● Mode: " + (if (_isAgenticMode.value) "ACTIVE" else "IDLE"), if (_isAgenticMode.value) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
+                        outputLines.add(TerminalLine("● Shared GVONE assistant: ${viewModel.botAssistantStatus.value.name}", TerminalLineType.INFO))
+                        viewModel.botAssistantActiveTask.value?.let { outputLines.add(TerminalLine("● Shared task: $it", TerminalLineType.OUTPUT)) }
                         outputLines.add(TerminalLine("● Active Persona: ${_activePersona.value.displayName} (${_activePersona.value.badge})", TerminalLineType.INFO))
                         outputLines.add(TerminalLine("● Active Task: ${activeTask?.goal ?: "None (Idle)"} [${activeTask?.status?.name ?: "IDLE"}]", TerminalLineType.OUTPUT))
                         outputLines.add(TerminalLine("● Gemini 3.5 LLM: " + (if (isGeminiLive) "ONLINE & ACTIVE" else "LOCAL FALLBACK (Type '/key' for setup)"), if (isGeminiLive) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
@@ -865,15 +896,14 @@ class TerminalCommandExecutor(
                         return
                     }
                     else -> {
-                        // Autonomous Agent Goal Execution
+                        // Route terminal agent goals through the same persistent assistant used by Bot Chat.
                         runtimeState.activateAgentOnly(queryArg)
                         setAgenticMode(true)
                         commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-                        scope.launch {
-                            agentEngine.runAgenticWorkflow(queryArg, shellEngine.currentDirectory) { line ->
-                                viewModel.appendTerminalLine(line)
-                            }
-                        }
+                        viewModel.submitTerminalAgentMission(
+                            queryArg,
+                            "Terminal working directory: ${shellEngine.currentDirectory}"
+                        )
                         return
                     }
                 }
@@ -2017,11 +2047,10 @@ class TerminalCommandExecutor(
         // Autonomous Goal Fallback: Execute through Agentic Runtime ONLY IF AGENTIC MODE IS ACTIVATED!
         if (_isAgenticMode.value) {
             commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-            scope.launch {
-                agentEngine.runAgenticWorkflow(trimmed, shellEngine.currentDirectory) { line ->
-                    viewModel.appendTerminalLine(line)
-                }
-            }
+            viewModel.submitTerminalAgentMission(
+                trimmed,
+                "Terminal working directory: ${shellEngine.currentDirectory}"
+            )
             return
         }
 

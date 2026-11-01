@@ -226,6 +226,20 @@ fun BrowserApp(
     val isTorActive = settings.torEnabled && torStatus.state == TorConnectionState.CONNECTED
 
     val context = androidx.compose.ui.platform.LocalContext.current
+    val botNotificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { }
+    )
+    val botAssistantEnabled by viewModel.botAssistantEnabled.collectAsStateWithLifecycle()
+    LaunchedEffect(botAssistantEnabled) {
+        if (
+            botAssistantEnabled &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            botNotificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val launchOrbot = {
         try {
             val launchIntent = context.packageManager.getLaunchIntentForPackage("org.torproject.android")
@@ -265,9 +279,22 @@ fun BrowserApp(
     val terminalSessions by viewModel.terminalSessions.collectAsStateWithLifecycle()
     val activeTerminalSessionId by viewModel.activeTerminalSessionId.collectAsStateWithLifecycle()
     val activeBotPersona by viewModel.activeBotPersona.collectAsStateWithLifecycle()
+    val botMessages by viewModel.botMessages.collectAsStateWithLifecycle()
+    val botAssistantStatus by viewModel.botAssistantStatus.collectAsStateWithLifecycle()
+    val botAssistantActiveTask by viewModel.botAssistantActiveTask.collectAsStateWithLifecycle()
     val terminalTargetDir by viewModel.terminalTargetDirectory.collectAsStateWithLifecycle()
     val terminalExecutionStatus by viewModel.terminalExecutionStatus.collectAsStateWithLifecycle()
     val terminalExecutionMessage by viewModel.terminalExecutionMessage.collectAsStateWithLifecycle()
+
+    LaunchedEffect(currentTab?.id, currentTab?.url, currentTab?.title, isPrivateMode, workspaceMode) {
+        if (workspaceMode == XcodeWorkspaceMode.BROWSER && !isPrivateMode && currentTab != null) {
+            val tab = currentTab!!
+            viewModel.observeBotContext(
+                "Active browser page: ${tab.title}\nURL: ${tab.url}",
+                "browser"
+            )
+        }
+    }
     var workspaceDirs by remember { mutableStateOf(listOf("Projects", "Projects/KotlinCalculator", "Documents", "Downloads", "workspace")) }
     LaunchedEffect(Unit) {
         try {
@@ -520,9 +547,13 @@ fun BrowserApp(
                     IdeGrokBotsView(
                         activeTab = activeEditorTab,
                         openTabs = ideOpenTabs,
-                        aiService = viewModel.aiService,
-                        coroutineScope = mainScope,
-                        initialPersona = activeBotPersona,
+                        messages = botMessages,
+                        selectedPersona = activeBotPersona,
+                        isThinking = botAssistantStatus == com.example.data.agent.BotAssistantStatus.WORKING,
+                        assistantStatus = botAssistantStatus,
+                        activeTask = botAssistantActiveTask,
+                        onSendMessage = { message, context -> viewModel.sendBotMessage(message, context) },
+                        onContextChanged = { viewModel.observeBotContext(it, "ide") },
                         onPersonaChange = { viewModel.setActiveBotPersona(it) },
                         targetDirectory = terminalTargetDir,
                         onApplyCodeToEditor = { code ->

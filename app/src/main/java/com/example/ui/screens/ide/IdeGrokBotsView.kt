@@ -28,9 +28,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.ai.GVONEAIService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
+import com.example.data.agent.BotAssistantStatus
 
 /**
  * Grok-Style Multi-Bot AI Coding Copilot View for GVONE Code Studio.
@@ -41,110 +39,57 @@ import kotlinx.coroutines.launch
 fun IdeGrokBotsView(
     activeTab: IdeTab?,
     openTabs: List<IdeTab>,
-    aiService: GVONEAIService,
-    coroutineScope: CoroutineScope,
+    messages: List<BotChatMessage>,
+    selectedPersona: GrokBotPersona,
+    isThinking: Boolean,
+    assistantStatus: BotAssistantStatus,
+    activeTask: String?,
+    onSendMessage: (String, String) -> Unit,
+    onContextChanged: (String) -> Unit,
     onApplyCodeToEditor: (String) -> Unit,
     onCreateFileFromCode: (filename: String, code: String) -> Unit,
-    initialPersona: GrokBotPersona = GrokBotPersona.GROK_CODER,
     onPersonaChange: ((GrokBotPersona) -> Unit)? = null,
     targetDirectory: String = "Projects",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var selectedPersona by remember(initialPersona) { mutableStateOf(initialPersona) }
     var promptInput by remember { mutableStateOf("") }
-    var isThinking by remember { mutableStateOf(false) }
-
-    // Multi-turn chat message history
-    val messages = remember { mutableStateListOf<BotChatMessage>() }
     val chatListState = rememberLazyListState()
-
-    // Initialize with a welcome message from the active bot
-    LaunchedEffect(selectedPersona) {
-        if (messages.none { it.senderId == selectedPersona.id }) {
-            messages.add(
-                BotChatMessage(
-                    senderId = selectedPersona.id,
-                    senderName = selectedPersona.displayName,
-                    content = "Hey! I am ${selectedPersona.displayName}. ${selectedPersona.tagline}. How can I supercharge your workspace right now?"
-                )
+    LaunchedEffect(activeTab?.id, activeTab?.content) {
+        activeTab?.let {
+            onContextChanged(
+                "Active IDE file: ${it.fileItem.name} (${it.fileItem.path})\n" +
+                    "Open tabs: ${openTabs.joinToString { tab -> tab.fileItem.name }}\n" +
+                    "File content:\n${it.content.take(24000)}"
             )
         }
     }
+    val visibleMessages = remember(messages, selectedPersona) {
+        if (messages.isNotEmpty()) messages else listOf(
+            BotChatMessage(
+                senderId = selectedPersona.id,
+                senderName = selectedPersona.displayName,
+                content = "Hey! I am ${selectedPersona.displayName}. ${selectedPersona.tagline}. How can I supercharge your workspace right now?"
+            )
+        )
+    }
 
     // Scroll to bottom on new message
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            chatListState.animateScrollToItem(messages.size - 1)
+    LaunchedEffect(visibleMessages.size) {
+        if (visibleMessages.isNotEmpty()) {
+            chatListState.animateScrollToItem(visibleMessages.size - 1)
         }
     }
 
     val sendMessage: (String) -> Unit = { rawPrompt ->
         val text = rawPrompt.trim()
         if (text.isNotEmpty() && !isThinking) {
-            val userMsg = BotChatMessage(
-                senderId = "user",
-                senderName = "You",
-                content = text
-            )
-            messages.add(userMsg)
             promptInput = ""
-            isThinking = true
-
-            coroutineScope.launch {
-                try {
-                    val fileContext = if (activeTab != null) {
-                        "Active File: ${activeTab.fileItem.name} (${activeTab.fileItem.path})\n```\n${activeTab.content}\n```\n"
-                    } else {
-                        "No active file open.\n"
-                    }
-
-                    val tabsContext = "Open Editor Tabs: ${openTabs.joinToString { it.fileItem.name }.ifEmpty { "None" }}\n"
-
-                    val fullPrompt = """
-                        ${selectedPersona.systemRole}
-                        
-                        Workspace Context:
-                        Target Project/Directory: $targetDirectory
-                        $fileContext
-                        $tabsContext
-                        
-                        User Request:
-                        $text
-                        
-                        Give a clear, direct answer with code wrapped in ``` if applicable.
-                    """.trimIndent()
-
-                    val responseText = aiService.askAI(fullPrompt)
-                        ?: aiService.chatResponse(text)
-
-                    // Extract code block if present
-                    val extracted = if (responseText.contains("```")) {
-                        responseText.substringAfter("```")
-                            .substringAfter("\n")
-                            .substringBefore("```")
-                    } else null
-
-                    messages.add(
-                        BotChatMessage(
-                            senderId = selectedPersona.id,
-                            senderName = selectedPersona.displayName,
-                            content = responseText,
-                            extractedCode = extracted
-                        )
-                    )
-                } catch (e: Exception) {
-                    messages.add(
-                        BotChatMessage(
-                            senderId = selectedPersona.id,
-                            senderName = selectedPersona.displayName,
-                            content = "Error communicating with AI model: ${e.message}"
-                        )
-                    )
-                } finally {
-                    isThinking = false
-                }
-            }
+            val fileContext = if (activeTab != null) {
+                "Active File: ${activeTab.fileItem.name} (${activeTab.fileItem.path})\n```\n${activeTab.content.take(24000)}\n```\n"
+            } else "No active file open.\n"
+            val tabsContext = "Open Editor Tabs: ${openTabs.joinToString { it.fileItem.name }.ifEmpty { "None" }}\n"
+            onSendMessage(text, "Target Project/Directory: $targetDirectory\n$fileContext$tabsContext")
         }
     }
 
@@ -176,7 +121,6 @@ fun IdeGrokBotsView(
                     ),
                     modifier = Modifier
                         .clickable {
-                            selectedPersona = persona
                             onPersonaChange?.invoke(persona)
                         }
                         .testTag("grok_bot_picker_${persona.id}")
@@ -230,6 +174,18 @@ fun IdeGrokBotsView(
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
                     color = Color(selectedPersona.avatarColorHex)
                 )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = when (assistantStatus) {
+                        BotAssistantStatus.OFF -> "Ready"
+                        BotAssistantStatus.IDLE -> "Agent active"
+                        BotAssistantStatus.WORKING -> activeTask?.let { "Working: $it" } ?: "Working"
+                        BotAssistantStatus.PAUSED -> "Paused"
+                        BotAssistantStatus.ERROR -> "Needs attention"
+                    },
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = Color(selectedPersona.avatarColorHex)
+                )
                 Spacer(modifier = Modifier.weight(1f))
                 if (activeTab != null) {
                     Text(
@@ -276,7 +232,7 @@ fun IdeGrokBotsView(
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages, key = { it.id }) { msg ->
+            items(visibleMessages, key = { it.id }) { msg ->
                 val isUser = msg.senderId == "user"
                 val personaColor = Color(selectedPersona.avatarColorHex)
 

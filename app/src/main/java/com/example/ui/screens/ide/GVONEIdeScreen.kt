@@ -390,7 +390,8 @@ fun GVONEIdeScreen(
                         viewModel.closeSheet()
                     },
                     aiService = viewModel.aiService,
-                    coroutineScope = coroutineScope
+                    coroutineScope = coroutineScope,
+                    viewModel = viewModel
                 )
 
                 // Editor Group Column

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +32,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.agent.BotAssistantStatus
+import com.example.ui.viewmodel.BrowserViewModel
 import com.example.data.ai.GVONEAIService
 import com.example.data.files.*
 import kotlinx.coroutines.CoroutineScope
@@ -55,6 +58,7 @@ fun IdeSidebar(
     onOpenCommandPalette: () -> Unit,
     onFormatDocument: () -> Unit = {},
     onLivePreview: (GVONEFileItem) -> Unit = {},
+    viewModel: BrowserViewModel,
     aiService: GVONEAIService,
     coroutineScope: CoroutineScope,
     modifier: Modifier = Modifier
@@ -476,6 +480,10 @@ fun IdeSidebar(
                                             Toast.makeText(context, "Please enter a commit message", Toast.LENGTH_SHORT).show()
                                             return@SourceControlView
                                         }
+                                val botMessages by viewModel.botMessages.collectAsStateWithLifecycle()
+                                val botPersona by viewModel.activeBotPersona.collectAsStateWithLifecycle()
+                                val botStatus by viewModel.botAssistantStatus.collectAsStateWithLifecycle()
+                                val botTask by viewModel.botAssistantActiveTask.collectAsStateWithLifecycle()
                                         isCommitting = true
                                         coroutineScope.launch {
                                             try {
@@ -500,8 +508,14 @@ fun IdeSidebar(
                                 IdeGrokBotsView(
                                     activeTab = activeTab,
                                     openTabs = openTabs,
-                                    aiService = aiService,
-                                    coroutineScope = coroutineScope,
+                                    messages = botMessages,
+                                    selectedPersona = botPersona,
+                                    isThinking = botStatus == BotAssistantStatus.WORKING,
+                                    assistantStatus = botStatus,
+                                    activeTask = botTask,
+                                    onSendMessage = viewModel::sendBotMessage,
+                                    onContextChanged = { viewModel.observeBotContext(it, "ide") },
+                                    onPersonaChange = viewModel::setActiveBotPersona,
                                     onApplyCodeToEditor = onApplyAiCodeToEditor,
                                     onCreateFileFromCode = { filename, code ->
                                         coroutineScope.launch {
