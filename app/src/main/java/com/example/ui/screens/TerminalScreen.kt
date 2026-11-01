@@ -165,7 +165,7 @@ fun TerminalScreen(
     val shellEngine = viewModel.shellEngine
     val isAgenticMode by viewModel.terminalCommandExecutor.isAgenticMode.collectAsStateWithLifecycle()
     var currentCwd by remember { mutableStateOf(shellEngine.promptPath) }
-    var activePersona by remember { mutableStateOf(agentEngine.activePersona) }
+    val activePersona by viewModel.terminalCommandExecutor.activePersona.collectAsStateWithLifecycle()
     val persistedTargetDir by viewModel.terminalTargetDirectory.collectAsStateWithLifecycle()
     var workspaceProjectsList by remember { mutableStateOf<List<String>>(listOf("Projects", "Projects/KotlinCalculator", "Documents", "Downloads", "Images")) }
 
@@ -932,6 +932,10 @@ fun TerminalScreen(
                     onClose = onClose,
                     isAgenticMode = isAgenticMode,
                     onToggleAgent = { executeCommand("/agent") },
+                    activePersona = activePersona,
+                    onSelectPersona = { persona ->
+                        viewModel.terminalCommandExecutor.setPersona(persona)
+                    },
                     isTextActive = (runtimeMode.interaction == InteractionType.TEXT && !runtimeMode.isVoiceActive),
                     onToggleText = { executeCommand("/text") },
                     isVoiceActive = (runtimeMode.isVoiceActive || runtimeMode.interaction == InteractionType.VOICE),
@@ -2198,6 +2202,8 @@ private fun TerminalHeaderBar(
     onClose: () -> Unit,
     isAgenticMode: Boolean = false,
     onToggleAgent: () -> Unit = {},
+    activePersona: AgentPersona = AgentPersona.AUTO,
+    onSelectPersona: (AgentPersona) -> Unit = {},
     isTextActive: Boolean = true,
     onToggleText: () -> Unit = {},
     isVoiceActive: Boolean = false,
@@ -2386,41 +2392,50 @@ private fun TerminalHeaderBar(
                         .widthIn(min = 260.dp, max = 320.dp)
                 ) {
                     Text(
-                        text = "RUNTIME & AGENT MODES",
+                        text = "TERMINAL CONTROLS",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF94A3B8),
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
 
-                    // 1. Agent Mode
-                    DropdownMenuItem(
-                        text = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = if (isAgenticMode) "Agent Mode: ON" else "Agent Mode: OFF",
-                                    color = if (isAgenticMode) Color(0xFFA855F7) else Color(0xFFE2E8F0),
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                if (isAgenticMode) {
-                                    Icon(Icons.Rounded.Check, contentDescription = null, tint = Color(0xFFA855F7), modifier = Modifier.size(15.dp))
-                                }
-                            }
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.SmartToy, contentDescription = null, tint = if (isAgenticMode) Color(0xFFA855F7) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
-                        },
-                        onClick = {
-                            showControlsMenu = false
-                            onToggleAgent()
-                        }
+                    Text(
+                        text = "TARGET AGENT",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
+                    AgentPersona.values().forEach { persona ->
+                        val isSelected = persona == activePersona
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = persona.displayName,
+                                        color = if (isSelected) Color(0xFFA855F7) else Color(0xFFE2E8F0),
+                                        fontSize = 12.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (isSelected) Icon(Icons.Rounded.Check, contentDescription = "Selected", tint = Color(0xFFA855F7), modifier = Modifier.size(15.dp))
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Rounded.SmartToy, contentDescription = null, tint = if (isSelected) Color(0xFFA855F7) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            },
+                            onClick = {
+                                showControlsMenu = false
+                                onSelectPersona(persona)
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0xFF30363D), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 4.dp))
 
                     // 2. Text Input Mode
                     DropdownMenuItem(
@@ -2625,32 +2640,6 @@ private fun TerminalHeaderBar(
                         onClick = {
                             showControlsMenu = false
                             onSelectBridgeMode(com.example.data.terminal.TerminalBridgeMode.CHAT)
-                        }
-                    )
-
-                    // 7. CNS Debug & Dashboard
-                    DropdownMenuItem(
-                        text = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = "CNS Debug & Dashboard",
-                                    color = Color(0xFFE2E8F0),
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.BugReport, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
-                        },
-                        onClick = {
-                            showControlsMenu = false
-                            onCnsClick()
                         }
                     )
 

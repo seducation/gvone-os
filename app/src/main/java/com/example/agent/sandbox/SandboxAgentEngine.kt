@@ -88,31 +88,54 @@ class SandboxAgentEngine(
             return
         }
 
-        // Initialize task tracking in unified RuntimeStateManager and ContextRouter
+        val persona = if (activePersona == AgentPersona.AUTO) detectBestPersona(cleanGoal) else activePersona
+
+        // Browser actions go through CNS and BrowserAgent so they act on the actual active page.
+        if (isBrowserActionGoal(cleanGoal, persona)) {
+            emit(TerminalLine("╭─────────────────────────────────────────────────────────────╮", TerminalLineType.AGENT_PLAN))
+            emit(TerminalLine("│ 🌐 AUTONOMOUS BROWSER AGENT: ${persona.displayName.uppercase()}", TerminalLineType.AGENT_PLAN))
+            emit(TerminalLine("│ Goal: \"$cleanGoal\"", TerminalLineType.AGENT_PLAN))
+            emit(TerminalLine("│ Execution Loop: PLAN ➜ ACT ➜ OBSERVE ➜ VERIFY", TerminalLineType.AGENT_PLAN))
+            emit(TerminalLine("╰─────────────────────────────────────────────────────────────╯", TerminalLineType.AGENT_PLAN))
+            emit(TerminalLine("[BROWSER AGENT] Routing this request to CNS and the active-page browser tools...", TerminalLineType.AGENT_STEP))
+            val cnsResult = CentralNervousSystem.global.orchestrateGoal(cleanGoal)
+            emit(TerminalLine(cnsResult.synthesis, if (cnsResult.success) TerminalLineType.SUCCESS else TerminalLineType.ERROR))
+            return
+        }
+
+        // File edits target an existing file in the selected terminal directory, then reopen it in IDE.
+        val requestedFile = FILE_NAME_REGEX.find(cleanGoal)?.value
+        val isEditRequest = EDIT_INTENT_REGEX.containsMatchIn(cleanGoal)
+        if (persona == AgentPersona.DIA && isEditRequest && requestedFile != null) {
+            val targetPath = resolveWorkspaceFilePath(currentDir, requestedFile)
+            if (fileSystem.getFileItem(targetPath) == null) {
+                emit(TerminalLine("[IDE AGENT] Could not find '$targetPath' in the selected workspace. Check the path and retry.", TerminalLineType.ERROR))
+                return
+            }
+
+            val writePermission = com.example.agent.safety.PermissionSystem.global.checkPermission(
+                com.example.agent.safety.PermissionSystem.PERM_FILESYSTEM_WRITE,
+                agentName = "DIA Coding Agent"
+            )
+            if (writePermission.status != com.example.agent.safety.PermissionStatus.GRANTED) {
+                emit(
+                    TerminalLine(
+                        writePermission.reason ?: "File write permission is required. Approve it in CNS and retry the edit.",
+                        TerminalLineType.WARNING
+                    )
+                )
+                return
+            }
+            runFileEditWorkflow(cleanGoal, targetPath, emit)
+            return
+        }
+
+        // Initialize task tracking after specialized routing to avoid duplicate CNS tasks.
         val runtimeState = RuntimeStateManager.global
         val currentInteraction = runtimeState.runtimeMode.value.interaction
         val agentTask = runtimeState.createTask(cleanGoal, currentInteraction)
         ContextRouter.global.getOrCreateTaskContext(agentTask)
 
-        // Direct Specialized Routing for YouTube workflows through CNS & BrowserAgent
-        if (cleanGoal.contains("youtube", ignoreCase = true) || cleanGoal.startsWith("/yt", ignoreCase = true)) {
-            emit(TerminalLine("╭─────────────────────────────────────────────────────────────╮", TerminalLineType.AGENT_PLAN))
-            emit(TerminalLine("│ 🎬 AUTONOMOUS BROWSER AGENT: YOUTUBE WORKFLOW", TerminalLineType.AGENT_PLAN))
-            emit(TerminalLine("│ Goal: \"$cleanGoal\"", TerminalLineType.AGENT_PLAN))
-            emit(TerminalLine("│ Execution Loop: PLAN ➜ ACT ➜ OBSERVE ➜ VERIFY", TerminalLineType.AGENT_PLAN))
-            emit(TerminalLine("╰─────────────────────────────────────────────────────────────╯", TerminalLineType.AGENT_PLAN))
-            delay(150)
-            emit(TerminalLine("[STEP 1/3] BrowserAgent -> Navigating to YouTube & preparing DOM environment...", TerminalLineType.AGENT_STEP))
-            delay(200)
-            emit(TerminalLine("[STEP 2/3] BrowserAgent -> Injecting search input and triggering submit...", TerminalLineType.AGENT_STEP))
-            val cnsResult = CentralNervousSystem.global.orchestrateGoal(cleanGoal)
-            delay(150)
-            emit(TerminalLine("[STEP 3/3] BrowserAgent -> Observing DOM & verifying search results...", TerminalLineType.AGENT_STEP))
-            emit(TerminalLine(cnsResult.synthesis, if (cnsResult.success) TerminalLineType.SUCCESS else TerminalLineType.ERROR))
-            return
-        }
-
-        val persona = if (activePersona == AgentPersona.AUTO) detectBestPersona(cleanGoal) else activePersona
         val plan = createExecutionPlan(cleanGoal, persona, currentDir)
 
         // 1. Mission Header
@@ -381,6 +404,92 @@ class SandboxAgentEngine(
         }
     }
 
+    private fun isBrowserActionGoal(goal: String, persona: AgentPersona): Boolean {
+        val lower = goal.lowercase()
+        if (lower.contains("youtube") || lower.startsWith("/yt")) return true
+        val hasAction = BROWSER_ACTION_REGEX.containsMatchIn(lower)
+        val hasBrowserTarget = BROWSER_TARGET_REGEX.containsMatchIn(lower) || URL_REGEX.containsMatchIn(goal)
+        return persona == AgentPersona.ATLAS && hasAction && hasBrowserTarget
+    }
+
+    private suspend fun runFileEditWorkflow(
+        goal: String,
+        targetPath: String,
+        emit: suspend (TerminalLine) -> Unit
+    ) {
+        val runtimeState = RuntimeStateManager.global
+        val task = runtimeState.createTask(goal, runtimeState.runtimeMode.value.interaction)
+        ContextRouter.global.getOrCreateTaskContext(task)
+        emit(TerminalLine("[IDE AGENT] Reading ${targetPath} before editing...", TerminalLineType.AGENT_STEP))
+
+        try {
+            val originalContent = fileSystem.readFileContent(targetPath)
+            val response = aiService.askAI(
+                """You are the GVONE coding agent editing a workspace file.
+                    Apply the user's requested change to the existing source.
+                    Return the complete updated file only. Preserve unrelated behavior and use the file's existing language and style.
+                    Do not return explanations or omit unchanged sections.
+
+                    File path: $targetPath
+                    User request: $goal
+
+                    Existing file:
+                    ```
+                    ${originalContent.take(30000)}
+                    ```
+                """.trimIndent()
+            )?.trim().orEmpty()
+
+            val updatedContent = extractEditedFileContent(response)
+            if (updatedContent.isBlank()) {
+                val error = "The coding agent returned no updated file content. $targetPath was left unchanged."
+                emit(TerminalLine(error, TerminalLineType.ERROR))
+                runtimeState.failTask(task.taskId, error)
+                ContextRouter.global.archiveTaskContext(task.taskId, error, isSuccess = false)
+                return
+            }
+
+            if (!fileSystem.writeFileContent(targetPath, updatedContent)) {
+                val error = "Could not write the updated file: $targetPath"
+                emit(TerminalLine(error, TerminalLineType.ERROR))
+                runtimeState.failTask(task.taskId, error)
+                ContextRouter.global.archiveTaskContext(task.taskId, error, isSuccess = false)
+                return
+            }
+
+            val fileItem = fileSystem.getFileItem(targetPath)
+            if (fileItem != null) withContext(Dispatchers.Main) { viewModel.openIdeWithFile(fileItem) }
+            emit(TerminalLine("[IDE AGENT] Updated $targetPath and opened it in the IDE.", TerminalLineType.SUCCESS))
+            runtimeState.completeTask(task.taskId, "Updated $targetPath and opened it in the IDE.")
+            ContextRouter.global.archiveTaskContext(task.taskId, "Updated $targetPath", isSuccess = true)
+        } catch (error: Exception) {
+            val message = "File edit failed for $targetPath: ${error.message ?: "Unknown error"}"
+            emit(TerminalLine(message, TerminalLineType.ERROR))
+            runtimeState.failTask(task.taskId, message)
+            ContextRouter.global.archiveTaskContext(task.taskId, message, isSuccess = false)
+        }
+    }
+
+    private fun extractEditedFileContent(response: String): String {
+        if (response.isBlank()) return ""
+        val fenced = Regex("```[A-Za-z0-9_+#.-]*\\s*\\n([\\s\\S]*?)```").find(response)
+        if (fenced != null) return fenced.groupValues[1].trimEnd()
+        if (response.trimStart().startsWith("Here is", ignoreCase = true) ||
+            response.trimStart().startsWith("Updated file:", ignoreCase = true)) return ""
+        return response.trimEnd()
+    }
+
+    private fun resolveWorkspaceFilePath(currentDir: String, requestedPath: String): String {
+        val normalizedPath = requestedPath.trim().removePrefix("./").removePrefix("~/").trimStart('/')
+        val normalizedDir = currentDir.trim().trim('/').removePrefix("~/")
+        return when {
+            normalizedPath.startsWith("Projects/", ignoreCase = true) ||
+                normalizedPath.startsWith("Documents/", ignoreCase = true) -> normalizedPath
+            normalizedDir.isBlank() || normalizedPath.startsWith("$normalizedDir/", ignoreCase = true) -> normalizedPath
+            else -> "$normalizedDir/$normalizedPath"
+        }
+    }
+
     private fun detectBestPersona(goal: String): AgentPersona {
         val lower = goal.lowercase()
         return when {
@@ -432,5 +541,13 @@ class SandboxAgentEngine(
         val colors = listOf("#3B82F6", "#10B981", "#8B5CF6", "#F59E0B", "#EC4899", "#06B6D4")
         val hash = kotlin.math.abs(name.hashCode())
         return colors[hash % colors.size]
+    }
+
+    private companion object {
+        val FILE_NAME_REGEX = Regex("(?i)(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\\.(?:kt|kts|java|js|jsx|ts|tsx|py|html|htm|css|json|md|txt|xml)")
+        val EDIT_INTENT_REGEX = Regex("(?i)\\b(edit|update|modify|change|fix|refactor|rewrite|add to)\\b")
+        val BROWSER_ACTION_REGEX = Regex("(?i)\\b(click|navigate|open|scroll|fill|submit|interact|inspect|extract|read|search|find|switch)\\b")
+        val BROWSER_TARGET_REGEX = Regex("(?i)\\b(browser|active page|current page|this page|webpage|website|tab|youtube|url)\\b")
+        val URL_REGEX = Regex("https?://\\S+", RegexOption.IGNORE_CASE)
     }
 }

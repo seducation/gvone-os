@@ -829,6 +829,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         } catch (_: Exception) {}
+        try {
+            // Include project folders even before they have a Git repository, so new projects
+            // created from the file workspace are immediately available as terminal targets.
+            fileSystem.listFiles(com.example.data.files.StorageLocation.PROJECTS)
+                .filter { it.isDirectory }
+                .forEach { folders.add(it.path) }
+        } catch (_: Exception) {}
         folders.add("Documents")
         folders.add("Downloads")
         folders.add("Images")

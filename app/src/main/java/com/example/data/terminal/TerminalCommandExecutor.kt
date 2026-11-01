@@ -48,10 +48,15 @@ class TerminalCommandExecutor(
     )
     val isAgenticMode: StateFlow<Boolean> = _isAgenticMode.asStateFlow()
 
-    private val _activePersona = MutableStateFlow(agentEngine.activePersona)
+    private val agentPrefs = viewModel.getApplication<android.app.Application>()
+        .getSharedPreferences("gvone_terminal_agent", android.content.Context.MODE_PRIVATE)
+    private val _activePersona = MutableStateFlow(
+        AgentPersona.fromString(agentPrefs.getString("persona", "auto").orEmpty())
+    )
     val activePersona: StateFlow<AgentPersona> = _activePersona.asStateFlow()
 
     init {
+        agentEngine.activePersona = _activePersona.value
         // Keep agentic mode in perfect synchronization with the global runtime state
         viewModel.viewModelScope.launch {
             RuntimeStateManager.global.runtimeMode.collect { mode ->
@@ -59,25 +64,6 @@ class TerminalCommandExecutor(
                 if (_isAgenticMode.value != isAgent) {
                     _isAgenticMode.value = isAgent
                     agentEngine.isAgenticModeEnabled = isAgent
-                    if (isAgent) viewModel.enableBotAssistant() else viewModel.pauseBotAssistant()
-                }
-            }
-        }
-        viewModel.viewModelScope.launch {
-            viewModel.botAssistantEnabled.collect { enabled ->
-                if (!enabled && _isAgenticMode.value) {
-                    _isAgenticMode.value = false
-                    agentEngine.isAgenticModeEnabled = false
-                    RuntimeStateManager.global.resetToTextChat()
-                }
-            }
-        }
-        viewModel.viewModelScope.launch {
-            viewModel.botAssistantPaused.collect { paused ->
-                if (paused && _isAgenticMode.value) {
-                    _isAgenticMode.value = false
-                    agentEngine.isAgenticModeEnabled = false
-                    RuntimeStateManager.global.resetToTextChat()
                 }
             }
         }
@@ -103,10 +89,8 @@ class TerminalCommandExecutor(
         _isAgenticMode.value = enabled
         agentEngine.isAgenticModeEnabled = enabled
         if (enabled) {
-            viewModel.enableBotAssistant()
             RuntimeStateManager.global.activateAgentOnly()
         } else {
-            viewModel.pauseBotAssistant()
             RuntimeStateManager.global.resetToTextChat()
         }
     }
@@ -114,6 +98,14 @@ class TerminalCommandExecutor(
     fun setPersona(persona: AgentPersona) {
         _activePersona.value = persona
         agentEngine.activePersona = persona
+        agentPrefs.edit().putString("persona", persona.name.lowercase()).apply()
+        viewModel.setActiveBotPersona(
+            when (persona) {
+                AgentPersona.COMET -> com.example.ui.screens.ide.GrokBotPersona.WEB_SCRAPER
+                AgentPersona.DIA -> com.example.ui.screens.ide.GrokBotPersona.CODE_ARCHITECT
+                AgentPersona.ATLAS, AgentPersona.AUTO -> com.example.ui.screens.ide.GrokBotPersona.GROK_CODER
+            }
+        )
     }
 
     /**
@@ -639,6 +631,26 @@ class TerminalCommandExecutor(
                     queryArg.equals("terminal", ignoreCase = true) || queryArg.equals("term", ignoreCase = true) || queryArg.equals("shell", ignoreCase = true) -> {
                         viewModel.setTerminalBridgeMode(TerminalBridgeMode.TERMINAL)
                         outputLines.add(TerminalLine("[BRIDGE] Switched to TERMINAL BRIDGE: ON (Direct Terminal / Shell Execution).", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("website", ignoreCase = true) || queryArg.equals("toggle", ignoreCase = true) || queryArg.equals("website toggle", ignoreCase = true) -> {
+                        val settings = viewModel.settings.value
+                        val next = !settings.bidirectionalBridgeEnabled
+                        viewModel.updateSettings(settings.copy(bidirectionalBridgeEnabled = next))
+                        outputLines.add(TerminalLine("[WEBSITE BRIDGE] ${if (next) "Enabled" else "Disabled"} for the active website.", if (next) TerminalLineType.SUCCESS else TerminalLineType.WARNING))
+                    }
+                    queryArg.equals("website on", ignoreCase = true) || queryArg.equals("on", ignoreCase = true) -> {
+                        viewModel.updateSettings(viewModel.settings.value.copy(bidirectionalBridgeEnabled = true))
+                        outputLines.add(TerminalLine("[WEBSITE BRIDGE] Enabled for the active website.", TerminalLineType.SUCCESS))
+                    }
+                    queryArg.equals("website off", ignoreCase = true) || queryArg.equals("off", ignoreCase = true) -> {
+                        viewModel.updateSettings(viewModel.settings.value.copy(bidirectionalBridgeEnabled = false))
+                        outputLines.add(TerminalLine("[WEBSITE BRIDGE] Disabled for the active website.", TerminalLineType.WARNING))
+                    }
+                    queryArg.equals("all", ignoreCase = true) || queryArg.equals("all toggle", ignoreCase = true) || queryArg.equals("general", ignoreCase = true) -> {
+                        val settings = viewModel.settings.value
+                        val next = !settings.bridgeApplyToAllWebsites
+                        viewModel.updateSettings(settings.copy(bridgeApplyToAllWebsites = next))
+                        outputLines.add(TerminalLine("[GENERAL BRIDGE] ${if (next) "Enabled for all websites" else "Restricted to targeted scope"}.", if (next) TerminalLineType.SUCCESS else TerminalLineType.INFO))
                     }
                     queryArg.equals("status", ignoreCase = true) -> {
                         val current = viewModel.terminalBridgeMode.value
@@ -1542,88 +1554,6 @@ class TerminalCommandExecutor(
                         outputLines.add(TerminalLine("view: file not found: $path", TerminalLineType.ERROR))
                     }
                 }
-                commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-                return
-            }
-
-            "/bridge" -> {
-                val currentSettings = viewModel.settings.value
-                val currentUrl = viewModel.currentTab.value?.url.orEmpty()
-                val host = try { java.net.URI(currentUrl).host.orEmpty().ifEmpty { currentUrl } } catch (_: Exception) { currentUrl }
-                val hostLabel = if (host.isNotBlank()) host else "active website"
-                val argLower = queryArg.trim().lowercase()
-
-                if (argLower == "website" || argLower == "toggle" || argLower == "website toggle") {
-                    val newEnabled = !currentSettings.bidirectionalBridgeEnabled
-                    viewModel.updateSettings(currentSettings.copy(bidirectionalBridgeEnabled = newEnabled))
-                    outputLines.add(
-                        TerminalLine(
-                            "● [APPLY BRIDGE TO WEBSITE] " + (if (newEnabled) "APPLIED to $hostLabel (Interactive bidirectional stream enabled)" else "DISABLED for website"),
-                            if (newEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING
-                        )
-                    )
-                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-                    return
-                } else if (argLower == "website on" || argLower == "on") {
-                    viewModel.updateSettings(currentSettings.copy(bidirectionalBridgeEnabled = true))
-                    outputLines.add(TerminalLine("● [APPLY BRIDGE TO WEBSITE] APPLIED to $hostLabel", TerminalLineType.SUCCESS))
-                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-                    return
-                } else if (argLower == "website off" || argLower == "off") {
-                    viewModel.updateSettings(currentSettings.copy(bidirectionalBridgeEnabled = false))
-                    outputLines.add(TerminalLine("● [APPLY BRIDGE TO WEBSITE] DISABLED for website", TerminalLineType.WARNING))
-                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-                    return
-                } else if (argLower == "all" || argLower == "all toggle" || argLower == "general") {
-                    val newApplyAll = !currentSettings.bridgeApplyToAllWebsites
-                    viewModel.updateSettings(currentSettings.copy(bridgeApplyToAllWebsites = newApplyAll))
-                    outputLines.add(
-                        TerminalLine(
-                            "● [GENERAL APPLY BRIDGE TO ALL] " + (if (newApplyAll) "ENABLED (Universal across Websites, APIs & Tasks)" else "DISABLED (Targeted scope only)"),
-                            if (newApplyAll) TerminalLineType.SUCCESS else TerminalLineType.INFO
-                        )
-                    )
-                    commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
-                    return
-                }
-
-                val state = viewModel.webAppBridge.connectionState.value
-                val isSuccess = state == WebAppConnectionState.READY
-                val bridgeEnabled = currentSettings.bidirectionalBridgeEnabled
-                val applyAll = currentSettings.bridgeApplyToAllWebsites
-
-                outputLines.add(TerminalLine("── GVONE BRIDGE & TARGET REPORT ──", TerminalLineType.SYSTEM))
-                outputLines.add(
-                    TerminalLine(
-                        "● Bridge Handshake: " + (if (isSuccess) "SUCCESSFUL (Connected & Ready)" else "NOT CONNECTED (State: ${state.name})"),
-                        if (isSuccess) TerminalLineType.SUCCESS else TerminalLineType.ERROR
-                    )
-                )
-                outputLines.add(TerminalLine("● Target Endpoint: $host", TerminalLineType.INFO))
-                outputLines.add(
-                    TerminalLine(
-                        "● Apply Bridge to Website: " + (if (bridgeEnabled) "APPLIED (Active on $hostLabel)" else "DISABLED"),
-                        if (bridgeEnabled) TerminalLineType.SUCCESS else TerminalLineType.WARNING
-                    )
-                )
-                outputLines.add(
-                    TerminalLine(
-                        "● General Apply Bridge to All: " + (if (applyAll) "ENABLED (Universal: Websites, APIs & Tasks)" else "RESTRICTED (Targeted / Specific app only)"),
-                        if (applyAll) TerminalLineType.SUCCESS else TerminalLineType.OUTPUT
-                    )
-                )
-                outputLines.add(
-                    TerminalLine(
-                        "● Address Bar Link: CONNECTED & SYNCHRONIZED",
-                        TerminalLineType.SUCCESS
-                    )
-                )
-                outputLines.add(
-                    TerminalLine(
-                        "● Usage: '/bridge website' to toggle website bridge | '/bridge all' to toggle general bridge",
-                        TerminalLineType.INFO
-                    )
-                )
                 commitAndShowTerminalIfNeeded(outputLines, openTerminal = true)
                 return
             }

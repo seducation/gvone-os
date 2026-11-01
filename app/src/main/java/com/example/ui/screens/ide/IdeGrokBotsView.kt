@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.agent.BotAssistantRuntime
 import com.example.data.agent.BotAssistantStatus
 
 /**
@@ -53,6 +55,9 @@ fun IdeGrokBotsView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val assistantRuntime = remember(context) { BotAssistantRuntime.get(context) }
+    val assistantEnabled by assistantRuntime.enabled.collectAsStateWithLifecycle()
+    val assistantPaused by assistantRuntime.paused.collectAsStateWithLifecycle()
     var promptInput by remember { mutableStateOf("") }
     val chatListState = rememberLazyListState()
     LaunchedEffect(activeTab?.id, activeTab?.content) {
@@ -193,6 +198,58 @@ fun IdeGrokBotsView(
                         style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
                         color = MaterialTheme.colorScheme.primary
                     )
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = if (assistantEnabled) "Persistent assistant" else "Assistant is off",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedButton(
+                onClick = {
+                    when {
+                        !assistantEnabled || assistantPaused -> assistantRuntime.setPaused(false)
+                        else -> assistantRuntime.setPaused(true)
+                    }
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                modifier = Modifier.height(30.dp).testTag("bot_assistant_toggle")
+            ) {
+                Icon(
+                    imageVector = when {
+                        !assistantEnabled || assistantPaused -> Icons.Rounded.PlayArrow
+                        else -> Icons.Rounded.Pause
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = when {
+                        !assistantEnabled -> "Start"
+                        assistantPaused -> "Resume"
+                        else -> "Pause"
+                    },
+                    fontSize = 10.sp
+                )
+            }
+            if (assistantEnabled) {
+                TextButton(
+                    onClick = { assistantRuntime.stop() },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.height(30.dp).testTag("bot_assistant_stop")
+                ) {
+                    Text("Stop", color = MaterialTheme.colorScheme.error, fontSize = 10.sp)
                 }
             }
         }
