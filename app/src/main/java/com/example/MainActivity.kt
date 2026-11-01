@@ -45,7 +45,7 @@ import com.example.ui.components.FloatingAddressBar
 import com.example.ui.components.GVONEWebView
 import com.example.ui.components.PermissionPromptDialog
 import com.example.ui.components.ShortsAudioPill
-import com.example.ui.components.WebsiteDeveloperBar
+import com.example.ui.components.UnifiedDeveloperBar
 import com.example.ui.contextmenu.LinkContextMenuBottomSheet
 import com.example.ui.contextmenu.PagePreviewSheet
 import com.example.ui.contextmenu.TabGroupPickerSheet
@@ -436,7 +436,7 @@ fun BrowserApp(
     BackHandler(enabled = showSuggestions && activeSheet == ActiveSheet.None) {
         viewModel.closeSuggestions()
     }
-    // Callbacks for unified Target Selector Dropdown in WebsiteDeveloperBar
+    // Callbacks for unified Target Selector Dropdown in UnifiedDeveloperBar
     val onSelectBrowserTabFromDevBar: (String) -> Unit = { tabId ->
         viewModel.selectTab(tabId)
         viewModel.setWorkspaceMode(XcodeWorkspaceMode.BROWSER)
@@ -607,7 +607,7 @@ fun BrowserApp(
                                 Column(modifier = Modifier.fillMaxSize()) {
                                     if (settings.developerBarEnabled) {
                                         val activeWv = viewModel.getActiveWebView(tab.id)
-                                        WebsiteDeveloperBar(
+                                        UnifiedDeveloperBar(
                                             tab = tab,
                                             activeWebView = activeWv,
                                             isTorActive = settings.torEnabled,

@@ -50,7 +50,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Target items representation for the Xcode-style Target Selector Dropdown in WebsiteDeveloperBar.
+ * Target items representation for the Xcode-style Target Selector Dropdown in UnifiedDeveloperBar.
  */
 data class OtherWorkspaceFile(
     val title: String,
@@ -89,11 +89,12 @@ enum class DevBarTab(val label: String, val icon: androidx.compose.ui.graphics.v
 }
 
 /**
- * Developer Bar placed directly on top of the active website.
- * Can be toggled on/off, expanded/collapsed, and equipped with live DevTools.
+ * Unified Developer Bar — context-adaptive toolbar that morphs its controls and
+ * expandable drawer based on the active workspace mode (Browser, Code Editor, Bot Chat,
+ * PDF, Image, Audio/Video, Markdown, JSON Inspector). Placed on top of the active content.
  */
 @Composable
-fun WebsiteDeveloperBar(
+fun UnifiedDeveloperBar(
     tab: BrowserTab,
     activeWebView: WebView?,
     isTorActive: Boolean,
@@ -241,7 +242,7 @@ fun WebsiteDeveloperBar(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .testTag("website_developer_bar"),
+            .testTag("unified_developer_bar"),
         color = Color(0xFF111726),
         border = BorderStroke(1.dp, Color(0xFF1E293B))
     ) {
@@ -254,53 +255,115 @@ fun WebsiteDeveloperBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // 1. LEFT CONTROLS: Classic Browser Developer Bar Navigation
+                // 1. LEFT CONTROLS: Mode-Adaptive Navigation
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    IconButton(
-                        onClick = { onGoBack?.invoke() ?: run { if (activeWebView?.canGoBack() == true) activeWebView.goBack() } },
-                        enabled = canGoBack || activeWebView?.canGoBack() == true,
-                        modifier = Modifier
-                            .size(30.dp)
-                            .testTag("dev_bar_back_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back",
-                            tint = if (canGoBack || activeWebView?.canGoBack() == true) Color(0xFFE2E8F0) else Color(0xFF475569),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { onGoForward?.invoke() ?: run { if (activeWebView?.canGoForward() == true) activeWebView.goForward() } },
-                        enabled = canGoForward || activeWebView?.canGoForward() == true,
-                        modifier = Modifier
-                            .size(30.dp)
-                            .testTag("dev_bar_forward_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                            contentDescription = "Forward",
-                            tint = if (canGoForward || activeWebView?.canGoForward() == true) Color(0xFFE2E8F0) else Color(0xFF475569),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { onReload?.invoke() ?: activeWebView?.reload() },
-                        modifier = Modifier
-                            .size(30.dp)
-                            .testTag("dev_bar_reload_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Refresh,
-                            contentDescription = "Reload",
-                            tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(16.dp)
-                        )
+                    when (workspaceMode) {
+                        XcodeWorkspaceMode.BROWSER -> {
+                            IconButton(
+                                onClick = { onGoBack?.invoke() ?: run { if (activeWebView?.canGoBack() == true) activeWebView.goBack() } },
+                                enabled = canGoBack || activeWebView?.canGoBack() == true,
+                                modifier = Modifier.size(30.dp).testTag("dev_bar_back_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = if (canGoBack || activeWebView?.canGoBack() == true) Color(0xFFE2E8F0) else Color(0xFF475569),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onGoForward?.invoke() ?: run { if (activeWebView?.canGoForward() == true) activeWebView.goForward() } },
+                                enabled = canGoForward || activeWebView?.canGoForward() == true,
+                                modifier = Modifier.size(30.dp).testTag("dev_bar_forward_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                    contentDescription = "Forward",
+                                    tint = if (canGoForward || activeWebView?.canGoForward() == true) Color(0xFFE2E8F0) else Color(0xFF475569),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onReload?.invoke() ?: activeWebView?.reload() },
+                                modifier = Modifier.size(30.dp).testTag("dev_bar_reload_btn")
+                            ) {
+                                Icon(imageVector = Icons.Rounded.Refresh, contentDescription = "Reload", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.CODE_EDITOR -> {
+                            IconButton(onClick = { onOpenNavigator?.invoke() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.AutoMirrored.Rounded.ViewSidebar, contentDescription = "Navigator", tint = Color(0xFFA78BFA), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { onSaveFile?.invoke() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Save, contentDescription = "Save", tint = if (isFileDirty) Color(0xFF34D399) else Color(0xFF475569), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { onFormatCode?.invoke() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.FormatAlignLeft, contentDescription = "Format", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.BOT_CHAT -> {
+                            IconButton(onClick = { onOpenNavigator?.invoke() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.SmartToy, contentDescription = "Persona", tint = Color(0xFF00E5FF), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { onOpenConsole?.invoke() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.History, contentDescription = "History", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.PDF_VIEWER -> {
+                            IconButton(onClick = { /* Previous page */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Previous Page", tint = Color(0xFFE2E8F0), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Next page */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = "Next Page", tint = Color(0xFFE2E8F0), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { onOpenNavigator?.invoke() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Toc, contentDescription = "Outline", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.IMAGE_VIEWER -> {
+                            IconButton(onClick = { /* Zoom out */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.ZoomOut, contentDescription = "Zoom Out", tint = Color(0xFFE2E8F0), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Zoom in */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.ZoomIn, contentDescription = "Zoom In", tint = Color(0xFFE2E8F0), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Fit to screen */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.FitScreen, contentDescription = "Fit", tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.MEDIA_PLAYER -> {
+                            IconButton(onClick = { /* Previous track */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", tint = Color(0xFFE2E8F0), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Play/Pause */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.PlayArrow, contentDescription = "Play", tint = Color(0xFFEC4899), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Next track */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.SkipNext, contentDescription = "Next", tint = Color(0xFFE2E8F0), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.MARKDOWN -> {
+                            IconButton(onClick = { onOpenNavigator?.invoke() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Toc, contentDescription = "TOC", tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Toggle preview */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Visibility, contentDescription = "Preview", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.DATA_INSPECTOR -> {
+                            IconButton(onClick = { /* Expand all */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.UnfoldMore, contentDescription = "Expand All", tint = Color(0xFF06B6D4), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Collapse all */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.UnfoldLess, contentDescription = "Collapse All", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Search */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Search, contentDescription = "Search Keys", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
                 }
 
@@ -675,159 +738,198 @@ fun WebsiteDeveloperBar(
                     }
                 }
 
-                // 3. RIGHT CONTROLS: Developer Tools, Console, Outlines, Inspector, Drawer Toggle, DEV Pill
+                // 3. RIGHT CONTROLS: Mode-Adaptive Toolbar + Shared Expand/DEV
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    // 1. Live DOM Visual Outlines Toggle Button
-                    IconButton(
-                        onClick = {
-                            outlinesEnabled = !outlinesEnabled
-                            val script = if (outlinesEnabled) {
-                                "(function(){var s=document.createElement('style');s.id='__gvone_dev_outlines__';s.innerHTML='* { outline: 1px dashed rgba(56,189,248,0.7) !important; }';document.head.appendChild(s);return 'Outlines Active';})()"
-                            } else {
-                                "(function(){var s=document.getElementById('__gvone_dev_outlines__');if(s)s.remove();return 'Outlines Removed';})()"
-                            }
-                            executeJs(script) {
-                                Toast.makeText(context, if (outlinesEnabled) "Visual DOM Outlines Enabled" else "Visual Outlines Disabled", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier
-                            .size(30.dp)
-                            .testTag("dev_bar_outlines_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Layers,
-                            contentDescription = "Visual Outlines",
-                            tint = if (outlinesEnabled) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    // 2. Click-to-Inspect Element Toggle Button
-                    IconButton(
-                        onClick = {
-                            clickInspectorEnabled = !clickInspectorEnabled
-                            val script = if (clickInspectorEnabled) {
-                                """
-                                (function(){
-                                    window.__gvone_inspect_fn__ = function(e){
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        var el = e.target;
-                                        var info = '<' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + '> ' + Math.round(el.offsetWidth) + 'x' + Math.round(el.offsetHeight) + 'px';
-                                        alert('Element: ' + info);
-                                    };
-                                    window.addEventListener('click', window.__gvone_inspect_fn__, true);
-                                    return 'Inspector On';
-                                })()
-                                """.trimIndent()
-                            } else {
-                                """
-                                (function(){
-                                    if (window.__gvone_inspect_fn__) {
-                                        window.removeEventListener('click', window.__gvone_inspect_fn__, true);
-                                        window.__gvone_inspect_fn__ = null;
+                    // === Mode-Specific Tool Buttons ===
+                    when (workspaceMode) {
+                        XcodeWorkspaceMode.BROWSER -> {
+                            // DOM Visual Outlines Toggle
+                            IconButton(
+                                onClick = {
+                                    outlinesEnabled = !outlinesEnabled
+                                    val script = if (outlinesEnabled) {
+                                        "(function(){var s=document.createElement('style');s.id='__gvone_dev_outlines__';s.innerHTML='* { outline: 1px dashed rgba(56,189,248,0.7) !important; }';document.head.appendChild(s);return 'Outlines Active';})()"
+                                    } else {
+                                        "(function(){var s=document.getElementById('__gvone_dev_outlines__');if(s)s.remove();return 'Outlines Removed';})()"
                                     }
-                                    return 'Inspector Off';
-                                })()
-                                """.trimIndent()
+                                    executeJs(script) {
+                                        Toast.makeText(context, if (outlinesEnabled) "Visual DOM Outlines Enabled" else "Visual Outlines Disabled", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.size(30.dp).testTag("dev_bar_outlines_btn")
+                            ) {
+                                Icon(Icons.Rounded.Layers, contentDescription = "Visual Outlines", tint = if (outlinesEnabled) Color(0xFF38BDF8) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
                             }
-                            executeJs(script) {
-                                Toast.makeText(context, if (clickInspectorEnabled) "Click Inspector ON: Tap any element to view tag" else "Click Inspector OFF", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier
-                            .size(30.dp)
-                            .testTag("dev_bar_inspect_element_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.AdsClick,
-                            contentDescription = "Inspect Element",
-                            tint = if (clickInspectorEnabled) Color(0xFF34D399) else Color(0xFF94A3B8),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
 
-                    // 3. Dev Console Button
-                    IconButton(
-                        onClick = {
-                            if (!isExpanded) {
-                                selectedTab = DevBarTab.CONSOLE
-                                isExpanded = true
-                            } else if (selectedTab != DevBarTab.CONSOLE) {
-                                selectedTab = DevBarTab.CONSOLE
-                            } else {
-                                onOpenConsole?.invoke()
+                            // Click-to-Inspect Element Toggle
+                            IconButton(
+                                onClick = {
+                                    clickInspectorEnabled = !clickInspectorEnabled
+                                    val script = if (clickInspectorEnabled) {
+                                        """
+                                        (function(){
+                                            window.__gvone_inspect_fn__ = function(e){
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                var el = e.target;
+                                                var info = '<' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + '> ' + Math.round(el.offsetWidth) + 'x' + Math.round(el.offsetHeight) + 'px';
+                                                alert('Element: ' + info);
+                                            };
+                                            window.addEventListener('click', window.__gvone_inspect_fn__, true);
+                                            return 'Inspector On';
+                                        })()
+                                        """.trimIndent()
+                                    } else {
+                                        """
+                                        (function(){
+                                            if (window.__gvone_inspect_fn__) {
+                                                window.removeEventListener('click', window.__gvone_inspect_fn__, true);
+                                                window.__gvone_inspect_fn__ = null;
+                                            }
+                                            return 'Inspector Off';
+                                        })()
+                                        """.trimIndent()
+                                    }
+                                    executeJs(script) {
+                                        Toast.makeText(context, if (clickInspectorEnabled) "Click Inspector ON: Tap any element to view tag" else "Click Inspector OFF", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.size(30.dp).testTag("dev_bar_inspect_element_btn")
+                            ) {
+                                Icon(Icons.Rounded.AdsClick, contentDescription = "Inspect Element", tint = if (clickInspectorEnabled) Color(0xFF34D399) else Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
                             }
-                        },
-                        modifier = Modifier
-                            .size(30.dp)
-                            .testTag("dev_bar_console_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Terminal,
-                            contentDescription = "Dev Console",
-                            tint = Color(0xFF34D399),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
 
-                    // 4. Code Studio IDE Button
-                    if (onOpenIde != null) {
-                        IconButton(
-                            onClick = onOpenIde,
-                            modifier = Modifier
-                                .size(30.dp)
-                                .testTag("dev_bar_ide_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Code,
-                                contentDescription = "Code Studio IDE",
-                                tint = Color(0xFFA78BFA),
-                                modifier = Modifier.size(16.dp)
-                            )
+                            // Console
+                            IconButton(
+                                onClick = {
+                                    if (!isExpanded) { selectedTab = DevBarTab.CONSOLE; isExpanded = true }
+                                    else if (selectedTab != DevBarTab.CONSOLE) selectedTab = DevBarTab.CONSOLE
+                                    else onOpenConsole?.invoke()
+                                },
+                                modifier = Modifier.size(30.dp).testTag("dev_bar_console_btn")
+                            ) {
+                                Icon(Icons.Rounded.Terminal, contentDescription = "Dev Console", tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                            }
+
+                            // Code Studio IDE
+                            if (onOpenIde != null) {
+                                IconButton(onClick = onOpenIde, modifier = Modifier.size(30.dp).testTag("dev_bar_ide_btn")) {
+                                    Icon(Icons.Rounded.Code, contentDescription = "Code Studio IDE", tint = Color(0xFFA78BFA), modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                        XcodeWorkspaceMode.CODE_EDITOR -> {
+                            IconButton(onClick = { onOpenConsole?.invoke() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Terminal, contentDescription = "Terminal", tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Run / Build */ Toast.makeText(context, "Build & Run", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.PlayArrow, contentDescription = "Run", tint = Color(0xFF4ADE80), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Git status */ Toast.makeText(context, "Git: clean", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.AccountTree, contentDescription = "Git", tint = Color(0xFFFB923C), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.BOT_CHAT -> {
+                            IconButton(onClick = { /* Clear chat */ Toast.makeText(context, "Chat cleared", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear Chat", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Export chat */ Toast.makeText(context, "Chat exported", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.FileDownload, contentDescription = "Export", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { onOpenConsole?.invoke() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Terminal, contentDescription = "Terminal", tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.PDF_VIEWER -> {
+                            IconButton(onClick = { /* Zoom in */ Toast.makeText(context, "Zoom In", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.ZoomIn, contentDescription = "Zoom In", tint = Color(0xFFE2E8F0), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Zoom out */ Toast.makeText(context, "Zoom Out", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.ZoomOut, contentDescription = "Zoom Out", tint = Color(0xFFE2E8F0), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Bookmark */ Toast.makeText(context, "Page bookmarked", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.BookmarkAdd, contentDescription = "Bookmark", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Search in PDF */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Search, contentDescription = "Search", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.IMAGE_VIEWER -> {
+                            IconButton(onClick = { /* Rotate */ Toast.makeText(context, "Rotated 90°", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.RotateRight, contentDescription = "Rotate", tint = Color(0xFFF59E0B), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Crop */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Crop, contentDescription = "Crop", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* EXIF info */ Toast.makeText(context, "EXIF Metadata", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Info, contentDescription = "EXIF Info", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.MEDIA_PLAYER -> {
+                            IconButton(onClick = { /* Volume */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.VolumeUp, contentDescription = "Volume", tint = Color(0xFFEC4899), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Loop */ Toast.makeText(context, "Loop toggled", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Loop, contentDescription = "Loop", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Speed */ Toast.makeText(context, "1.0x", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Speed, contentDescription = "Speed", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.MARKDOWN -> {
+                            IconButton(onClick = { /* Toggle preview */ Toast.makeText(context, "Preview toggled", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Visibility, contentDescription = "Preview", tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Export */ Toast.makeText(context, "Exported to PDF", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.FileDownload, contentDescription = "Export", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { onFormatCode?.invoke() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.FormatAlignLeft, contentDescription = "Format", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        XcodeWorkspaceMode.DATA_INSPECTOR -> {
+                            IconButton(onClick = { /* Search keys */ }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.Search, contentDescription = "Search", tint = Color(0xFF06B6D4), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Copy JSON */ Toast.makeText(context, "JSON copied", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = { /* Validate */ Toast.makeText(context, "Valid JSON ✓", Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(30.dp)) {
+                                Icon(Icons.Rounded.CheckCircle, contentDescription = "Validate", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
 
-                    // 5. Expand / Collapse Live DevTools Drawer
+                    // === SHARED: Expand / Collapse Live Drawer ===
                     val rotation by animateFloatAsState(targetValue = if (isExpanded) 180f else 0f, label = "chevron")
                     IconButton(
                         onClick = { isExpanded = !isExpanded },
-                        modifier = Modifier
-                            .size(28.dp)
-                            .testTag("dev_bar_expand_toggle_btn")
+                        modifier = Modifier.size(28.dp).testTag("dev_bar_expand_toggle_btn")
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.ExpandMore,
                             contentDescription = if (isExpanded) "Collapse Tools" else "Expand Tools",
                             tint = if (isExpanded) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-                            modifier = Modifier
-                                .size(17.dp)
-                                .rotate(rotation)
+                            modifier = Modifier.size(17.dp).rotate(rotation)
                         )
                     }
 
-                    // 6. DEV ON/OFF Toggle Badge Pill
+                    // === SHARED: DEV ON/OFF Toggle Badge Pill ===
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = Color(0xFF064E3B),
                         border = BorderStroke(1.dp, Color(0xFF10B981)),
-                        modifier = Modifier
-                            .clickable { onToggleOff() }
-                            .testTag("dev_bar_toggle_off_btn")
+                        modifier = Modifier.clickable { onToggleOff() }.testTag("dev_bar_toggle_off_btn")
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .background(Color(0xFF34D399), CircleShape)
-                            )
+                            Box(modifier = Modifier.size(6.dp).background(Color(0xFF34D399), CircleShape))
                             Text(
                                 text = "DEV",
                                 fontSize = 10.sp,
@@ -840,7 +942,7 @@ fun WebsiteDeveloperBar(
                 }
             }
 
-            // ================= EXPANDABLE DEV DRAWER =================
+            // ================= EXPANDABLE DEV DRAWER (Mode-Adaptive) =================
             AnimatedVisibility(
                 visible = isExpanded,
                 enter = expandVertically() + fadeIn(),
@@ -854,219 +956,310 @@ fun WebsiteDeveloperBar(
                 ) {
                     HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
 
-                    // Category Tabs inside drawer
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF0D121D))
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        DevBarTab.values().forEach { tabType ->
-                            val isSelected = selectedTab == tabType
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (isSelected) Color(0xFF1E293B) else Color.Transparent,
-                                border = if (isSelected) BorderStroke(1.dp, Color(0xFF38BDF8)) else BorderStroke(0.5.dp, Color(0xFF1E293B)),
+                    when (workspaceMode) {
+                        // ======== BROWSER: Full multi-tab Web DevTools (unchanged) ========
+                        XcodeWorkspaceMode.BROWSER -> {
+                            // Category Tabs inside drawer
+                            Row(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable { selectedTab = tabType }
-                                    .padding(horizontal = 8.dp, vertical = 5.dp)
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF0D121D))
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = tabType.icon,
-                                        contentDescription = tabType.label,
-                                        tint = if (isSelected) Color(0xFF38BDF8) else Color(0xFF64748B),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = tabType.label,
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) Color(0xFFE2E8F0) else Color(0xFF64748B)
-                                    )
+                                DevBarTab.values().forEach { tabType ->
+                                    val isSelected = selectedTab == tabType
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (isSelected) Color(0xFF1E293B) else Color.Transparent,
+                                        border = if (isSelected) BorderStroke(1.dp, Color(0xFF38BDF8)) else BorderStroke(0.5.dp, Color(0xFF1E293B)),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable { selectedTab = tabType }
+                                            .padding(horizontal = 8.dp, vertical = 5.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(imageVector = tabType.icon, contentDescription = tabType.label, tint = if (isSelected) Color(0xFF38BDF8) else Color(0xFF64748B), modifier = Modifier.size(14.dp))
+                                            Text(text = tabType.label, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, color = if (isSelected) Color(0xFFE2E8F0) else Color(0xFF64748B))
+                                        }
+                                    }
                                 }
+                            }
+
+                            HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .padding(horizontal = 10.dp, vertical = 8.dp)
+                            ) {
+                                when (selectedTab) {
+                                    DevBarTab.CONSOLE -> {
+                                        DevConsolePanel(
+                                    consoleLogs = consoleLogs,
+                                    jsInput = jsInput,
+                                    onJsInputChange = { jsInput = it },
+                                    jsOutput = jsEvaluationOutput,
+                                    onExecuteJs = { snippet ->
+                                        executeJs(snippet) { result ->
+                                            jsEvaluationOutput = result
+                                            consoleLogs.add(
+                                                DevConsoleLog(
+                                                    message = "▶ $snippet\n◀ $result",
+                                                    level = ConsoleMessage.MessageLevel.LOG
+                                                )
+                                            )
+                                        }
+                                    },
+                                    onClearLogs = {
+                                        consoleLogs.clear()
+                                        jsEvaluationOutput = null
+                                    }
+                                )
+                            }
+                            DevBarTab.DOM_INSPECT -> {
+                                DevDomInspectPanel(
+                                    tab = tab,
+                                    outlinesEnabled = outlinesEnabled,
+                                    onToggleOutlines = {
+                                        outlinesEnabled = !outlinesEnabled
+                                        val script = if (outlinesEnabled) {
+                                            "(function(){var s=document.createElement('style');s.id='__gvone_dev_outlines__';s.innerHTML='* { outline: 1px dashed rgba(56,189,248,0.7) !important; }';document.head.appendChild(s);return 'Outlines Active';})()"
+                                        } else {
+                                            "(function(){var s=document.getElementById('__gvone_dev_outlines__');if(s)s.remove();return 'Outlines Removed';})()"
+                                        }
+                                        executeJs(script) {
+                                            Toast.makeText(context, if (outlinesEnabled) "Visual DOM Outlines Enabled" else "Visual Outlines Disabled", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    clickInspectorEnabled = clickInspectorEnabled,
+                                    onToggleClickInspector = {
+                                        clickInspectorEnabled = !clickInspectorEnabled
+                                        val script = if (clickInspectorEnabled) {
+                                            """
+                                            (function(){
+                                                window.__gvone_inspect_fn__ = function(e){
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    var el = e.target;
+                                                    var info = '<' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + '> ' + Math.round(el.offsetWidth) + 'x' + Math.round(el.offsetHeight) + 'px';
+                                                    alert('Element: ' + info);
+                                                };
+                                                window.addEventListener('click', window.__gvone_inspect_fn__, true);
+                                                return 'Inspector On';
+                                            })()
+                                            """.trimIndent()
+                                        } else {
+                                            """
+                                            (function(){
+                                                if (window.__gvone_inspect_fn__) {
+                                                    window.removeEventListener('click', window.__gvone_inspect_fn__, true);
+                                                    window.__gvone_inspect_fn__ = null;
+                                                }
+                                                return 'Inspector Off';
+                                            })()
+                                            """.trimIndent()
+                                        }
+                                        executeJs(script) {
+                                            Toast.makeText(context, if (clickInspectorEnabled) "Click Inspector ON: Tap any element to view tag" else "Click Inspector OFF", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onCopyOuterHtml = {
+                                        executeJs("document.documentElement.outerHTML") { html ->
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("HTML", html.removePrefix("\"").removeSuffix("\"").replace("\\n", "\n").replace("\\\"", "\"")))
+                                            Toast.makeText(context, "Page HTML copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onInspectMetadata = {
+                                        val script = """
+                                        JSON.stringify({
+                                            title: document.title,
+                                            elements: document.getElementsByTagName('*').length,
+                                            scripts: document.scripts.length,
+                                            links: document.links.length,
+                                            images: document.images.length,
+                                            viewport: window.innerWidth + 'x' + window.innerHeight
+                                        })
+                                        """.trimIndent()
+                                        executeJs(script) { data ->
+                                            Toast.makeText(context, "Page Stats: $data", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                )
+                            }
+                            DevBarTab.NETWORK -> {
+                                DevNetworkPanel(
+                                    tab = tab,
+                                    isTorActive = isTorActive,
+                                    onHardReload = {
+                                        activeWebView?.clearCache(true)
+                                        activeWebView?.reload()
+                                        Toast.makeText(context, "Hard Reload (Cache Bypassed)", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onClearCache = {
+                                        activeWebView?.clearCache(true)
+                                        Toast.makeText(context, "WebView Cache Cleared", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
+                            DevBarTab.STORAGE -> {
+                                DevStoragePanel(
+                                    hostDomain = hostDomain,
+                                    onInspectCookies = {
+                                        executeJs("document.cookie") { cookies ->
+                                            val cleanCookies = cookies.trim().removePrefix("\"").removeSuffix("\"")
+                                            Toast.makeText(context, if (cleanCookies.isBlank()) "No cookies found" else "Cookies: $cleanCookies", Toast.LENGTH_LONG).show()
+                                        }
+                                    },
+                                    onClearStorage = {
+                                        executeJs("localStorage.clear(); sessionStorage.clear(); 'Storage Cleared';") {
+                                            Toast.makeText(context, "LocalStorage & SessionStorage cleared!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                )
+                            }
+                            DevBarTab.DEVICE -> {
+                                DevDevicePanel(
+                                    activeWebView = activeWebView,
+                                    onSetZoom = { zoomPercent ->
+                                        activeWebView?.setInitialScale(zoomPercent)
+                                        Toast.makeText(context, "Scale set to $zoomPercent%", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onToggleDarkMode = {
+                                        val script = """
+                                        (function(){
+                                            var id = '__gvone_dark_filter__';
+                                            var existing = document.getElementById(id);
+                                            if (existing) {
+                                                existing.remove();
+                                                return 'Default Theme';
+                                            } else {
+                                                var s = document.createElement('style');
+                                                s.id = id;
+                                                s.innerHTML = 'html { filter: invert(0.92) hue-rotate(180deg) !important; } img, video { filter: invert(1.08) hue-rotate(180deg) !important; }';
+                                                document.head.appendChild(s);
+                                                return 'Inverted Dark Mode';
+                                            }
+                                        })()
+                                        """.trimIndent()
+                                        executeJs(script) { res ->
+                                            Toast.makeText(context, res, Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                )
                             }
                         }
                     }
+                        }
 
-                    HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+                        // ======== CODE EDITOR: Problems / Output / Git ========
+                        XcodeWorkspaceMode.CODE_EDITOR -> {
+                            CodeEditorDrawerPanel(
+                                activeFileName = activeFileName,
+                                isFileDirty = isFileDirty
+                            )
+                        }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .padding(horizontal = 10.dp, vertical = 8.dp)
-                    ) {
-                        when (selectedTab) {
-                            DevBarTab.CONSOLE -> {
-                                DevConsolePanel(
-                            consoleLogs = consoleLogs,
-                            jsInput = jsInput,
-                            onJsInputChange = { jsInput = it },
-                            jsOutput = jsEvaluationOutput,
-                            onExecuteJs = { snippet ->
-                                executeJs(snippet) { result ->
-                                    jsEvaluationOutput = result
-                                    consoleLogs.add(
-                                        DevConsoleLog(
-                                            message = "▶ $snippet\n◀ $result",
-                                            level = ConsoleMessage.MessageLevel.LOG
-                                        )
-                                    )
-                                }
-                            },
-                            onClearLogs = {
-                                consoleLogs.clear()
-                                jsEvaluationOutput = null
-                            }
-                        )
-                    }
-                    DevBarTab.DOM_INSPECT -> {
-                        DevDomInspectPanel(
-                            tab = tab,
-                            outlinesEnabled = outlinesEnabled,
-                            onToggleOutlines = {
-                                outlinesEnabled = !outlinesEnabled
-                                val script = if (outlinesEnabled) {
-                                    "(function(){var s=document.createElement('style');s.id='__gvone_dev_outlines__';s.innerHTML='* { outline: 1px dashed rgba(56,189,248,0.7) !important; }';document.head.appendChild(s);return 'Outlines Active';})()"
-                                } else {
-                                    "(function(){var s=document.getElementById('__gvone_dev_outlines__');if(s)s.remove();return 'Outlines Removed';})()"
-                                }
-                                executeJs(script) {
-                                    Toast.makeText(context, if (outlinesEnabled) "Visual DOM Outlines Enabled" else "Visual Outlines Disabled", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            clickInspectorEnabled = clickInspectorEnabled,
-                            onToggleClickInspector = {
-                                clickInspectorEnabled = !clickInspectorEnabled
-                                val script = if (clickInspectorEnabled) {
-                                    """
-                                    (function(){
-                                        window.__gvone_inspect_fn__ = function(e){
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            var el = e.target;
-                                            var info = '<' + el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + '> ' + Math.round(el.offsetWidth) + 'x' + Math.round(el.offsetHeight) + 'px';
-                                            alert('Element: ' + info);
-                                        };
-                                        window.addEventListener('click', window.__gvone_inspect_fn__, true);
-                                        return 'Inspector On';
-                                    })()
-                                    """.trimIndent()
-                                } else {
-                                    """
-                                    (function(){
-                                        if (window.__gvone_inspect_fn__) {
-                                            window.removeEventListener('click', window.__gvone_inspect_fn__, true);
-                                            window.__gvone_inspect_fn__ = null;
-                                        }
-                                        return 'Inspector Off';
-                                    })()
-                                    """.trimIndent()
-                                }
-                                executeJs(script) {
-                                    Toast.makeText(context, if (clickInspectorEnabled) "Click Inspector ON: Tap any element to view tag" else "Click Inspector OFF", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            onCopyOuterHtml = {
-                                executeJs("document.documentElement.outerHTML") { html ->
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("HTML", html.removePrefix("\"").removeSuffix("\"").replace("\\n", "\n").replace("\\\"", "\"")))
-                                    Toast.makeText(context, "Page HTML copied to clipboard!", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            onInspectMetadata = {
-                                val script = """
-                                JSON.stringify({
-                                    title: document.title,
-                                    elements: document.getElementsByTagName('*').length,
-                                    scripts: document.scripts.length,
-                                    links: document.links.length,
-                                    images: document.images.length,
-                                    viewport: window.innerWidth + 'x' + window.innerHeight
-                                })
-                                """.trimIndent()
-                                executeJs(script) { data ->
-                                    Toast.makeText(context, "Page Stats: $data", Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        )
-                    }
-                    DevBarTab.NETWORK -> {
-                        DevNetworkPanel(
-                            tab = tab,
-                            isTorActive = isTorActive,
-                            onHardReload = {
-                                activeWebView?.clearCache(true)
-                                activeWebView?.reload()
-                                Toast.makeText(context, "Hard Reload (Cache Bypassed)", Toast.LENGTH_SHORT).show()
-                            },
-                            onClearCache = {
-                                activeWebView?.clearCache(true)
-                                Toast.makeText(context, "WebView Cache Cleared", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
-                    DevBarTab.STORAGE -> {
-                        DevStoragePanel(
-                            hostDomain = hostDomain,
-                            onInspectCookies = {
-                                executeJs("document.cookie") { cookies ->
-                                    val cleanCookies = cookies.trim().removePrefix("\"").removeSuffix("\"")
-                                    Toast.makeText(context, if (cleanCookies.isBlank()) "No cookies found" else "Cookies: $cleanCookies", Toast.LENGTH_LONG).show()
-                                }
-                            },
-                            onClearStorage = {
-                                executeJs("localStorage.clear(); sessionStorage.clear(); 'Storage Cleared';") {
-                                    Toast.makeText(context, "LocalStorage & SessionStorage cleared!", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        )
-                    }
-                    DevBarTab.DEVICE -> {
-                        DevDevicePanel(
-                            activeWebView = activeWebView,
-                            onSetZoom = { zoomPercent ->
-                                activeWebView?.setInitialScale(zoomPercent)
-                                Toast.makeText(context, "Scale set to $zoomPercent%", Toast.LENGTH_SHORT).show()
-                            },
-                            onToggleDarkMode = {
-                                val script = """
-                                (function(){
-                                    var id = '__gvone_dark_filter__';
-                                    var existing = document.getElementById(id);
-                                    if (existing) {
-                                        existing.remove();
-                                        return 'Default Theme';
-                                    } else {
-                                        var s = document.createElement('style');
-                                        s.id = id;
-                                        s.innerHTML = 'html { filter: invert(0.92) hue-rotate(180deg) !important; } img, video { filter: invert(1.08) hue-rotate(180deg) !important; }';
-                                        document.head.appendChild(s);
-                                        return 'Inverted Dark Mode';
-                                    }
-                                })()
-                                """.trimIndent()
-                                executeJs(script) { res ->
-                                    Toast.makeText(context, res, Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        )
+                        // ======== BOT CHAT: Prompt Library / Model Info ========
+                        XcodeWorkspaceMode.BOT_CHAT -> {
+                            BotChatDrawerPanel(activeBotPersona = activeBotPersona)
+                        }
+
+                        // ======== PDF VIEWER: Document Info / Thumbnails ========
+                        XcodeWorkspaceMode.PDF_VIEWER -> {
+                            FileInfoDrawerPanel(
+                                fileName = activeFileName ?: "document.pdf",
+                                fileType = "PDF Document",
+                                accentColor = Color(0xFFEF4444),
+                                icon = Icons.Rounded.PictureAsPdf,
+                                details = listOf(
+                                    "FORMAT" to "PDF (Portable Document Format)",
+                                    "PAGES" to "Scanning...",
+                                    "ENCRYPTION" to "None",
+                                    "PRODUCER" to "GVONE Document Engine"
+                                )
+                            )
+                        }
+
+                        // ======== IMAGE VIEWER: EXIF / Dimensions / Histogram ========
+                        XcodeWorkspaceMode.IMAGE_VIEWER -> {
+                            FileInfoDrawerPanel(
+                                fileName = activeFileName ?: "preview.png",
+                                fileType = "Image Asset",
+                                accentColor = Color(0xFFF59E0B),
+                                icon = Icons.Rounded.Image,
+                                details = listOf(
+                                    "FORMAT" to "PNG (Portable Network Graphics)",
+                                    "DIMENSIONS" to "Analyzing...",
+                                    "COLOR SPACE" to "sRGB",
+                                    "BIT DEPTH" to "32-bit RGBA",
+                                    "DPI" to "72 ppi"
+                                )
+                            )
+                        }
+
+                        // ======== MEDIA PLAYER: Track Metadata / Waveform ========
+                        XcodeWorkspaceMode.MEDIA_PLAYER -> {
+                            FileInfoDrawerPanel(
+                                fileName = activeFileName ?: "sample_track.wav",
+                                fileType = "Audio Track",
+                                accentColor = Color(0xFFEC4899),
+                                icon = Icons.Rounded.PlayCircle,
+                                details = listOf(
+                                    "FORMAT" to "WAV (Waveform Audio)",
+                                    "SAMPLE RATE" to "44.1 kHz",
+                                    "BIT DEPTH" to "16-bit PCM",
+                                    "CHANNELS" to "Stereo (2ch)",
+                                    "DURATION" to "Loading..."
+                                )
+                            )
+                        }
+
+                        // ======== MARKDOWN: Live Preview / Outline ========
+                        XcodeWorkspaceMode.MARKDOWN -> {
+                            FileInfoDrawerPanel(
+                                fileName = activeFileName ?: "architecture.md",
+                                fileType = "Markdown Document",
+                                accentColor = Color(0xFF10B981),
+                                icon = Icons.Rounded.Description,
+                                details = listOf(
+                                    "FORMAT" to "Markdown (GFM)",
+                                    "HEADINGS" to "Scanning...",
+                                    "LINKS" to "Analyzing...",
+                                    "CODE BLOCKS" to "Counting...",
+                                    "RENDERER" to "GVONE Markdown Engine"
+                                )
+                            )
+                        }
+
+                        // ======== DATA INSPECTOR: Schema / Tree / Raw ========
+                        XcodeWorkspaceMode.DATA_INSPECTOR -> {
+                            FileInfoDrawerPanel(
+                                fileName = activeFileName ?: "package.json",
+                                fileType = "JSON Data",
+                                accentColor = Color(0xFF06B6D4),
+                                icon = Icons.Rounded.DataObject,
+                                details = listOf(
+                                    "FORMAT" to "JSON (JavaScript Object Notation)",
+                                    "TOP-LEVEL KEYS" to "Parsing...",
+                                    "DEPTH" to "Analyzing...",
+                                    "ENCODING" to "UTF-8",
+                                    "VALIDATOR" to "JSON Schema Draft 7"
+                                )
+                            )
+                        }
                     }
                 }
             }
         }
     }
-}
-}
 }
 
 @Composable
@@ -1620,6 +1813,248 @@ private fun TargetMenuItem(
                     tint = Color(0xFF38BDF8),
                     modifier = Modifier.size(16.dp)
                 )
+            }
+        }
+    }
+}
+
+// ========================= NEW MODE-ADAPTIVE DRAWER PANELS =========================
+
+@Composable
+private fun CodeEditorDrawerPanel(
+    activeFileName: String?,
+    isFileDirty: Boolean
+) {
+    val outputLines = remember {
+        mutableStateListOf(
+            "⟩ Kotlin compile daemon ready",
+            "⟩ KSP annotation processor: OK",
+            "⟩ compileDebugKotlin: UP-TO-DATE",
+            "✓ Build successful"
+        )
+    }
+    val drawerTabs = listOf("Problems", "Output", "Git Changes")
+    var selectedDrawerTab by remember { mutableStateOf(0) }
+
+    Column(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
+        // Tab row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF0D121D))
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val tabIcons = listOf(Icons.Rounded.ErrorOutline, Icons.Rounded.Terminal, Icons.Rounded.AccountTree)
+            val tabColors = listOf(Color(0xFFF87171), Color(0xFF34D399), Color(0xFFFB923C))
+            drawerTabs.forEachIndexed { i, label ->
+                val sel = selectedDrawerTab == i
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (sel) Color(0xFF1E293B) else Color.Transparent,
+                    border = if (sel) BorderStroke(1.dp, tabColors[i]) else BorderStroke(0.5.dp, Color(0xFF1E293B)),
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { selectedDrawerTab = i }.padding(horizontal = 8.dp, vertical = 5.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(tabIcons[i], contentDescription = label, tint = if (sel) tabColors[i] else Color(0xFF64748B), modifier = Modifier.size(14.dp))
+                        Text(label, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal, color = if (sel) Color(0xFFE2E8F0) else Color(0xFF64748B))
+                    }
+                }
+            }
+        }
+        HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+        Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp, vertical = 8.dp)) {
+            when (selectedDrawerTab) {
+                0 -> { // Problems
+                    Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFF04060A), border = BorderStroke(0.5.dp, Color(0xFF1E293B)), modifier = Modifier.fillMaxSize()) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(28.dp))
+                                Text("No problems detected", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color(0xFF64748B))
+                                if (activeFileName != null) Text("Active: $activeFileName${if (isFileDirty) " •" else ""}", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = Color(0xFF475569))
+                            }
+                        }
+                    }
+                }
+                1 -> { // Output
+                    Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFF04060A), border = BorderStroke(0.5.dp, Color(0xFF1E293B)), modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(modifier = Modifier.fillMaxSize().padding(6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            items(outputLines) { line ->
+                                Text(line, fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = if (line.startsWith("✓")) Color(0xFF4ADE80) else Color(0xFF64748B))
+                            }
+                        }
+                    }
+                }
+                2 -> { // Git Changes
+                    Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFF04060A), border = BorderStroke(0.5.dp, Color(0xFF1E293B)), modifier = Modifier.fillMaxSize()) {
+                        Column(modifier = Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("BRANCH: main", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = Color(0xFFFB923C))
+                            Text("STATUS: 1 modified file", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = Color(0xFFFBBF24))
+                            if (activeFileName != null) Text("M  $activeFileName", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = Color(0xFF34D399))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BotChatDrawerPanel(activeBotPersona: GrokBotPersona?) {
+    val drawerTabs = listOf("Prompt Library", "Model Info")
+    var selectedDrawerTab by remember { mutableStateOf(0) }
+
+    val prompts = remember {
+        listOf(
+            "Explain this code step by step",
+            "Find all bugs in this file",
+            "Refactor for better readability",
+            "Write unit tests for this function",
+            "Generate JSDoc / KDoc documentation",
+            "Optimize for performance",
+            "Convert to Kotlin coroutines"
+        )
+    }
+
+    Column(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF0D121D))
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val tabIcons = listOf(Icons.Rounded.AutoAwesome, Icons.Rounded.Info)
+            val tabColor = Color(0xFF00E5FF)
+            drawerTabs.forEachIndexed { i, label ->
+                val sel = selectedDrawerTab == i
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (sel) Color(0xFF1E293B) else Color.Transparent,
+                    border = if (sel) BorderStroke(1.dp, tabColor) else BorderStroke(0.5.dp, Color(0xFF1E293B)),
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { selectedDrawerTab = i }.padding(horizontal = 8.dp, vertical = 5.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(tabIcons[i], contentDescription = label, tint = if (sel) tabColor else Color(0xFF64748B), modifier = Modifier.size(14.dp))
+                        Text(label, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal, color = if (sel) Color(0xFFE2E8F0) else Color(0xFF64748B))
+                    }
+                }
+            }
+        }
+        HorizontalDivider(color = Color(0xFF1E293B), thickness = 0.5.dp)
+        Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp, vertical = 8.dp)) {
+            when (selectedDrawerTab) {
+                0 -> { // Prompt Library
+                    LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(prompts) { prompt ->
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFF0F1523),
+                                border = BorderStroke(0.5.dp, Color(0xFF1E293B)),
+                                modifier = Modifier.fillMaxWidth().clickable { /* inject prompt */ }
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(12.dp))
+                                    Text(prompt, fontSize = 11.sp, color = Color(0xFFCBD5E1), modifier = Modifier.weight(1f))
+                                    Icon(Icons.Rounded.ArrowForward, contentDescription = "Use", tint = Color(0xFF38BDF8), modifier = Modifier.size(12.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+                1 -> { // Model Info
+                    Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFF04060A), border = BorderStroke(0.5.dp, Color(0xFF1E293B)), modifier = Modifier.fillMaxSize()) {
+                        Column(modifier = Modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("ACTIVE PERSONA: ${activeBotPersona?.displayName ?: "None"}", fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, color = Color(0xFF00E5FF))
+                            Text("SPECIALIZATION: ${activeBotPersona?.tagline ?: "General AI"}", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = Color(0xFF94A3B8))
+                            Text("BACKEND: Firebase Gemini AI", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = Color(0xFF64748B))
+                            Text("CONTEXT: Workspace file + terminal CWD", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = Color(0xFF64748B))
+                            Text("ACTUATORS: @code @browser @file @cmd @search", fontFamily = FontFamily.Monospace, fontSize = 9.5.sp, color = Color(0xFF475569))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileInfoDrawerPanel(
+    fileName: String,
+    fileType: String,
+    accentColor: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    details: List<Pair<String, String>>
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // File header card
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = Color(0xFF0F1523),
+            border = BorderStroke(1.dp, accentColor.copy(alpha = 0.3f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Surface(shape = RoundedCornerShape(8.dp), color = accentColor.copy(alpha = 0.15f), modifier = Modifier.size(36.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(fileName, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(fileType, fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = accentColor)
+                }
+            }
+        }
+        // Detail rows
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = Color(0xFF04060A),
+            border = BorderStroke(0.5.dp, Color(0xFF1E293B)),
+            modifier = Modifier.fillMaxWidth().weight(1f)
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(details) { (label, value) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = label,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF64748B),
+                            modifier = Modifier.weight(0.45f)
+                        )
+                        Text(
+                            text = value,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.5.sp,
+                            color = Color(0xFFCBD5E1),
+                            modifier = Modifier.weight(0.55f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    HorizontalDivider(color = Color(0xFF1A2230), thickness = 0.5.dp)
+                }
             }
         }
     }

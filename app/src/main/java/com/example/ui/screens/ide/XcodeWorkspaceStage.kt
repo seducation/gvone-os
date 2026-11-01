@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.example.data.agent.BotAssistantStatus
 import com.example.data.model.BrowserSettings
 import com.example.data.model.BrowserTab
-import com.example.ui.components.WebsiteDeveloperBar
+import com.example.ui.components.UnifiedDeveloperBar
 import com.example.ui.screens.files.GVONEFileViewerScreen
 import com.example.ui.viewmodel.ActiveSheet
 import com.example.ui.viewmodel.BrowserViewModel
@@ -68,7 +68,7 @@ fun XcodeWorkspaceStage(
             val activeEditorTab = remember(ideOpenTabs, ideActiveTabId) {
                 ideOpenTabs.find { it.id == ideActiveTabId }
             }
-            WebsiteDeveloperBar(
+            UnifiedDeveloperBar(
                 tab = currentTab ?: tabs.firstOrNull() ?: BrowserTab(id = "code", title = "Xcode Code Editor", url = "xcode://editor"),
                 activeWebView = null,
                 isTorActive = settings.torEnabled,
@@ -129,7 +129,7 @@ fun XcodeWorkspaceStage(
                 .fillMaxSize()
                 .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
         ) {
-            WebsiteDeveloperBar(
+            UnifiedDeveloperBar(
                 tab = currentTab ?: tabs.firstOrNull() ?: BrowserTab(id = "bot", title = "AI Copilot", url = "xcode://bots"),
                 activeWebView = null,
                 isTorActive = settings.torEnabled,
@@ -200,7 +200,7 @@ fun XcodeWorkspaceStage(
                 .fillMaxSize()
                 .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
         ) {
-            WebsiteDeveloperBar(
+            UnifiedDeveloperBar(
                 tab = currentTab ?: tabs.firstOrNull() ?: BrowserTab(id = "pdf", title = "PDF Document", url = "xcode://pdf"),
                 activeWebView = null,
                 isTorActive = settings.torEnabled,
@@ -242,7 +242,7 @@ fun XcodeWorkspaceStage(
                 .fillMaxSize()
                 .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
         ) {
-            WebsiteDeveloperBar(
+            UnifiedDeveloperBar(
                 tab = currentTab ?: tabs.firstOrNull() ?: BrowserTab(id = "image", title = "Image Viewer", url = "xcode://image"),
                 activeWebView = null,
                 isTorActive = settings.torEnabled,
@@ -284,7 +284,7 @@ fun XcodeWorkspaceStage(
                 .fillMaxSize()
                 .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
         ) {
-            WebsiteDeveloperBar(
+            UnifiedDeveloperBar(
                 tab = currentTab ?: tabs.firstOrNull() ?: BrowserTab(id = "markdown", title = "Markdown & Docs", url = "xcode://markdown"),
                 activeWebView = null,
                 isTorActive = settings.torEnabled,
@@ -326,7 +326,7 @@ fun XcodeWorkspaceStage(
                 .fillMaxSize()
                 .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
         ) {
-            WebsiteDeveloperBar(
+            UnifiedDeveloperBar(
                 tab = currentTab ?: tabs.firstOrNull() ?: BrowserTab(id = "data", title = "JSON & Data", url = "xcode://data"),
                 activeWebView = null,
                 isTorActive = settings.torEnabled,
@@ -368,7 +368,7 @@ fun XcodeWorkspaceStage(
                 .fillMaxSize()
                 .padding(bottom = if (settings.addressBarBottom) effectiveAddressBarHeight else 0.dp)
         ) {
-            WebsiteDeveloperBar(
+            UnifiedDeveloperBar(
                 tab = currentTab ?: tabs.firstOrNull() ?: BrowserTab(id = "media", title = "Media Player", url = "xcode://media"),
                 activeWebView = null,
                 isTorActive = settings.torEnabled,
