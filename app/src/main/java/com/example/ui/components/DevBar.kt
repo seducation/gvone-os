@@ -42,7 +42,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.BrowserTab
 import com.example.ui.screens.ide.GrokBotPersona
+import com.example.ui.screens.ide.IdeExtension
 import com.example.ui.screens.ide.IdeTab
+import com.example.ui.screens.ide.McpServer
+import com.example.ui.screens.ide.McpServerManager
+import com.example.ui.screens.ide.McpTool
 import com.example.ui.screens.ide.XcodeWorkspaceMode
 import java.net.URI
 import java.text.SimpleDateFormat
@@ -214,6 +218,44 @@ fun UnifiedDeveloperBar(
         }
     }
 
+    // Extensions & Plugins state
+    val extensions = remember {
+        mutableStateListOf(
+            IdeExtension("prettier", "Prettier Formatter", "v3.2.0", "Prettier", "Opinionated code formatter for Kotlin, Python, JS, HTML, CSS, JSON", Icons.Rounded.FormatPaint, true, "Formatters"),
+            IdeExtension("eslint", "ESLint Linter", "v8.56.0", "OpenJS", "Identifies syntax errors, code smells, and TODO markers", Icons.Rounded.Rule, true, "Linters"),
+            IdeExtension("gitlens", "Git & Drive Cloud Lens", "v14.0.0", "GitKraken", "Cloud Drive commit tracking, Git blame, and diff history", Icons.Rounded.CloudSync, true, "Drive & Git"),
+            IdeExtension("live_server", "Live Preview Server", "v0.4.0", "Microsoft", "Local preview server for HTML, CSS, and JS web projects", Icons.Rounded.Preview, true, "Preview"),
+            IdeExtension("language_tools", "Language Tools Pack", "v2.1.0", "GVONE", "Enhanced autocomplete snippets for Kotlin, Python, JS", Icons.Rounded.Code, true, "Languages"),
+            IdeExtension("youtube_enhancer", "YouTube Media & Ad Enhancer", "v2.5.0", "GVONE Web", "Blocks video ads, enables background audio playback, bypasses Shorts loop", Icons.Rounded.PlayCircle, true, "Media & YouTube"),
+            IdeExtension("adblock_pro", "AdBlocker Pro & Tracker Shield", "v3.6.0", "uBlock/GVONE", "Blocks intrusive popups, banner ads, tracking beacons, and miners", Icons.Rounded.Shield, true, "Privacy & Security"),
+            IdeExtension("dark_reader", "Dark Reader & Night Shift", "v4.9.0", "DarkReader", "Inverts luminance to provide high-contrast dark theme on web pages", Icons.Rounded.DarkMode, true, "Appearance")
+        )
+    }
+    val filteredExtensions = remember(extensions.toList(), targetSearchQuery) {
+        if (targetSearchQuery.isBlank()) extensions.toList()
+        else extensions.filter {
+            it.name.contains(targetSearchQuery, ignoreCase = true) ||
+            it.description.contains(targetSearchQuery, ignoreCase = true) ||
+            it.category.contains(targetSearchQuery, ignoreCase = true) ||
+            it.publisher.contains(targetSearchQuery, ignoreCase = true)
+        }
+    }
+
+    // MCP (Model Context Protocol) servers & tools state
+    val mcpServers by McpServerManager.servers.collectAsState()
+    val filteredMcpServers = remember(mcpServers, targetSearchQuery) {
+        if (targetSearchQuery.isBlank()) mcpServers
+        else mcpServers.filter { server ->
+            server.name.contains(targetSearchQuery, ignoreCase = true) ||
+            server.description.contains(targetSearchQuery, ignoreCase = true) ||
+            server.transport.contains(targetSearchQuery, ignoreCase = true) ||
+            server.tools.any { tool ->
+                tool.name.contains(targetSearchQuery, ignoreCase = true) ||
+                tool.description.contains(targetSearchQuery, ignoreCase = true)
+            }
+        }
+    }
+
     // Host domain display
     val hostDomain = remember(tab.url) {
         try {
@@ -367,7 +409,7 @@ fun UnifiedDeveloperBar(
                     }
                 }
 
-                // 2. CENTER CAPSULE: Target Selector Dropdown Anchor (Websites, Xcode, Bots, Files)
+                // 2. CENTER PILL: System Search & Target Palette Anchor
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -381,6 +423,7 @@ fun UnifiedDeveloperBar(
                             .fillMaxWidth()
                             .height(34.dp)
                             .clickable { isTargetDropdownOpen = !isTargetDropdownOpen }
+                            .testTag("dev_bar_system_search_pill")
                             .testTag("dev_bar_scheme_pill")
                     ) {
                         Row(
@@ -390,53 +433,27 @@ fun UnifiedDeveloperBar(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            // Target Mode Icon
+                            // Spotlight Search Lens Icon
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = when (workspaceMode) {
-                                    XcodeWorkspaceMode.BROWSER -> if (isHttps) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFF38BDF8).copy(alpha = 0.2f)
-                                    XcodeWorkspaceMode.CODE_EDITOR -> Color(0xFFA78BFA).copy(alpha = 0.2f)
-                                    XcodeWorkspaceMode.BOT_CHAT -> Color(0xFF00E5FF).copy(alpha = 0.2f)
-                                    XcodeWorkspaceMode.PDF_VIEWER -> Color(0xFFEF4444).copy(alpha = 0.2f)
-                                    XcodeWorkspaceMode.IMAGE_VIEWER -> Color(0xFFF59E0B).copy(alpha = 0.2f)
-                                    XcodeWorkspaceMode.MARKDOWN -> Color(0xFF10B981).copy(alpha = 0.2f)
-                                    XcodeWorkspaceMode.DATA_INSPECTOR -> Color(0xFF06B6D4).copy(alpha = 0.2f)
-                                    XcodeWorkspaceMode.MEDIA_PLAYER -> Color(0xFFEC4899).copy(alpha = 0.2f)
-                                },
+                                color = Color(0xFF38BDF8).copy(alpha = 0.15f),
                                 modifier = Modifier.size(20.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
-                                        imageVector = when (workspaceMode) {
-                                            XcodeWorkspaceMode.BROWSER -> if (isHttps) Icons.Rounded.Lock else Icons.Rounded.Public
-                                            XcodeWorkspaceMode.CODE_EDITOR -> Icons.Rounded.Code
-                                            XcodeWorkspaceMode.BOT_CHAT -> Icons.Rounded.AutoAwesome
-                                            XcodeWorkspaceMode.PDF_VIEWER -> Icons.Rounded.PictureAsPdf
-                                            XcodeWorkspaceMode.IMAGE_VIEWER -> Icons.Rounded.Image
-                                            XcodeWorkspaceMode.MARKDOWN -> Icons.Rounded.Description
-                                            XcodeWorkspaceMode.DATA_INSPECTOR -> Icons.Rounded.DataObject
-                                            XcodeWorkspaceMode.MEDIA_PLAYER -> Icons.Rounded.PlayCircle
-                                        },
-                                        contentDescription = null,
-                                        tint = when (workspaceMode) {
-                                            XcodeWorkspaceMode.BROWSER -> if (isHttps) Color(0xFF34D399) else Color(0xFF38BDF8)
-                                            XcodeWorkspaceMode.CODE_EDITOR -> Color(0xFFA78BFA)
-                                            XcodeWorkspaceMode.BOT_CHAT -> Color(0xFF00E5FF)
-                                            XcodeWorkspaceMode.PDF_VIEWER -> Color(0xFFEF4444)
-                                            XcodeWorkspaceMode.IMAGE_VIEWER -> Color(0xFFF59E0B)
-                                            XcodeWorkspaceMode.MARKDOWN -> Color(0xFF34D399)
-                                            XcodeWorkspaceMode.DATA_INSPECTOR -> Color(0xFF06B6D4)
-                                            XcodeWorkspaceMode.MEDIA_PLAYER -> Color(0xFFEC4899)
-                                        },
+                                        imageVector = Icons.Rounded.Search,
+                                        contentDescription = "System Search",
+                                        tint = Color(0xFF38BDF8),
                                         modifier = Modifier.size(12.dp)
                                     )
                                 }
                             }
 
-                            // Target Label
+                            // Active Target Context + Search Prompt
                             Row(
                                 modifier = Modifier.weight(1f),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Text(
                                     text = when (workspaceMode) {
@@ -450,14 +467,22 @@ fun UnifiedDeveloperBar(
                                         XcodeWorkspaceMode.MEDIA_PLAYER -> activeFileName ?: "sample_track.wav"
                                     },
                                     color = Color.White,
-                                    fontSize = 11.5.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                                Text(
+                                    text = "• Search System...",
+                                    color = Color(0xFF64748B),
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                                 if (isTorActive) {
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
                                     Box(
                                         modifier = Modifier
                                             .size(5.dp)
@@ -467,7 +492,7 @@ fun UnifiedDeveloperBar(
                                 }
                             }
 
-                            // Category Tag Badge
+                            // Mode Tag Badge
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
                                 color = Color(0xFF1E293B)
@@ -491,17 +516,33 @@ fun UnifiedDeveloperBar(
                                 )
                             }
 
+                            // ⌘K Shortcut Hint
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF161F30),
+                                border = BorderStroke(0.5.dp, Color(0xFF2C384D))
+                            ) {
+                                Text(
+                                    text = "⌘K",
+                                    fontSize = 8.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF94A3B8),
+                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                )
+                            }
+
                             // Dropdown chevron indicator
                             Icon(
                                 imageVector = Icons.Rounded.ArrowDropDown,
-                                contentDescription = "Open Target Selector",
+                                contentDescription = "Open System Search",
                                 tint = if (isTargetDropdownOpen) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
 
-                    // ================= TARGET SELECTOR DROPDOWN MENU =================
+                    // ================= SYSTEM SEARCH & TARGET PALETTE DROPDOWN MENU =================
                     DropdownMenu(
                         expanded = isTargetDropdownOpen,
                         onDismissRequest = {
@@ -511,8 +552,8 @@ fun UnifiedDeveloperBar(
                         modifier = Modifier
                             .background(Color(0xFF0B101B))
                             .border(1.dp, Color(0xFF223048), RoundedCornerShape(12.dp))
-                            .widthIn(min = 320.dp, max = 380.dp)
-                            .heightIn(max = 520.dp)
+                            .widthIn(min = 340.dp, max = 400.dp)
+                            .heightIn(max = 560.dp)
                             .testTag("dev_bar_target_dropdown_menu")
                     ) {
                         Column(
@@ -520,7 +561,7 @@ fun UnifiedDeveloperBar(
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp)
                         ) {
-                            // Header: Target Selector
+                            // Header: System Search & Palette
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -533,34 +574,114 @@ fun UnifiedDeveloperBar(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.FolderSpecial,
+                                        imageVector = Icons.Rounded.Search,
                                         contentDescription = null,
                                         tint = Color(0xFF38BDF8),
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        text = "TARGET SELECTOR",
+                                        text = "SYSTEM SEARCH & PALETTE",
                                         color = Color.White,
-                                        fontSize = 11.5.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         fontFamily = FontFamily.Monospace,
                                         letterSpacing = 0.5.sp
                                     )
                                 }
-                                IconButton(
-                                    onClick = {
-                                        isTargetDropdownOpen = false
-                                        targetSearchQuery = ""
-                                    },
-                                    modifier = Modifier.size(24.dp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = "Close",
-                                        tint = Color(0xFF94A3B8),
-                                        modifier = Modifier.size(14.dp)
-                                    )
+                                    val totalResults = filteredWebTabs.size + filteredIdeTabs.size + filteredProjectFiles.size + filteredBots.size + filteredOtherFiles.size + filteredExtensions.size + filteredMcpServers.size
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFF1E293B)
+                                    ) {
+                                        Text(
+                                            text = "$totalResults items",
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFF38BDF8),
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            isTargetDropdownOpen = false
+                                            targetSearchQuery = ""
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Close,
+                                            contentDescription = "Close",
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
                                 }
+                            }
+
+                            // Live Search Input Box
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextField(
+                                    value = targetSearchQuery,
+                                    onValueChange = { targetSearchQuery = it },
+                                    placeholder = {
+                                        Text(
+                                            "Search tabs, files, bots, extensions, MCP...",
+                                            color = Color(0xFF64748B),
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Search,
+                                            contentDescription = "Search",
+                                            tint = Color(0xFF38BDF8),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        if (targetSearchQuery.isNotBlank()) {
+                                            IconButton(
+                                                onClick = { targetSearchQuery = "" },
+                                                modifier = Modifier.size(22.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Close,
+                                                    contentDescription = "Clear",
+                                                    tint = Color(0xFF94A3B8),
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.5.sp,
+                                        color = Color.White
+                                    ),
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = Color(0xFF131B2C),
+                                        unfocusedContainerColor = Color(0xFF0E1524),
+                                        focusedIndicatorColor = Color(0xFF38BDF8),
+                                        unfocusedIndicatorColor = Color(0xFF1E293B)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(42.dp)
+                                        .testTag("dev_bar_system_search_input")
+                                )
                             }
 
                             // Category Filter Chips
@@ -573,10 +694,12 @@ fun UnifiedDeveloperBar(
                             ) {
                                 val categories = listOf(
                                     "ALL" to "All",
-                                    "WEBSITES" to "🌐 Websites",
-                                    "XCODE" to "💻 Xcode",
-                                    "BOTS" to "🤖 Bots",
-                                    "FILES" to "📁 Files"
+                                    "WEBSITES" to "🌐 Websites (${filteredWebTabs.size})",
+                                    "XCODE" to "💻 Xcode (${filteredIdeTabs.size + filteredProjectFiles.size})",
+                                    "BOTS" to "🤖 Bots (${filteredBots.size})",
+                                    "FILES" to "📁 Files (${filteredOtherFiles.size})",
+                                    "EXTENSIONS" to "🧩 Extensions (${filteredExtensions.size})",
+                                    "MCP" to "🔌 MCP (${filteredMcpServers.size})"
                                 )
                                 categories.forEach { (catKey, label) ->
                                     val isSelected = selectedCategoryFilter == catKey
@@ -588,10 +711,10 @@ fun UnifiedDeveloperBar(
                                     ) {
                                         Text(
                                             text = label,
-                                            fontSize = 10.5.sp,
+                                            fontSize = 10.sp,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                             color = if (isSelected) Color(0xFF0F172A) else Color(0xFFCBD5E1),
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.5.dp)
                                         )
                                     }
                                 }
@@ -599,11 +722,11 @@ fun UnifiedDeveloperBar(
 
                             HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
 
-                            // Scrollable Target Items (Websites, Xcode, Bots, Other Files)
+                            // Scrollable Target Items (Websites, Xcode, Bots, Files, Extensions, MCP)
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(max = 400.dp)
+                                    .heightIn(max = 420.dp)
                                     .verticalScroll(rememberScrollState())
                             ) {
                                 // 1. 🌐 WEBSITES SECTION
@@ -731,6 +854,80 @@ fun UnifiedDeveloperBar(
                                                 onToggleWorkspaceMode?.invoke(f.mode)
                                             }
                                         )
+                                    }
+                                }
+
+                                // 5. 🧩 EXTENSIONS & PLUGINS SECTION
+                                if (selectedCategoryFilter == "ALL" || selectedCategoryFilter == "EXTENSIONS") {
+                                    TargetSectionHeader(
+                                        title = "EXTENSIONS & PLUGINS",
+                                        badge = "${filteredExtensions.count { it.isEnabled }}/${filteredExtensions.size} ON",
+                                        actionLabel = "Open Store",
+                                        onAction = {
+                                            Toast.makeText(context, "Opening Extensions Marketplace...", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+
+                                    if (filteredExtensions.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("No extensions matching '$targetSearchQuery'", color = Color(0xFF64748B), fontSize = 10.5.sp, fontFamily = FontFamily.Monospace)
+                                        }
+                                    } else {
+                                        filteredExtensions.forEach { ext ->
+                                            ExtensionMenuItem(
+                                                extension = ext,
+                                                onToggle = {
+                                                    val index = extensions.indexOfFirst { it.id == ext.id }
+                                                    if (index != -1) {
+                                                        val updated = ext.copy(isEnabled = !ext.isEnabled)
+                                                        extensions[index] = updated
+                                                        Toast.makeText(context, "${if (updated.isEnabled) "Enabled" else "Disabled"} extension: ${ext.name}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // 6. 🔌 MCP TOOLS & SERVERS SECTION
+                                if (selectedCategoryFilter == "ALL" || selectedCategoryFilter == "MCP") {
+                                    val totalMcpTools = filteredMcpServers.sumOf { it.tools.size }
+                                    TargetSectionHeader(
+                                        title = "MCP TOOLS & SERVERS",
+                                        badge = "${filteredMcpServers.count { it.isConnected }}/${filteredMcpServers.size} Active • $totalMcpTools Tools",
+                                        actionLabel = "+ Add Server",
+                                        onAction = {
+                                            Toast.makeText(context, "MCP: Tap server to toggle connection or execute tool", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+
+                                    if (filteredMcpServers.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("No MCP servers or tools matching '$targetSearchQuery'", color = Color(0xFF64748B), fontSize = 10.5.sp, fontFamily = FontFamily.Monospace)
+                                        }
+                                    } else {
+                                        filteredMcpServers.forEach { server ->
+                                            McpServerMenuItem(
+                                                server = server,
+                                                onToggleConnection = {
+                                                    McpServerManager.toggleServer(server.id)
+                                                    Toast.makeText(context, "Toggled MCP Server: ${server.name}", Toast.LENGTH_SHORT).show()
+                                                },
+                                                onCallTool = { tool ->
+                                                    Toast.makeText(context, "Executing MCP tool '${tool.name}' via ${server.name}...", Toast.LENGTH_SHORT).show()
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1813,6 +2010,301 @@ private fun TargetMenuItem(
                     tint = Color(0xFF38BDF8),
                     modifier = Modifier.size(16.dp)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExtensionMenuItem(
+    extension: IdeExtension,
+    onToggle: () -> Unit
+) {
+    Surface(
+        color = Color.Transparent,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+            .testTag("dev_bar_extension_${extension.id}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = if (extension.isEnabled) Color(0xFFF59E0B).copy(alpha = 0.15f) else Color(0xFF334155).copy(alpha = 0.2f),
+                modifier = Modifier.size(26.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = extension.icon,
+                        contentDescription = extension.name,
+                        tint = if (extension.isEnabled) Color(0xFFF59E0B) else Color(0xFF64748B),
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = extension.name,
+                        color = if (extension.isEnabled) Color.White else Color(0xFF94A3B8),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color = Color(0xFF1E293B)
+                    ) {
+                        Text(
+                            text = extension.version,
+                            fontSize = 8.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF94A3B8),
+                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = extension.description,
+                    color = Color(0xFF64748B),
+                    fontSize = 9.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Status Pill Button
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (extension.isEnabled) Color(0xFF064E3B) else Color(0xFF1E293B),
+                border = BorderStroke(1.dp, if (extension.isEnabled) Color(0xFF10B981) else Color(0xFF334155)),
+                modifier = Modifier.clickable { onToggle() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(if (extension.isEnabled) Color(0xFF34D399) else Color(0xFF64748B))
+                    )
+                    Text(
+                        text = if (extension.isEnabled) "ON" else "OFF",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (extension.isEnabled) Color(0xFF34D399) else Color(0xFF94A3B8)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun McpServerMenuItem(
+    server: McpServer,
+    onToggleConnection: () -> Unit,
+    onCallTool: (McpTool) -> Unit
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (isExpanded) Color(0xFF0F1523) else Color.Transparent)
+            .testTag("dev_bar_mcp_${server.id}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { isExpanded = !isExpanded }
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = if (server.isConnected) Color(0xFFEC4899).copy(alpha = 0.15f) else Color(0xFF334155).copy(alpha = 0.2f),
+                modifier = Modifier.size(26.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Hub,
+                        contentDescription = null,
+                        tint = if (server.isConnected) Color(0xFFEC4899) else Color(0xFF64748B),
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = server.name,
+                        color = if (server.isConnected) Color.White else Color(0xFF94A3B8),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color = Color(0xFF1E293B)
+                    ) {
+                        Text(
+                            text = server.transport,
+                            fontSize = 8.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF38BDF8),
+                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                        )
+                    }
+                    if (server.isConnected) {
+                        Text(
+                            text = "${server.latencyMs}ms",
+                            fontSize = 8.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF34D399)
+                        )
+                    }
+                }
+                Text(
+                    text = "${server.tools.size} tools: ${server.tools.joinToString(", ") { it.name }}",
+                    color = Color(0xFF64748B),
+                    fontSize = 9.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Connection Toggle Pill
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (server.isConnected) Color(0xFF831843).copy(alpha = 0.5f) else Color(0xFF1E293B),
+                border = BorderStroke(1.dp, if (server.isConnected) Color(0xFFEC4899) else Color(0xFF334155)),
+                modifier = Modifier.clickable { onToggleConnection() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(if (server.isConnected) Color(0xFFEC4899) else Color(0xFF64748B))
+                    )
+                    Text(
+                        text = if (server.isConnected) "LINKED" else "OFFLINE",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (server.isConnected) Color(0xFFF472B6) else Color(0xFF94A3B8)
+                    )
+                }
+            }
+
+            Icon(
+                imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                contentDescription = null,
+                tint = Color(0xFF64748B),
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        // Expanded Tools Tray
+        if (isExpanded) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 36.dp, end = 12.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = server.description,
+                    color = Color(0xFF94A3B8),
+                    fontSize = 9.5.sp,
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+                server.tools.forEach { tool ->
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFF131B2C),
+                        border = BorderStroke(0.5.dp, Color(0xFF223048)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onCallTool(tool) }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Build,
+                                        contentDescription = null,
+                                        tint = Color(0xFFEC4899),
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Text(
+                                        text = tool.name,
+                                        color = Color(0xFFE2E8F0),
+                                        fontSize = 10.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = tool.description,
+                                    color = Color(0xFF64748B),
+                                    fontSize = 9.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(3.dp),
+                                color = Color(0xFF1E293B)
+                            ) {
+                                Text(
+                                    text = "Call Tool",
+                                    fontSize = 8.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF38BDF8),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

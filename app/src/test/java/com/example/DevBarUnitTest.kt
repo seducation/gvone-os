@@ -95,5 +95,32 @@ class DevBarUnitTest {
         assertEquals("Xcode", com.example.ui.screens.ide.XcodeWorkspaceMode.CODE_EDITOR.tag)
         assertEquals("Copilot", com.example.ui.screens.ide.XcodeWorkspaceMode.BOT_CHAT.tag)
     }
+
+    @Test
+    fun testDevBarExtensionsAndMcpIntegration() {
+        // Test that MCP server manager is reachable and initialized
+        val servers = com.example.ui.screens.ide.McpServerManager.servers.value
+        assertTrue("MCP servers should not be empty", servers.isNotEmpty())
+        assertTrue("Filesystem server should be present", servers.any { it.id == "mcp_filesystem" })
+        assertTrue("Git server should be present", servers.any { it.id == "mcp_git" })
+
+        val fsServer = servers.first { it.id == "mcp_filesystem" }
+        assertTrue("FS server should contain read_file tool", fsServer.tools.any { it.name == "read_file" })
+        assertTrue("FS server should contain write_file tool", fsServer.tools.any { it.name == "write_file" })
+
+        // Test IDE extension model
+        val extension = com.example.ui.screens.ide.IdeExtension(
+            id = "prettier",
+            name = "Prettier Formatter",
+            version = "v3.2.0",
+            publisher = "Prettier",
+            description = "Code formatter",
+            icon = Icons.Rounded.FormatPaint,
+            isEnabled = true,
+            category = "Formatters"
+        )
+        assertEquals("prettier", extension.id)
+        assertTrue(extension.isEnabled)
+    }
 }
 
